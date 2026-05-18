@@ -35,8 +35,102 @@ body::before {
 }
 @keyframes auroraDrift {
   0%   { transform: translate(0, 0) rotate(0deg) scale(1); }
-  50%  { transform: translate(2%, -1%) rotate(0.5deg) scale(1.04); }
-  100% { transform: translate(-2%, 1%) rotate(-0.5deg) scale(1.02); }
+  20%  { transform: translate(3%, -2%) rotate(1deg) scale(1.06); }
+  40%  { transform: translate(-2%, 2%) rotate(-0.8deg) scale(1.03); }
+  60%  { transform: translate(4%, 1%) rotate(0.6deg) scale(1.05); }
+  80%  { transform: translate(-3%, -1%) rotate(-0.5deg) scale(1.04); }
+  100% { transform: translate(0, 0) rotate(0deg) scale(1); }
+}
+
+/* Partículas flotando hacia arriba — frosted glass enhancement */
+body::after {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none;
+  z-index: -1;
+  background-image:
+    radial-gradient(1.5px 1.5px at 12% 8%, rgba(255,255,255,0.7), transparent 50%),
+    radial-gradient(2px 2px at 28% 22%, rgba(198,255,61,0.55), transparent 50%),
+    radial-gradient(1px 1px at 47% 14%, rgba(255,255,255,0.65), transparent 50%),
+    radial-gradient(1.5px 1.5px at 63% 5%, rgba(0,200,230,0.55), transparent 50%),
+    radial-gradient(2px 2px at 81% 26%, rgba(255,255,255,0.6), transparent 50%),
+    radial-gradient(1px 1px at 93% 16%, rgba(255,255,255,0.5), transparent 50%),
+    radial-gradient(1.5px 1.5px at 8% 38%, rgba(0,153,214,0.6), transparent 50%),
+    radial-gradient(1px 1px at 22% 48%, rgba(255,255,255,0.55), transparent 50%),
+    radial-gradient(2px 2px at 35% 56%, rgba(198,255,61,0.45), transparent 50%),
+    radial-gradient(1.5px 1.5px at 52% 42%, rgba(255,255,255,0.5), transparent 50%),
+    radial-gradient(1px 1px at 68% 58%, rgba(255,255,255,0.55), transparent 50%),
+    radial-gradient(1.5px 1.5px at 85% 48%, rgba(0,200,230,0.5), transparent 50%),
+    radial-gradient(2px 2px at 96% 36%, rgba(255,255,255,0.6), transparent 50%),
+    radial-gradient(1px 1px at 14% 74%, rgba(255,255,255,0.5), transparent 50%),
+    radial-gradient(1.5px 1.5px at 30% 82%, rgba(198,255,61,0.5), transparent 50%),
+    radial-gradient(1px 1px at 44% 68%, rgba(255,255,255,0.6), transparent 50%),
+    radial-gradient(2px 2px at 58% 92%, rgba(0,153,214,0.55), transparent 50%),
+    radial-gradient(1.5px 1.5px at 73% 78%, rgba(255,255,255,0.55), transparent 50%),
+    radial-gradient(1px 1px at 88% 88%, rgba(255,255,255,0.5), transparent 50%),
+    radial-gradient(1.5px 1.5px at 5% 96%, rgba(0,200,230,0.5), transparent 50%);
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  animation: particlesFloat 45s linear infinite, particlesFade 8s ease-in-out infinite alternate;
+  opacity: 0.85;
+}
+
+@keyframes particlesFloat {
+  0%   { background-position: 0 0; }
+  100% { background-position: 0 -300vh; }
+}
+@keyframes particlesFade {
+  0%   { opacity: 0.55; }
+  50%  { opacity: 0.9; }
+  100% { opacity: 0.7; }
+}
+
+/* Orbs grandes flotantes (frosted globes) — fijos en viewport */
+.float-orb {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(40px);
+  pointer-events: none;
+  z-index: -1;
+  mix-blend-mode: screen;
+}
+.float-orb.orb-1 {
+  width: 380px; height: 380px;
+  background: radial-gradient(circle, rgba(0,200,230,0.55) 0%, rgba(0,153,214,0.2) 60%, transparent 80%);
+  top: -100px; left: -120px;
+  animation: orbDrift1 28s ease-in-out infinite alternate;
+}
+.float-orb.orb-2 {
+  width: 320px; height: 320px;
+  background: radial-gradient(circle, rgba(198,255,61,0.35) 0%, rgba(100,180,80,0.15) 50%, transparent 80%);
+  bottom: -90px; right: -100px;
+  animation: orbDrift2 34s ease-in-out infinite alternate;
+}
+.float-orb.orb-3 {
+  width: 280px; height: 280px;
+  background: radial-gradient(circle, rgba(80,130,220,0.45) 0%, rgba(60,90,180,0.18) 55%, transparent 80%);
+  top: 40%; right: 8%;
+  animation: orbDrift3 40s ease-in-out infinite alternate;
+}
+
+@keyframes orbDrift1 {
+  0%   { transform: translate(0, 0) scale(1); }
+  33%  { transform: translate(80px, 60px) scale(1.15); }
+  66%  { transform: translate(40px, 140px) scale(0.95); }
+  100% { transform: translate(120px, 80px) scale(1.08); }
+}
+@keyframes orbDrift2 {
+  0%   { transform: translate(0, 0) scale(1); }
+  33%  { transform: translate(-90px, -50px) scale(1.12); }
+  66%  { transform: translate(-40px, -120px) scale(0.92); }
+  100% { transform: translate(-130px, -70px) scale(1.05); }
+}
+@keyframes orbDrift3 {
+  0%   { transform: translate(0, 0) scale(1); }
+  33%  { transform: translate(-60px, 80px) scale(1.18); }
+  66%  { transform: translate(-100px, -40px) scale(0.9); }
+  100% { transform: translate(-30px, 60px) scale(1.1); }
 }
 
 /* Cards frosted — aplica a cualquier elemento con bg blanco usando data-frost o inline */
@@ -3268,7 +3362,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G49";
+const APP_VERSION = "G50";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -9755,6 +9849,11 @@ function App() {
 }
 ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
 
+(function(){
+  if (document.querySelectorAll('.float-orb').length === 0) {
+    [1,2,3].forEach(n => { const d = document.createElement('div'); d.className = 'float-orb orb-' + n; document.body.appendChild(d); });
+  }
+})();
 ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
 </script>
 </body>
