@@ -126,68 +126,21 @@ body::after {
   100% { opacity: 0.7; }
 }
 
-/* ─── Ondas tipo PS2/PSP (light ribbons) — reemplazan orbs ─── */
-.bg-wave {
+/* ─── Ondas estilo PS2/PSP — SVG con paths morfeando ─── */
+.bg-svg-waves {
   position: fixed;
-  width: 180vw;
-  height: 260px;
-  filter: blur(45px);
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
   pointer-events: none;
   z-index: -1;
-  opacity: 0.85;
-  will-change: transform;
+  opacity: 0.9;
+  filter: blur(10px);
 }
-.bg-wave.w1 {
-  background: radial-gradient(ellipse 50% 100% at center, rgba(0,230,255,0.95) 0%, rgba(0,153,214,0.55) 40%, transparent 70%);
-  top: 8%;
-  left: -40vw;
-  animation: waveFlow1 18s ease-in-out infinite;
-}
-.bg-wave.w2 {
-  background: radial-gradient(ellipse 55% 100% at center, rgba(198,255,61,0.75) 0%, rgba(0,220,200,0.5) 40%, transparent 70%);
-  top: 38%;
-  left: -40vw;
-  animation: waveFlow2 24s ease-in-out infinite;
-}
-.bg-wave.w3 {
-  background: radial-gradient(ellipse 50% 100% at center, rgba(120,140,255,0.85) 0%, rgba(60,90,200,0.5) 40%, transparent 70%);
-  bottom: 6%;
-  left: -40vw;
-  animation: waveFlow3 22s ease-in-out infinite;
-}
-.bg-wave.w4 {
-  background: radial-gradient(ellipse 50% 100% at center, rgba(0,255,200,0.7) 0%, rgba(140,90,230,0.5) 40%, transparent 70%);
-  top: 62%;
-  left: -40vw;
-  animation: waveFlow4 26s ease-in-out infinite;
-}
-
-@keyframes waveFlow1 {
-  0%   { transform: translate(0, 0) rotate(-4deg) scaleX(1) scaleY(0.6); }
-  25%  { transform: translate(140px, 60px) rotate(2deg) scaleX(1.2) scaleY(0.5); }
-  50%  { transform: translate(-80px, 120px) rotate(-2deg) scaleX(0.95) scaleY(0.7); }
-  75%  { transform: translate(100px, -40px) rotate(4deg) scaleX(1.1) scaleY(0.55); }
-  100% { transform: translate(0, 0) rotate(-4deg) scaleX(1) scaleY(0.6); }
-}
-@keyframes waveFlow2 {
-  0%   { transform: translate(0, 0) rotate(3deg) scaleX(1.1) scaleY(0.55); }
-  25%  { transform: translate(-120px, -50px) rotate(-2deg) scaleX(0.95) scaleY(0.65); }
-  50%  { transform: translate(80px, 90px) rotate(4deg) scaleX(1.2) scaleY(0.5); }
-  75%  { transform: translate(-60px, -80px) rotate(-3deg) scaleX(1) scaleY(0.6); }
-  100% { transform: translate(0, 0) rotate(3deg) scaleX(1.1) scaleY(0.55); }
-}
-@keyframes waveFlow3 {
-  0%   { transform: translate(0, 0) rotate(-2deg) scaleX(1) scaleY(0.65); }
-  33%  { transform: translate(120px, -70px) rotate(3deg) scaleX(1.15) scaleY(0.55); }
-  66%  { transform: translate(-100px, 40px) rotate(-3deg) scaleX(0.95) scaleY(0.7); }
-  100% { transform: translate(0, 0) rotate(-2deg) scaleX(1) scaleY(0.65); }
-}
-@keyframes waveFlow4 {
-  0%   { transform: translate(0, 0) rotate(2deg) scaleX(1.1) scaleY(0.5); }
-  25%  { transform: translate(-90px, 50px) rotate(-3deg) scaleX(1) scaleY(0.6); }
-  50%  { transform: translate(110px, -60px) rotate(2deg) scaleX(1.2) scaleY(0.55); }
-  75%  { transform: translate(-50px, 80px) rotate(-2deg) scaleX(0.95) scaleY(0.65); }
-  100% { transform: translate(0, 0) rotate(2deg) scaleX(1.1) scaleY(0.5); }
+.bg-svg-waves path {
+  stroke-linecap: round;
+  fill: none;
 }
 
 /* ─── Partículas en PRIMER PLANO (encima de los bloques) ─── */
@@ -3494,7 +3447,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G55";
+const APP_VERSION = "G56";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -9982,8 +9935,22 @@ function App() {
 ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
 
 (function(){
-  if (document.querySelectorAll('.bg-wave').length === 0) {
-    [1,2,3,4].forEach(n => { const d = document.createElement('div'); d.className = 'bg-wave w' + n; document.body.appendChild(d); });
+  if (!document.querySelector('.bg-svg-waves')) {
+    const wavesHtml = '<svg class="bg-svg-waves" preserveAspectRatio="none" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">'
+      + '<defs>'
+      + '<linearGradient id="gw1" x1="0" x2="1"><stop offset="0" stop-color="#00D8FF" stop-opacity="0"/><stop offset="0.4" stop-color="#00D8FF" stop-opacity="0.9"/><stop offset="0.6" stop-color="#0099D6" stop-opacity="0.9"/><stop offset="1" stop-color="#00D8FF" stop-opacity="0"/></linearGradient>'
+      + '<linearGradient id="gw2" x1="0" x2="1"><stop offset="0" stop-color="#C6FF3D" stop-opacity="0"/><stop offset="0.4" stop-color="#C6FF3D" stop-opacity="0.75"/><stop offset="0.6" stop-color="#7EE656" stop-opacity="0.8"/><stop offset="1" stop-color="#C6FF3D" stop-opacity="0"/></linearGradient>'
+      + '<linearGradient id="gw3" x1="0" x2="1"><stop offset="0" stop-color="#A569FF" stop-opacity="0"/><stop offset="0.4" stop-color="#A569FF" stop-opacity="0.8"/><stop offset="0.6" stop-color="#7A4AE6" stop-opacity="0.85"/><stop offset="1" stop-color="#A569FF" stop-opacity="0"/></linearGradient>'
+      + '<linearGradient id="gw4" x1="0" x2="1"><stop offset="0" stop-color="#0099D6" stop-opacity="0"/><stop offset="0.4" stop-color="#00D8FF" stop-opacity="0.8"/><stop offset="0.6" stop-color="#0066A0" stop-opacity="0.8"/><stop offset="1" stop-color="#0099D6" stop-opacity="0"/></linearGradient>'
+      + '</defs>'
+      + '<path stroke="url(#gw1)" stroke-width="130" d="M -100 280 C 300 180, 600 380, 960 280 C 1320 180, 1620 380, 2020 280"><animate attributeName="d" dur="11s" repeatCount="indefinite" values="M -100 280 C 300 180, 600 380, 960 280 C 1320 180, 1620 380, 2020 280; M -100 300 C 300 420, 600 160, 960 300 C 1320 460, 1620 180, 2020 300; M -100 260 C 300 380, 600 200, 960 260 C 1320 360, 1620 220, 2020 260; M -100 280 C 300 180, 600 380, 960 280 C 1320 180, 1620 380, 2020 280"/></path>'
+      + '<path stroke="url(#gw2)" stroke-width="110" d="M -100 480 C 300 380, 600 580, 960 480 C 1320 380, 1620 580, 2020 480"><animate attributeName="d" dur="14s" repeatCount="indefinite" values="M -100 480 C 300 380, 600 580, 960 480 C 1320 380, 1620 580, 2020 480; M -100 500 C 300 620, 600 360, 960 500 C 1320 600, 1620 380, 2020 500; M -100 460 C 300 560, 600 400, 960 460 C 1320 540, 1620 420, 2020 460; M -100 480 C 300 380, 600 580, 960 480 C 1320 380, 1620 580, 2020 480"/></path>'
+      + '<path stroke="url(#gw3)" stroke-width="140" d="M -100 680 C 300 580, 600 780, 960 680 C 1320 580, 1620 780, 2020 680"><animate attributeName="d" dur="17s" repeatCount="indefinite" values="M -100 680 C 300 580, 600 780, 960 680 C 1320 580, 1620 780, 2020 680; M -100 700 C 300 820, 600 540, 960 700 C 1320 800, 1620 580, 2020 700; M -100 660 C 300 760, 600 580, 960 660 C 1320 740, 1620 600, 2020 660; M -100 680 C 300 580, 600 780, 960 680 C 1320 580, 1620 780, 2020 680"/></path>'
+      + '<path stroke="url(#gw4)" stroke-width="120" d="M -100 880 C 300 780, 600 980, 960 880 C 1320 780, 1620 980, 2020 880"><animate attributeName="d" dur="20s" repeatCount="indefinite" values="M -100 880 C 300 780, 600 980, 960 880 C 1320 780, 1620 980, 2020 880; M -100 900 C 300 1020, 600 760, 960 900 C 1320 1000, 1620 780, 2020 900; M -100 860 C 300 960, 600 800, 960 860 C 1320 940, 1620 820, 2020 860; M -100 880 C 300 780, 600 980, 960 880 C 1320 780, 1620 980, 2020 880"/></path>'
+      + '</svg>';
+    const wrap = document.createElement('div');
+    wrap.innerHTML = wavesHtml;
+    document.body.appendChild(wrap.firstElementChild);
   }
   if (!document.querySelector('.fg-particles')) {
     const fg = document.createElement('div'); fg.className = 'fg-particles'; document.body.appendChild(fg);
