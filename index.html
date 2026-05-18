@@ -112,7 +112,7 @@ body::after {
     radial-gradient(1.5px 1.5px at 56% 55%, rgba(255,255,255,0.7), transparent 50%);
   background-size: 100% 100%;
   background-repeat: no-repeat;
-  animation: particlesFloat 30s linear infinite, particlesFade 8s ease-in-out infinite alternate;
+  animation: particlesFloat 20s linear infinite, particlesFade 8s ease-in-out infinite alternate;
   opacity: 0.85;
 }
 
@@ -128,37 +128,36 @@ body::after {
 /* ─── Ondas tipo PS2/PSP (light ribbons) — reemplazan orbs ─── */
 .bg-wave {
   position: fixed;
-  width: 160vw;
-  height: 340px;
-  border-radius: 50%;
-  filter: blur(55px);
+  width: 180vw;
+  height: 260px;
+  filter: blur(45px);
   pointer-events: none;
   z-index: -1;
-  mix-blend-mode: screen;
+  opacity: 0.85;
   will-change: transform;
 }
 .bg-wave.w1 {
-  background: linear-gradient(90deg, transparent 0%, rgba(0,200,230,0.55) 25%, rgba(0,153,214,0.7) 50%, rgba(80,170,230,0.5) 75%, transparent 100%);
+  background: radial-gradient(ellipse 50% 100% at center, rgba(0,230,255,0.95) 0%, rgba(0,153,214,0.55) 40%, transparent 70%);
   top: 8%;
-  left: -30vw;
+  left: -40vw;
   animation: waveFlow1 18s ease-in-out infinite;
 }
 .bg-wave.w2 {
-  background: linear-gradient(90deg, transparent 0%, rgba(198,255,61,0.35) 30%, rgba(0,220,200,0.5) 55%, rgba(0,180,230,0.45) 80%, transparent 100%);
-  top: 40%;
-  left: -30vw;
+  background: radial-gradient(ellipse 55% 100% at center, rgba(198,255,61,0.75) 0%, rgba(0,220,200,0.5) 40%, transparent 70%);
+  top: 38%;
+  left: -40vw;
   animation: waveFlow2 24s ease-in-out infinite;
 }
 .bg-wave.w3 {
-  background: linear-gradient(90deg, transparent 0%, rgba(100,90,200,0.5) 28%, rgba(0,153,214,0.6) 60%, rgba(60,180,220,0.45) 88%, transparent 100%);
-  bottom: 5%;
-  left: -30vw;
+  background: radial-gradient(ellipse 50% 100% at center, rgba(120,140,255,0.85) 0%, rgba(60,90,200,0.5) 40%, transparent 70%);
+  bottom: 6%;
+  left: -40vw;
   animation: waveFlow3 22s ease-in-out infinite;
 }
 .bg-wave.w4 {
-  background: linear-gradient(90deg, transparent 0%, rgba(0,255,200,0.4) 35%, rgba(120,90,220,0.45) 65%, transparent 100%);
-  top: 65%;
-  left: -30vw;
+  background: radial-gradient(ellipse 50% 100% at center, rgba(0,255,200,0.7) 0%, rgba(140,90,230,0.5) 40%, transparent 70%);
+  top: 62%;
+  left: -40vw;
   animation: waveFlow4 26s ease-in-out infinite;
 }
 
@@ -197,7 +196,7 @@ body::after {
   pointer-events: none;
   z-index: 50;
   opacity: 0.55;
-  animation: fgFloat 38s linear infinite;
+  animation: fgFloat 20s linear infinite;
 
   background-image:
     radial-gradient(1px 1px at 53% 50%, rgba(255,255,255,0.6), transparent 50%),
@@ -3494,7 +3493,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G53";
+const APP_VERSION = "G54";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
