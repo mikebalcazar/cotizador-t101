@@ -112,18 +112,19 @@ body::after {
     radial-gradient(1.5px 1.5px at 56% 55%, rgba(255,255,255,0.7), transparent 50%);
   background-size: 100% 100%;
   background-repeat: no-repeat;
-  animation: particlesFloat 20s linear infinite, particlesFade 8s ease-in-out infinite alternate;
+  animation: particlesFloat 10s linear infinite, particlesFade 8s ease-in-out infinite alternate;
   opacity: 0.85;
 }
 
 @keyframes particlesFloat {
   0%   { background-position: 0 0; }
-  100% { background-position: 0 -300vh; }
+  100% { background-position: 0 -75vh; }
 }
 @keyframes particlesFade {
   0%   { opacity: 0.55; }
   50%  { opacity: 0.9; }
   100% { opacity: 0.7; }
+}
 
 /* ─── Ondas tipo PS2/PSP (light ribbons) — reemplazan orbs ─── */
 .bg-wave {
@@ -196,7 +197,7 @@ body::after {
   pointer-events: none;
   z-index: 50;
   opacity: 0.55;
-  animation: fgFloat 20s linear infinite;
+  animation: fgFloat 10s linear infinite;
 
   background-image:
     radial-gradient(1px 1px at 53% 50%, rgba(255,255,255,0.6), transparent 50%),
@@ -253,7 +254,7 @@ body::after {
 
 @keyframes fgFloat {
   0%   { transform: translateY(0); }
-  100% { transform: translateY(-100vh); }
+  100% { transform: translateY(-25vh); }
 }
 
 }
@@ -3493,7 +3494,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G54";
+const APP_VERSION = "G55";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -9988,7 +9989,6 @@ ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.c
     const fg = document.createElement('div'); fg.className = 'fg-particles'; document.body.appendChild(fg);
   }
 })();
-ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
 </script>
 </body>
 </html>
