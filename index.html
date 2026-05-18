@@ -139,38 +139,38 @@ body::after {
   width: 380px; height: 380px;
   background: radial-gradient(circle, rgba(0,200,230,0.55) 0%, rgba(0,153,214,0.2) 60%, transparent 80%);
   top: -100px; left: -120px;
-  animation: orbDrift1 14s ease-in-out infinite alternate;
+  animation: orbDrift1 7s ease-in-out infinite alternate;
 }
 .float-orb.orb-2 {
   width: 320px; height: 320px;
   background: radial-gradient(circle, rgba(198,255,61,0.35) 0%, rgba(100,180,80,0.15) 50%, transparent 80%);
   bottom: -90px; right: -100px;
-  animation: orbDrift2 17s ease-in-out infinite alternate;
+  animation: orbDrift2 8.5s ease-in-out infinite alternate;
 }
 .float-orb.orb-3 {
   width: 280px; height: 280px;
   background: radial-gradient(circle, rgba(80,130,220,0.45) 0%, rgba(60,90,180,0.18) 55%, transparent 80%);
   top: 40%; right: 8%;
-  animation: orbDrift3 20s ease-in-out infinite alternate;
+  animation: orbDrift3 10s ease-in-out infinite alternate;
 }
 
 @keyframes orbDrift1 {
   0%   { transform: translate(0, 0) scale(1); }
-  33%  { transform: translate(160px, 120px) scale(1.15); }
-  66%  { transform: translate(80px, 280px) scale(0.95); }
-  100% { transform: translate(240px, 160px) scale(1.08); }
+  33%  { transform: translate(240px, 180px) scale(1.15); }
+  66%  { transform: translate(120px, 420px) scale(0.95); }
+  100% { transform: translate(360px, 240px) scale(1.08); }
 }
 @keyframes orbDrift2 {
   0%   { transform: translate(0, 0) scale(1); }
-  33%  { transform: translate(-180px, -100px) scale(1.12); }
-  66%  { transform: translate(-80px, -240px) scale(0.92); }
-  100% { transform: translate(-260px, -140px) scale(1.05); }
+  33%  { transform: translate(-270px, -150px) scale(1.12); }
+  66%  { transform: translate(-120px, -360px) scale(0.92); }
+  100% { transform: translate(-390px, -210px) scale(1.05); }
 }
 @keyframes orbDrift3 {
   0%   { transform: translate(0, 0) scale(1); }
-  33%  { transform: translate(-120px, 160px) scale(1.18); }
-  66%  { transform: translate(-200px, -80px) scale(0.9); }
-  100% { transform: translate(-60px, 120px) scale(1.1); }
+  33%  { transform: translate(-180px, 240px) scale(1.18); }
+  66%  { transform: translate(-300px, -120px) scale(0.9); }
+  100% { transform: translate(-90px, 180px) scale(1.1); }
 }
 
 /* Cards frosted — aplica a cualquier elemento con bg blanco usando data-frost o inline */
@@ -3402,7 +3402,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G51";
+const APP_VERSION = "G52";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
