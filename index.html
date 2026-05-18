@@ -3268,7 +3268,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G48";
+const APP_VERSION = "G49";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -7993,7 +7993,7 @@ function PantallaRecibo({
         + '<div class="firma"><img src="' + FIRMA_SRC + '"/><div class="linea"></div><div class="nombre">Miguel Ángel Balcázar</div><div class="cargo">Taller 101</div></div>'
         + '<div class="foot"><div class="contact">www.taller101.com  ·  info@taller101.com  ·  +52 55-2951-7900</div><div class="doc">Documento generado el ' + fechaHoy + '</div></div>'
         + '</div>'
-        + '<script>window.addEventListener("load",function(){setTimeout(function(){window.print();},500);});</script>'
+        + '<scr' + 'ipt>window.addEventListener("load",function(){setTimeout(function(){window.print();},500);});</scr' + 'ipt>'
         + '</body></html>';
       w.document.open();
       w.document.write(html);
