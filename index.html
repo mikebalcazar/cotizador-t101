@@ -3268,7 +3268,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G47";
+const APP_VERSION = "G48";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -7922,199 +7922,87 @@ function PantallaRecibo({
       setError("Captura un monto válido");
       return;
     }
-    if (!window.jspdf) {
-      setError("Librería PDF aún cargando, espera unos segundos");
-      return;
-    }
     setError("");
     setGenerando(true);
     try {
-      // Asignar folio incrementando en Firestore
       const folioAsignado = await window.firebaseDB.obtenerProximoFolio();
       setFolio(folioAsignado);
-      const {
-        jsPDF
-      } = window.jspdf;
-      const doc = new jsPDF({
-        unit: "pt",
-        format: "letter"
-      });
-      const W = 612,
-        H = 792;
-      const AZUL = "#0C92F3",
-        GRIS = "#525E6B",
-        TINTA = "#1A2530",
-        LINEA = "#D8DEE4";
-
-      // ─── Header azul ──────────────────────────
-      doc.setFillColor(AZUL);
-      doc.rect(0, 0, W, 115, "F");
-
-      // Logo embebido (PNG) — usa LOGO_SRC global ya cargado
-      try {
-        const img = new Image();
-        img.src = LOGO_SRC;
-        await new Promise(res => {
-          if (img.complete) res();else img.onload = res;
-        });
-        // Cálculo de aspecto para mantener proporción del logo
-        const logoH = 78;
-        const logoW = img.width * (logoH / img.height);
-        doc.addImage(LOGO_SRC, "JPEG", 40, 19, logoW, logoH);
-      } catch (e) {
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(22);
-        doc.setTextColor("#FFFFFF");
-        doc.text("taller 101", 40, 55);
+      const proy = proyecto.trim();
+      const montoStr = fmtMontoRec(montoNum, moneda);
+      const w = window.open("", "_blank");
+      if (!w) {
+        setError("El navegador bloqueó la ventana. Permite popups e intenta de nuevo.");
+        setGenerando(false);
+        return;
       }
-
-      // Meta arriba derecha
-      doc.setTextColor("#FFFFFF");
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-      doc.text("RECIBO", W - 50, 48, {
-        align: "right"
-      });
-      doc.setFontSize(17);
-      doc.setFont("helvetica", "bold");
-      doc.text("N° " + folioAsignado, W - 50, 72, {
-        align: "right"
-      });
-      doc.setFontSize(8);
-      doc.setFont("helvetica", "normal");
-      doc.text("CIUDAD DE MÉXICO", W - 50, 92, {
-        align: "right"
-      });
-
-      // ─── Título ──────────────────────────────
-      doc.setTextColor(TINTA);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(32);
-      doc.text("RECIBO", W / 2, 180, {
-        align: "center",
-        charSpace: 4
-      });
-
-      // ─── Cuerpo: campos (centrados, stacked) ─
-      let y = 245;
-      const xMargin = 70;
-      const linea = (label, value) => {
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(9);
-        doc.setTextColor(GRIS);
-        doc.text(label.toUpperCase(), W / 2, y, {
-          align: "center",
-          charSpace: 2
-        });
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(14);
-        doc.setTextColor(TINTA);
-        doc.text(value, W / 2, y + 18, {
-          align: "center"
-        });
-        doc.setDrawColor(LINEA);
-        doc.setLineWidth(0.4);
-        doc.line(xMargin + 60, y + 28, W - xMargin - 60, y + 28);
-        y += 48;
-      };
-      linea("Fecha", fechaHoy);
-      linea("Proyecto", proyecto);
-      const xLabel = xMargin;
-
-      // ─── Caja monto ─────────────────────────
-      y += 10;
-      doc.setFillColor("#E8F2FA");
-      doc.roundedRect(xLabel, y, W - 2 * xLabel, 72, 6, 6, "F");
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-      doc.setTextColor(GRIS);
-      doc.text("MONTO TOTAL", W / 2, y + 22, {
-        align: "center",
-        charSpace: 2
-      });
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(28);
-      doc.setTextColor(AZUL);
-      doc.text(fmtMontoRec(montoNum, moneda), W / 2, y + 58, {
-        align: "center"
-      });
-      y += 92;
-
-      // Letras
-      doc.setFont("helvetica", "italic");
-      doc.setFontSize(10);
-      doc.setTextColor(GRIS);
-      const letrasLines = doc.splitTextToSize(letras, W - 2 * xLabel);
-      letrasLines.forEach(ln => {
-        doc.text(ln, W / 2, y, {
-          align: "center"
-        });
-        y += 14;
-      });
-
-      // ─── Firma con imagen ───────────────────
-      const yFirma = H - 175;
-      try {
-        const firmaImg = new Image();
-        firmaImg.src = FIRMA_SRC;
-        await new Promise(res => {
-          if (firmaImg.complete) res(); else firmaImg.onload = res;
-        });
-        // Firma: ~70pt alto, mantener proporción
-        const firmaH = 70;
-        const firmaW = firmaImg.width * (firmaH / firmaImg.height);
-        doc.addImage(FIRMA_SRC, "JPEG", W / 2 - firmaW / 2, yFirma - firmaH + 5, firmaW, firmaH);
-      } catch (e) { console.warn("Sin firma:", e); }
-      doc.setDrawColor(TINTA);
-      doc.setLineWidth(0.6);
-      doc.line(W / 2 - 110, yFirma + 8, W / 2 + 110, yFirma + 8);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
-      doc.setTextColor(TINTA);
-      doc.text("Miguel Ángel Balcázar", W / 2, yFirma + 24, {
-        align: "center"
-      });
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
-      doc.setTextColor(GRIS);
-      doc.text("TALLER 101", W / 2, yFirma + 38, {
-        align: "center",
-        charSpace: 2
-      });
-
-      // ─── Footer ─────────────────────────────
-      doc.setFillColor("#F4F6F8");
-      doc.rect(0, H - 50, W, 50, "F");
-      doc.setDrawColor(LINEA);
-      doc.setLineWidth(0.4);
-      doc.line(0, H - 50, W, H - 50);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
-      doc.setTextColor(GRIS);
-      doc.text("www.taller101.com · info@taller101.com · +52 55-2951-7900", W / 2, H - 28, {
-        align: "center",
-        charSpace: 1
-      });
-      doc.setFontSize(7);
-      doc.text("Documento generado el " + fechaHoy, W / 2, H - 15, {
-        align: "center"
-      });
-
-      // ─── Nombre archivo y abrir ─────────────
-      const slug = proyecto.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 40);
-      const nombre = "Recibo_" + folioAsignado + "_" + (slug || "taller101") + ".pdf";
-      doc.autoPrint && doc.autoPrint();
-      const blobUrl = doc.output("bloburl");
-      const win = window.open(blobUrl, "_blank");
-      if (!win) {
-        doc.save(nombre);
-      }
-      // Reset campos pero mantener visible para confirmación
+      const html = '<!DOCTYPE html><html lang="es-MX"><head><meta charset="UTF-8"><title>Recibo ' + folioAsignado + ' - Taller 101</title>'
+        + '<link href="https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">'
+        + '<link href="https://fonts.googleapis.com/css2?family=Sansation:wght@300;400;700&display=swap" rel="stylesheet">'
+        + '<style>'
+        + '@page { size: letter; margin: 0; }'
+        + '* { box-sizing: border-box; margin: 0; padding: 0; }'
+        + 'html, body { font-family: "Raleway", Arial, sans-serif; color: #1A2530; background: #fff; }'
+        + '.num, .num * { font-family: "Sansation", "Raleway", sans-serif; font-feature-settings: "tnum" 1; }'
+        + '.sheet { width: 8.5in; min-height: 11in; padding: 0; margin: 0 auto; position: relative; background: #fff; }'
+        + '.hdr { background: #0C92F3; padding: 24px 50px; display: flex; justify-content: space-between; align-items: center; }'
+        + '.hdr .logo { height: 80px; width: auto; display: block; }'
+        + '.hdr .meta { color: #fff; text-align: right; }'
+        + '.hdr .meta .lbl { font-size: 11px; font-weight: 400; opacity: 0.85; letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 4px; }'
+        + '.hdr .meta .folio { font-size: 24px; font-weight: 700; line-height: 1; margin-bottom: 6px; }'
+        + '.hdr .meta .city { font-size: 9px; font-weight: 400; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.85; }'
+        + '.title { text-align: center; margin: 56px 0 8px 0; }'
+        + '.title h1 { font-family: "Raleway", sans-serif; font-size: 36px; font-weight: 700; letter-spacing: 0.18em; color: #1A2530; }'
+        + '.fields { padding: 36px 80px 0; }'
+        + '.field { text-align: center; margin-bottom: 28px; }'
+        + '.field .lbl { font-size: 10px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: #525E6B; margin-bottom: 8px; }'
+        + '.field .val { font-size: 18px; font-weight: 600; color: #1A2530; padding-bottom: 10px; border-bottom: 1px solid #D8DEE4; display: inline-block; min-width: 60%; }'
+        + '.monto-box { margin: 28px 80px 0; background: #E8F2FA; border-radius: 8px; padding: 22px 30px 26px; text-align: center; }'
+        + '.monto-box .lbl { font-size: 11px; font-weight: 600; letter-spacing: 0.25em; text-transform: uppercase; color: #525E6B; margin-bottom: 12px; }'
+        + '.monto-box .val { font-size: 38px; font-weight: 700; color: #0C92F3; line-height: 1; }'
+        + '.letras { text-align: center; margin: 18px 80px 0; font-size: 11px; font-style: italic; color: #525E6B; font-weight: 400; line-height: 1.5; }'
+        + '.firma { position: absolute; bottom: 1.6in; left: 0; right: 0; text-align: center; }'
+        + '.firma img { width: 130px; height: auto; margin-bottom: -2px; opacity: 0.92; }'
+        + '.firma .linea { width: 280px; height: 1px; background: #1A2530; margin: 0 auto 10px; }'
+        + '.firma .nombre { font-size: 13px; font-weight: 700; color: #1A2530; margin-bottom: 3px; }'
+        + '.firma .cargo { font-size: 9px; font-weight: 500; letter-spacing: 0.2em; text-transform: uppercase; color: #525E6B; }'
+        + '.foot { position: absolute; bottom: 0; left: 0; right: 0; background: #F4F6F8; border-top: 1px solid #D8DEE4; padding: 14px 50px; text-align: center; }'
+        + '.foot .contact { font-size: 10px; font-weight: 500; color: #525E6B; letter-spacing: 0.1em; margin-bottom: 4px; }'
+        + '.foot .doc { font-size: 8px; font-weight: 400; color: #888; letter-spacing: 0.05em; }'
+        + '.toolbar { position: fixed; top: 16px; right: 16px; display: flex; gap: 8px; z-index: 999; }'
+        + '.toolbar button { padding: 10px 18px; border: none; border-radius: 6px; font-family: "Raleway", sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }'
+        + '.toolbar .print { background: #0C92F3; color: #fff; }'
+        + '.toolbar .close { background: #fff; color: #525E6B; border: 1px solid #D8DEE4; }'
+        + '@media print { .toolbar { display: none !important; } html, body { width: 8.5in; } .sheet { box-shadow: none; margin: 0; } }'
+        + '</style></head><body>'
+        + '<div class="toolbar"><button class="print" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button><button class="close" onclick="window.close()">Cerrar</button></div>'
+        + '<div class="sheet">'
+        + '<div class="hdr">'
+        + '<img class="logo" src="' + LOGO_SRC + '"/>'
+        + '<div class="meta">'
+        + '<div class="lbl">Recibo</div>'
+        + '<div class="folio num">N° ' + folioAsignado + '</div>'
+        + '<div class="city">Ciudad de México</div>'
+        + '</div></div>'
+        + '<div class="title"><h1>RECIBO</h1></div>'
+        + '<div class="fields">'
+        + '<div class="field"><div class="lbl">Fecha</div><div class="val num">' + fechaHoy + '</div></div>'
+        + '<div class="field"><div class="lbl">Proyecto</div><div class="val">' + proy.replace(/</g,"&lt;") + '</div></div>'
+        + '</div>'
+        + '<div class="monto-box"><div class="lbl">Monto total</div><div class="val num">' + montoStr + '</div></div>'
+        + '<div class="letras">' + letras + '</div>'
+        + '<div class="firma"><img src="' + FIRMA_SRC + '"/><div class="linea"></div><div class="nombre">Miguel Ángel Balcázar</div><div class="cargo">Taller 101</div></div>'
+        + '<div class="foot"><div class="contact">www.taller101.com  ·  info@taller101.com  ·  +52 55-2951-7900</div><div class="doc">Documento generado el ' + fechaHoy + '</div></div>'
+        + '</div>'
+        + '<script>window.addEventListener("load",function(){setTimeout(function(){window.print();},500);});</script>'
+        + '</body></html>';
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
       setProyecto("");
       setMonto("");
     } catch (e) {
       console.error(e);
-      setError("Error al generar PDF: " + e.message);
+      setError("Error: " + e.message);
     }
     setGenerando(false);
   };
