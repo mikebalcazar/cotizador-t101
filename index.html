@@ -306,13 +306,8 @@ body::after {
   transition: border-color 0.2s ease;
 }
 @keyframes neonStrobe {
-  0%   { box-shadow: 0 0 0 rgba(198,255,61,0); }
-  10%  { box-shadow: 0 0 18px 4px rgba(255,255,255,1), 0 0 40px 12px rgba(198,255,61,1), inset 0 0 14px rgba(255,255,255,0.9); border-color:#fff; }
-  20%  { box-shadow: 0 0 2px rgba(198,255,61,0.3); }
-  35%  { box-shadow: 0 0 14px 3px rgba(255,255,255,0.95), 0 0 32px 10px rgba(198,255,61,0.95), inset 0 0 10px rgba(255,255,255,0.7); border-color:#fff; }
-  45%  { box-shadow: 0 0 2px rgba(198,255,61,0.3); }
-  60%  { box-shadow: 0 0 10px 2px rgba(255,255,255,0.85), 0 0 24px 6px rgba(198,255,61,0.85), inset 0 0 8px rgba(255,255,255,0.5); border-color:#fff; }
-  75%  { box-shadow: 0 0 4px rgba(198,255,61,0.5); }
+  0%   { box-shadow: 0 0 0 rgba(198,255,61,0); border-color:#C6FF3D; }
+  15%  { box-shadow: 0 0 22px 6px rgba(255,255,255,1), 0 0 50px 16px rgba(198,255,61,1), inset 0 0 16px rgba(255,255,255,0.95); border-color:#fff; }
   100% {
     box-shadow:
       0 0 4px rgba(198,255,61,0.9),
@@ -320,6 +315,7 @@ body::after {
       0 0 18px rgba(198,255,61,0.5),
       0 0 28px rgba(198,255,61,0.3),
       inset 0 0 6px rgba(198,255,61,0.5);
+    border-color:#C6FF3D;
   }
 }
 @keyframes neonPulse {
@@ -3488,7 +3484,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G58";
+const APP_VERSION = "G59";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
