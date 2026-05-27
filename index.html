@@ -3522,7 +3522,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G62";
+const APP_VERSION = "G63";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -9720,11 +9720,10 @@ function App() {
     delete ver.nombre; // el nombre vive en el cot, no en la versión
     delete ver.silent;
     if (silent) ver.autosave = true;
-    // Si es autosave Y la última versión también es autosave → la sobreescribimos
-    // (si la última es manual, dejamos la manual intacta y agregamos autosave nueva)
+    // Autosave SIEMPRE sobreescribe la última versión (sin spam de historial)
     const mergeVersiones = (prev) => {
       const arr = prev || [];
-      if (silent && arr[0] && arr[0].autosave) return [ver, ...arr.slice(1)];
+      if (silent && arr.length > 0) return [ver, ...arr.slice(1)];
       return [ver, ...arr];
     };
     const n = clientes.map(c => {
