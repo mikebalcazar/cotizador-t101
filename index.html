@@ -3522,7 +3522,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G61";
+const APP_VERSION = "G62";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -9719,6 +9719,14 @@ function App() {
     };
     delete ver.nombre; // el nombre vive en el cot, no en la versión
     delete ver.silent;
+    if (silent) ver.autosave = true;
+    // Si es autosave Y la última versión también es autosave → la sobreescribimos
+    // (si la última es manual, dejamos la manual intacta y agregamos autosave nueva)
+    const mergeVersiones = (prev) => {
+      const arr = prev || [];
+      if (silent && arr[0] && arr[0].autosave) return [ver, ...arr.slice(1)];
+      return [ver, ...arr];
+    };
     const n = clientes.map(c => {
       if (c.id !== nav.cliente.id) return c;
       return {
@@ -9731,7 +9739,7 @@ function App() {
             cotizaciones: p.cotizaciones.map(ct => ct.id === nav.cot.id ? {
               ...ct,
               nombre: nuevoNombre || ct.nombre,
-              versiones: [ver, ...(ct.versiones || [])]
+              versiones: mergeVersiones(ct.versiones)
             } : ct)
           };
           return {
