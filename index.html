@@ -3522,7 +3522,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G60";
+const APP_VERSION = "G61";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -4676,6 +4676,7 @@ const MODS = [{
 function Cotizador({
   cotIni,
   onGuardar,
+  setBackIntercept,
   onBack,
   onEditarCot,
   modoVer = false,
@@ -4843,7 +4844,39 @@ function Cotizador({
     setImgs([]);
     setFase("perfil");
   };
+  // Registrar intercept de "Volver" del overlay: si está editando, regresar a nav en vez de cerrar
+  useEffect(() => {
+    if (typeof setBackIntercept !== "function") return;
+    setBackIntercept(() => {
+      if (fase !== "nav") {
+        setFase("nav");
+        setEditIdx(null);
+        setComps([]);
+        setMod(null);
+        return true; // intercepted
+      }
+      return false; // dejar cerrar
+    });
+    return () => setBackIntercept && setBackIntercept(null);
+  }, [fase, setBackIntercept]);
+
   const editarMueble = i => {
+    // Auto-save al entrar a editar un mueble — no perder avances
+    try {
+      if (onGuardar && !readonly && !modoVer) {
+        onGuardar({
+          muebles,
+          totalFinal: tF,
+          usaFlete: usaF,
+          usaArq: usaA,
+          usaTDC: usaT,
+          descuento,
+          nombre: cotNombre,
+          fecha: new Date().toISOString(),
+          silent: true
+        });
+      }
+    } catch (e) { console.warn("Autosave skip:", e); }
     const m = muebles[i];
     setPerfil(JSON.parse(JSON.stringify(m.perfil || {
       int: {
@@ -8030,18 +8063,21 @@ function CotizadorOverlay({
   const [opening, setOpening] = useState(true);
   const [closing, setClosing] = useState(false);
   const [closed, setClosed] = useState(false);
+  const interceptRef = useRef(null);
   useEffect(() => {
-    // Force reflow then expand
     const t = setTimeout(() => setOpening(false), 20);
     return () => clearTimeout(t);
   }, []);
   const handleClose = () => {
+    // Si el hijo registró un interceptor y devuelve true, no cerrar el modal
+    if (interceptRef.current && interceptRef.current() === true) return;
     setClosing(true);
     setTimeout(() => {
       setClosed(true);
       onClose();
     }, 520);
   };
+  const setBackIntercept = (fn) => { interceptRef.current = fn; };
   if (closed) return null;
   const initial = originRect || {
     top: window.innerHeight / 2,
@@ -8147,7 +8183,8 @@ function CotizadorOverlay({
       margin: "0 auto"
     }
   }, React.cloneElement(children, {
-    onBack: handleClose
+    onBack: handleClose,
+    setBackIntercept: setBackIntercept
   }))))));
 }
 
@@ -9675,11 +9712,13 @@ function App() {
   }));
   const guardarCot = async data => {
     const nuevoNombre = data.nombre;
+    const silent = !!data.silent;
     const ver = {
       ...data,
       fecha: new Date().toISOString()
     };
     delete ver.nombre; // el nombre vive en el cot, no en la versión
+    delete ver.silent;
     const n = clientes.map(c => {
       if (c.id !== nav.cliente.id) return c;
       return {
@@ -9707,7 +9746,7 @@ function App() {
       };
     });
     const ok = await save(n);
-    if (ok) {
+    if (ok && !silent) {
       setExpandirEnInicio({
         cliente: nav.cliente.id,
         proyecto: nav.proyecto.id
