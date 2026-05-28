@@ -3522,7 +3522,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G63";
+const APP_VERSION = "G64";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -5921,8 +5921,11 @@ function Cotizador({
       const precioNeto = Math.ceil(precioBase * factorFlete / 10) * 10;
       const subtotalNeto = precioNeto * q;
       const imgTag = m.imagenes && m.imagenes[0] ? '<img src="' + m.imagenes[0] + '" style="width:36px;height:36px;object-fit:cover;border-radius:4px;margin-right:10px;flex-shrink:0;"/>' : "";
+      // PDF cliente: NO mostrar costos de componentes — strip "$X/ml" etc de extras
+      const stripCosto = s => String(s).replace(/\s*\$\s*[\d,]+(?:\.\d+)?\s*(?:\/ml|\/m|\/u|\/pza)?/g, '').trim();
       const compRows = m.componentes.map(c => {
-        const spec = [...(c.tags || []), ...(c.extras || [])].join(" · ");
+        const extrasLimpios = (c.extras || []).map(stripCosto).filter(Boolean);
+        const spec = [...(c.tags || []), ...extrasLimpios].join(" · ");
         return '<tr><td><div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#0099D6">' + c.modulo + '</div><div style="font-weight:600;font-size:12px">' + c.desc + '</div></td>' + '<td style="color:#666;font-size:11px">' + spec + '</td></tr>';
       }).join("");
       return '<div class="mb">' + '<div class="mbh">' + '<div style="display:flex;align-items:center;flex:1;min-width:0">' + imgTag + '<div style="font-size:14px;font-weight:700;flex:1;min-width:0">' + m.nombre + '</div>' + '</div>' + '<div style="display:flex;align-items:center;gap:14px;font-size:11px;color:#888;flex-shrink:0">' + '<span class="num">' + $(precioNeto) + '/u</span>' + '<span class="num">× ' + q + '</span>' + '<span class="num" style="font-size:14px;font-weight:700;color:#0099D6">' + $(subtotalNeto) + '</span>' + '</div>' + '</div>' + '<table><thead><tr><th style="width:40%">Componente</th><th style="width:60%">Descripción</th></tr></thead>' + '<tbody>' + compRows + '</tbody></table></div>';
