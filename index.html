@@ -3522,7 +3522,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G64";
+const APP_VERSION = "G65";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -4711,6 +4711,8 @@ function Cotizador({
   const [usaT, setUsaT] = useState((cotIni === null || cotIni === void 0 ? void 0 : cotIni.usaTDC) !== undefined ? cotIni.usaTDC : true);
   const [descuento, setDescuento] = useState((cotIni === null || cotIni === void 0 ? void 0 : cotIni.descuento) || 0); // %
   const [cotNombre, setCotNombre] = useState((cotIni === null || cotIni === void 0 ? void 0 : cotIni.nombre) || "Cotización");
+  const [materiales, setMateriales] = useState((cotIni === null || cotIni === void 0 ? void 0 : cotIni.materiales) || {});
+  const [materialesAbierto, setMaterialesAbierto] = useState(false);
   const cotFecha = cotIni !== null && cotIni !== void 0 && cotIni.fecha ? new Date(cotIni.fecha) : new Date();
   const piOpts = {
     fmt: [{
@@ -4899,6 +4901,24 @@ function Cotizador({
     setImgs(m.imagenes || []);
     setFase("perfil");
   };
+
+  const isFirstAutosave = useRef(true);
+  useEffect(() => {
+    if (isFirstAutosave.current) { isFirstAutosave.current = false; return; }
+    if (typeof onGuardar !== "function" || readonly || modoVer) return;
+    const handle = setTimeout(() => {
+      try {
+        onGuardar({
+          muebles, totalFinal: tF,
+          usaFlete: usaF, usaArq: usaA, usaTDC: usaT,
+          descuento, nombre: cotNombre, materiales,
+          fecha: new Date().toISOString(), silent: true
+        });
+      } catch (e) { console.warn("Autosave error:", e); }
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [muebles, materiales, descuento, usaF, usaA, usaT]);
+
   const agregar = (tipo, data) => {
     try {
       const pi = perfil.int,
@@ -5948,7 +5968,13 @@ function Cotizador({
     const fleteRow = "";
     // Descuento sí como línea visible (a petición del usuario)
     const descRow = descuento > 0 ? '<div class="rr" style="color:#c0392b"><span>Descuento (' + descuento + '%)</span><span class="num">− ' + $(descMontoPDF) + '</span></div>' : "";
-    const html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Cotizacion Taller 101</title>' + '<link href="https://fonts.googleapis.com/css2?family=Raleway:wght@400;500;600;700;900&display=swap" rel="stylesheet">' + '<link href="https://fonts.googleapis.com/css2?family=Sansation:wght@300;400;700&display=swap" rel="stylesheet">' + '<style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:"Raleway",Arial,sans-serif;padding:24px;max-width:800px;margin:0 auto;color:#2C2C2C;}' + '.num,.num *{font-family:"Sansation","Raleway",sans-serif;font-feature-settings:"tnum" 1;}' + '.hdr{background:#0099D6;color:#fff;padding:16px 20px;border-radius:6px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;}' + '.hdr h1{font-size:20px;font-weight:700;}' + '.mb{border:1px solid #D8D4CD;border-left:3px solid #0099D6;border-radius:4px;padding:14px;margin-bottom:12px;}' + '.mbh{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}' + 'table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px;}' + 'th{text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:#888;border-bottom:1px solid #EAE7E1;}' + 'td{padding:5px 6px;border-bottom:1px solid #F4F2EE;vertical-align:top;}' + '.res{margin-top:20px;border:1px solid #D8D4CD;border-radius:4px;padding:14px;}' + '.rr{display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid #EAE7E1;color:#555;}' + '.rs{display:flex;justify-content:space-between;font-weight:700;background:#F4F2EE;padding:8px 10px;border-radius:3px;border-left:2px solid #0099D6;margin:8px 0;font-size:14px;}' + '.rt{display:flex;justify-content:space-between;font-size:18px;font-weight:700;padding-top:12px;border-top:2px solid #2C2C2C;margin-top:6px;}' + '.footer{margin-top:28px;padding-top:16px;border-top:1px solid #EAE7E1;text-align:center;color:#888;font-size:12px;line-height:1.8;}' + '@media print{body{padding:0;}.no-print{display:none!important;}}</style></head><body>' + '<div class="hdr"><div style="display:flex;align-items:center;gap:14px"><img src="' + LOGO_SRC + '" style="width:44px;height:44px;object-fit:cover;border-radius:4px;flex-shrink:0;"/><div><div style="font-size:11px;opacity:0.75;margin-bottom:2px;text-transform:uppercase;letter-spacing:0.08em">Cotización</div><h1>' + titulo + '</h1></div></div>' + '<div style="text-align:right;font-size:12px"><div class="num">' + fd + '</div><div class="num" style="font-weight:700;font-size:14px">COT-' + serie + '</div><div class="num" style="font-size:10px;opacity:0.6;margin-top:2px">' + APP_VERSION + '</div></div></div>' + rows + '<div class="res"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#0099D6;margin-bottom:10px">Resumen</div>' + fleteRow + '<div class="rr"><span>Subtotal</span><span class="num">' + $(baseConFlete) + '</span></div>' + descRow + '<div class="rr"><span>IVA (' + (cfg("iva") * 100).toFixed(0) + '%)</span><span class="num">' + $(iva) + '</span></div>' + '<div class="rt"><span>Total</span><span class="num">' + $(totalConIva) + '</span></div></div>' + '<div class="footer">' + '<div style="font-weight:700;font-size:13px;color:#2C2C2C;margin-bottom:4px">Taller 101</div>' + '<div>info@taller101.com</div>' + '<div>+52 55-2951-7900</div>' + '</div>' + '<div class="no-print" style="text-align:center;margin:20px 0;display:flex;gap:12px;justify-content:center;">' + '<button onclick="window.print()" style="padding:10px 24px;background:#0099D6;color:#fff;border:none;border-radius:4px;font-size:14px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif;">🖨️ Imprimir / Guardar PDF</button>' + '<button onclick="window.close()" style="padding:10px 24px;background:#fff;color:#555;border:1px solid #D8D4CD;border-radius:4px;font-size:14px;cursor:pointer;font-family:Arial,sans-serif;">← Cerrar</button>' + '</div>' + '</body></html>';
+    const html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Cotizacion Taller 101</title>' + '<link href="https://fonts.googleapis.com/css2?family=Raleway:wght@400;500;600;700;900&display=swap" rel="stylesheet">' + '<link href="https://fonts.googleapis.com/css2?family=Sansation:wght@300;400;700&display=swap" rel="stylesheet">' + '<style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:"Raleway",Arial,sans-serif;padding:24px;max-width:800px;margin:0 auto;color:#2C2C2C;}' + '.num,.num *{font-family:"Sansation","Raleway",sans-serif;font-feature-settings:"tnum" 1;}' + '.hdr{background:#0099D6;color:#fff;padding:16px 20px;border-radius:6px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;}' + '.hdr h1{font-size:20px;font-weight:700;}' + '.mb{border:1px solid #D8D4CD;border-left:3px solid #0099D6;border-radius:4px;padding:14px;margin-bottom:12px;}' + '.mbh{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}' + 'table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px;}' + 'th{text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:#888;border-bottom:1px solid #EAE7E1;}' + 'td{padding:5px 6px;border-bottom:1px solid #F4F2EE;vertical-align:top;}' + '.res{margin-top:20px;border:1px solid #D8D4CD;border-radius:4px;padding:14px;}' + '.rr{display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid #EAE7E1;color:#555;}' + '.rs{display:flex;justify-content:space-between;font-weight:700;background:#F4F2EE;padding:8px 10px;border-radius:3px;border-left:2px solid #0099D6;margin:8px 0;font-size:14px;}' + '.rt{display:flex;justify-content:space-between;font-size:18px;font-weight:700;padding-top:12px;border-top:2px solid #2C2C2C;margin-top:6px;}' + '.footer{margin-top:28px;padding-top:16px;border-top:1px solid #EAE7E1;text-align:center;color:#888;font-size:12px;line-height:1.8;}' + '@media print{body{padding:0;}.no-print{display:none!important;}}</style></head><body>' + '<div class="hdr"><div style="display:flex;align-items:center;gap:14px"><img src="' + LOGO_SRC + '" style="width:44px;height:44px;object-fit:cover;border-radius:4px;flex-shrink:0;"/><div><div style="font-size:11px;opacity:0.75;margin-bottom:2px;text-transform:uppercase;letter-spacing:0.08em">Cotización</div><h1>' + titulo + '</h1></div></div>' + '<div style="text-align:right;font-size:12px"><div class="num">' + fd + '</div><div class="num" style="font-weight:700;font-size:14px">COT-' + serie + '</div><div class="num" style="font-size:10px;opacity:0.6;margin-top:2px">' + APP_VERSION + '</div></div></div>' + (function(){
+      var mLbl = {formaica:"Formaica",supSolida:"Superficie sólida",chapaPino:"Chapa pino",chapaEncino:"Chapa encino",chapaPremium:"Chapa premium",laca:"Laca / acabado",traceless:"Traceless"};
+      var ks = Object.keys(mLbl);
+      var entries = ks.filter(function(k){ return (materiales[k] || "").trim(); }).map(function(k){ return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #EAE7E1;font-size:11px"><span style="color:#666;font-weight:500;text-transform:uppercase;letter-spacing:0.06em;font-size:10px">' + mLbl[k] + '</span><span style="font-weight:600;color:#2C2C2C">' + (materiales[k] || "") + '</span></div>'; }).join("");
+      if (!entries) return "";
+      return '<div style="border:1px solid #D8D4CD;border-left:3px solid #C6FF3D;border-radius:4px;padding:14px;margin-bottom:16px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:#0099D6;margin-bottom:8px">Especificación de materiales</div>' + entries + '</div>';
+    })() + rows + '<div class="res"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#0099D6;margin-bottom:10px">Resumen</div>' + fleteRow + '<div class="rr"><span>Subtotal</span><span class="num">' + $(baseConFlete) + '</span></div>' + descRow + '<div class="rr"><span>IVA (' + (cfg("iva") * 100).toFixed(0) + '%)</span><span class="num">' + $(iva) + '</span></div>' + '<div class="rt"><span>Total</span><span class="num">' + $(totalConIva) + '</span></div></div>' + '<div class="footer">' + '<div style="font-weight:700;font-size:13px;color:#2C2C2C;margin-bottom:4px">Taller 101</div>' + '<div>info@taller101.com</div>' + '<div>+52 55-2951-7900</div>' + '</div>' + '<div class="no-print" style="text-align:center;margin:20px 0;display:flex;gap:12px;justify-content:center;">' + '<button onclick="window.print()" style="padding:10px 24px;background:#0099D6;color:#fff;border:none;border-radius:4px;font-size:14px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif;">🖨️ Imprimir / Guardar PDF</button>' + '<button onclick="window.close()" style="padding:10px 24px;background:#fff;color:#555;border:1px solid #D8D4CD;border-radius:4px;font-size:14px;cursor:pointer;font-family:Arial,sans-serif;">← Cerrar</button>' + '</div>' + '</body></html>';
     w.document.write(html);
     w.document.close();
   };
@@ -7996,6 +8022,7 @@ ${rowHTML}
       usaTDC: usaT,
       descuento,
       nombre: cotNombre,
+      materiales,
       fecha: new Date().toISOString()
     })
   }, "\uD83D\uDCBE Guardar cotizaci\xF3n"), /*#__PURE__*/React.createElement("div", {
@@ -9789,7 +9816,8 @@ function App() {
     nombre: nav.cot.nombre || "Cotización",
     fecha: ((_nav$cot$versiones6 = nav.cot.versiones) === null || _nav$cot$versiones6 === void 0 || (_nav$cot$versiones6 = _nav$cot$versiones6[nav.ver ? nav.vi : 0]) === null || _nav$cot$versiones6 === void 0 ? void 0 : _nav$cot$versiones6.fecha) || null,
     clienteNombre: ((_nav$cliente2 = nav.cliente) === null || _nav$cliente2 === void 0 ? void 0 : _nav$cliente2.nombre) || "",
-    proyectoNombre: ((_nav$proyecto2 = nav.proyecto) === null || _nav$proyecto2 === void 0 ? void 0 : _nav$proyecto2.nombre) || ""
+    proyectoNombre: ((_nav$proyecto2 = nav.proyecto) === null || _nav$proyecto2 === void 0 ? void 0 : _nav$proyecto2.nombre) || "",
+    materiales: (nav.cot.versiones && nav.cot.versiones[nav.ver ? nav.vi : 0] && nav.cot.versiones[nav.ver ? nav.vi : 0].materiales) || {}
   } : null;
   const fecha = new Date().toLocaleDateString("es-MX", {
     year: "numeric",
