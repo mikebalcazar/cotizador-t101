@@ -3522,7 +3522,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G66";
+const APP_VERSION = "G67";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -7021,7 +7021,15 @@ ${rowHTML}
         fontSize: 11,
         color: "#888"
       }
-    }, "pza", q !== 1 ? "s" : ""), /*#__PURE__*/React.createElement(BtnD, {
+    }, "pza", q !== 1 ? "s" : ""), !modoVer && !readonly && mi > 0 && /*#__PURE__*/React.createElement(BtnD, {
+      style: { fontSize: 14, padding: "0 4px", color: "#0099D6" },
+      title: "Subir",
+      onClick: function() { setMuebles(function(p){ var a = p.slice(); var t = a[mi-1]; a[mi-1] = a[mi]; a[mi] = t; return a; }); }
+    }, "\u25B2"), !modoVer && !readonly && mi < muebles.length - 1 && /*#__PURE__*/React.createElement(BtnD, {
+      style: { fontSize: 14, padding: "0 4px", color: "#0099D6" },
+      title: "Bajar",
+      onClick: function() { setMuebles(function(p){ var a = p.slice(); var t = a[mi+1]; a[mi+1] = a[mi]; a[mi] = t; return a; }); }
+    }, "\u25BC"), /*#__PURE__*/React.createElement(BtnD, {
       style: {
         color: "#0099D6",
         fontSize: 11,
