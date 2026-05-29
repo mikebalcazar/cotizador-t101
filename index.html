@@ -3522,7 +3522,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G65";
+const APP_VERSION = "G66";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -4511,25 +4511,38 @@ function ModCubierta({
   }, "+ Agregar"))));
 }
 function ModEspecial({
-  onAgregar
+  onAgregar,
+  especiales = []
 }) {
   const [s, setS] = useState({
     nombre: "",
     costo: 0,
     qty: 1
   });
+  const listId = "especiales-list-" + (especiales.length || 0);
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Nombre del concepto"), /*#__PURE__*/React.createElement("input", {
+    list: listId,
     style: {
       ...st.inp,
       marginBottom: 10
     },
     value: s.nombre,
-    onChange: e => setS(p => ({
-      ...p,
-      nombre: e.target.value
-    })),
+    onChange: e => {
+      const v = e.target.value;
+      const found = (especiales || []).find(x => (x.nombre || "").toLowerCase() === v.toLowerCase());
+      setS(p => ({
+        ...p,
+        nombre: v,
+        costo: found ? found.costo : p.costo
+      }));
+    },
     placeholder: "ej: Herraje especial, Vidrio..."
-  }), /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("datalist", { id: listId },
+    (especiales || []).map((it, i) => /*#__PURE__*/React.createElement("option", {
+      key: i,
+      value: it.nombre
+    }, "$" + (it.costo || 0).toLocaleString("es-MX")))
+  ), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
       gridTemplateColumns: "1fr 1fr",
@@ -4681,7 +4694,9 @@ function Cotizador({
   onEditarCot,
   modoVer = false,
   readonly = false,
-  readonlyInfo = null
+  readonlyInfo = null,
+  especiales = [],
+  onSaveEspecial
 }) {
   const [muebles, setMuebles] = useState((cotIni === null || cotIni === void 0 ? void 0 : cotIni.muebles) || []);
   const [fase, setFase] = useState("nav");
@@ -5119,6 +5134,12 @@ function Cotizador({
           qty: data.qty || 1,
           subtotal: (data.costo || 0) * (data.qty || 1)
         };
+        // Guardar este especial en config global para autocompletar después
+        try {
+          if (typeof onSaveEspecial === "function" && (data.nombre || "").trim() && (data.costo || 0) > 0) {
+            onSaveEspecial({ nombre: data.nombre, costo: data.costo });
+          }
+        } catch (e) { console.warn("Save especial err:", e); }
       }
       setComps(p => [...p, c]);
       setMod(null);
@@ -6613,7 +6634,8 @@ ${rowHTML}
     key: mod + "-" + modK,
     onAgregar: agregar,
     pfAcabado: perfil.fre.acabado,
-    pfChapa: perfil.fre.chapa
+    pfChapa: perfil.fre.chapa,
+    especiales: especiales
   }))), comps.length > 0 && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(CardTitle, null, "Componentes de ", nomMueble), comps.map((c, i) => /*#__PURE__*/React.createElement("div", {
     key: c.id || i,
     style: {
@@ -10067,6 +10089,18 @@ function App() {
     modoVer: nav.ver,
     readonly: nav.readonly,
     readonlyInfo: nav.readonlyInfo,
+    especiales: (appConfig && appConfig.especialesGuardados) || [],
+    onSaveEspecial: async ({ nombre, costo }) => {
+      const nm = (nombre || "").trim();
+      if (!nm) return;
+      const list = (appConfig && appConfig.especialesGuardados) || [];
+      const norm = nm.toLowerCase();
+      const idx = list.findIndex(e => (e.nombre || "").toLowerCase() === norm);
+      let newList;
+      if (idx >= 0) newList = list.map((e, i) => i === idx ? { nombre: nm, costo } : e);
+      else newList = [...list, { nombre: nm, costo }];
+      await saveConfig({ ...appConfig, especialesGuardados: newList });
+    },
     onEditarCot: () => setNav(v => ({
       ...v,
       ver: false
@@ -10077,6 +10111,18 @@ function App() {
     modoVer: nav.ver,
     readonly: nav.readonly,
     readonlyInfo: nav.readonlyInfo,
+    especiales: (appConfig && appConfig.especialesGuardados) || [],
+    onSaveEspecial: async ({ nombre, costo }) => {
+      const nm = (nombre || "").trim();
+      if (!nm) return;
+      const list = (appConfig && appConfig.especialesGuardados) || [];
+      const norm = nm.toLowerCase();
+      const idx = list.findIndex(e => (e.nombre || "").toLowerCase() === norm);
+      let newList;
+      if (idx >= 0) newList = list.map((e, i) => i === idx ? { nombre: nm, costo } : e);
+      else newList = [...list, { nombre: nm, costo }];
+      await saveConfig({ ...appConfig, especialesGuardados: newList });
+    },
     onBack: () => setNav({
       p: "inicio",
       cliente: null,
