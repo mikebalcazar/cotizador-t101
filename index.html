@@ -3522,7 +3522,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G67";
+const APP_VERSION = "G68";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -7868,7 +7868,15 @@ ${rowHTML}
         }
       }, $(c.ledSubtotal)), !modoVer && /*#__PURE__*/React.createElement("td", null)));
     }))))));
-  }), muebles.length > 0 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
+  }), !modoVer && !readonly && muebles.length > 0 && /*#__PURE__*/React.createElement(Btn, {
+    primary: true,
+    style: {
+      width: "100%",
+      marginTop: 8,
+      marginBottom: 12
+    },
+    onClick: nuevoMueble
+  }, "+ Agregar mueble"), muebles.length > 0 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
     style: {
       marginTop: 8
     }
