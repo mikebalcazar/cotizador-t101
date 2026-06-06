@@ -3522,7 +3522,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G71";
+const APP_VERSION = "G72";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -6950,16 +6950,27 @@ ${rowHTML}
       }
     }, /*#__PURE__*/React.createElement(BtnD, {
       style: {
-        fontSize: 16,
-        padding: "2px 4px",
+        fontSize: 30,
+        lineHeight: 1,
+        padding: "0 6px",
         color: "#0099D6",
-        flexShrink: 0
+        flexShrink: 0,
+        fontWeight: 300,
+        fontFamily: "Raleway, sans-serif",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 28,
+        height: 28,
+        transition: "transform 0.32s cubic-bezier(0.4, 0.0, 0.2, 1), color 0.25s ease",
+        transform: ab ? "rotate(45deg)" : "rotate(0deg)"
       },
+      title: ab ? "Cerrar" : "Ver detalle",
       onClick: () => setOpen(p => ({
         ...p,
         [mi]: !p[mi]
       }))
-    }, ab ? "▾" : "▸"), m.imagenes && m.imagenes[0] && /*#__PURE__*/React.createElement("img", {
+    }, "+"), m.imagenes && m.imagenes[0] && /*#__PURE__*/React.createElement("img", {
       src: m.imagenes[0],
       onClick: () => window.open(m.imagenes[0], "_blank"),
       style: {
