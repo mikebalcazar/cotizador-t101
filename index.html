@@ -3522,7 +3522,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G69";
+const APP_VERSION = "G70";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -4423,16 +4423,24 @@ function ModCubierta({
   const [s, setS] = useState({
     material: null,
     tipo: null,
+    fondo: null,
     nariz: false,
     qty: 1,
     step: "material"
   });
+  const NOM_CUB_FONDO = {
+    "30cm": "30cm",
+    "40cm": "40cm",
+    "50-60cm": "50-60cm",
+    "mas60cm": "+60cm"
+  };
   return /*#__PURE__*/React.createElement("div", null, s.step !== "material" && /*#__PURE__*/React.createElement(Done, {
     label: "Material",
     val: NOM_CUB_MATERIAL[s.material],
     onBack: () => setS({
       material: null,
       tipo: null,
+      fondo: null,
       nariz: false,
       qty: 1,
       step: "material"
@@ -4469,7 +4477,28 @@ function ModCubierta({
     onChange: v => setS(p => ({
       ...p,
       tipo: v,
-      step: v === "prefab" ? "qty" : "nariz"
+      step: "fondo"
+    }))
+  })), s.step !== "material" && s.step !== "tipo" && s.step !== "fondo" && /*#__PURE__*/React.createElement(Done, {
+    label: "Fondo",
+    val: NOM_CUB_FONDO[s.fondo] || "\u2014",
+    onBack: () => setS(p => ({
+      ...p,
+      fondo: null,
+      step: "fondo"
+    }))
+  }), s.step === "fondo" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Lbl, null, "Fondo"), /*#__PURE__*/React.createElement(Obs, {
+    options: [
+      { v: "30cm", l: "30cm" },
+      { v: "40cm", l: "40cm" },
+      { v: "50-60cm", l: "50-60cm" },
+      { v: "mas60cm", l: "+60cm" }
+    ],
+    value: s.fondo,
+    onChange: v => setS(p => ({
+      ...p,
+      fondo: v,
+      step: p.tipo === "prefab" ? "qty" : "nariz"
     }))
   })), s.step === "nariz" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Lbl, null, "Nariz"), /*#__PURE__*/React.createElement(Obs, {
     options: [{
@@ -5069,11 +5098,12 @@ function Cotizador({
         const pB = ((_PCUB$data$material = PCUB[data.material]) === null || _PCUB$data$material === void 0 ? void 0 : _PCUB$data$material[data.tipo]) || 0;
         const pN = data.nariz ? Math.ceil(pB * 0.15 / 10) * 10 : 0;
         const tot = pB + pN;
+        const fondoLbl = { "30cm": "Fondo 30cm", "40cm": "Fondo 40cm", "50-60cm": "Fondo 50-60cm", "mas60cm": "Fondo +60cm" };
         c = {
           ...c,
           modulo: "Cubierta",
           desc: NOM_CUB_MATERIAL[data.material] + " — " + NOM_CUB_TIPO[data.tipo],
-          tags: [],
+          tags: data.fondo ? [fondoLbl[data.fondo]] : [],
           extras: data.nariz ? ["Nariz $" + pN.toLocaleString("es-MX") + "/ml"] : [],
           unitario: tot,
           qty: data.qty || 1,
