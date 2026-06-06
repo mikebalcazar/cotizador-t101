@@ -3522,7 +3522,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G73";
+const APP_VERSION = "G74";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -6034,7 +6034,6 @@ function Cotizador({
     })() + rows + '<div class="res"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#0099D6;margin-bottom:10px">Resumen</div>' + fleteRow + '<div class="rr"><span>Subtotal</span><span class="num">' + $(baseConFlete) + '</span></div>' + descRow + '<div class="rr"><span>IVA (' + (cfg("iva") * 100).toFixed(0) + '%)</span><span class="num">' + $(iva) + '</span></div>' + '<div class="rt"><span>Total</span><span class="num">' + $(totalConIva) + '</span></div></div>' + '<div style="page-break-before:always;padding-top:8px"><div style="font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#0099D6;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #0099D6">Condiciones Generales de Venta y Pago</div>'
       + '<div style="font-size:10.5px;line-height:1.55;color:#2C2C2C;font-family:Raleway,sans-serif">'
       + termsBlock("Condiciones de presupuesto", "Estos precios tienen validez \u00fanicamente si se adquiere el total de la propuesta.")
-      + termsBlock("Condiciones de pago", "Personas f\u00edsicas, venta al p\u00fablico en general, y Programa WFH, son 100% pago anticipado. Cotizaci\u00f3n en d\u00f3lares americanos, pagaderos en d\u00f3lares o en moneda nacional al tipo de cambio del Diario Oficial de la Federaci\u00f3n vigente en la fecha de pago. Las condiciones de pago y d\u00edas de cr\u00e9dito para personas morales ser\u00e1n confirmadas y autorizadas por el \u00e1rea de Cr\u00e9dito de Taller 101 con base en la evaluaci\u00f3n de cr\u00e9dito realizada.")
       + termsBlock("Condiciones de pago autorizadas", "En caso de falta de pago puntual de cualquier cantidad que deba ser pagada por el comprador, de conformidad con la presente propuesta, el Comprador pagar\u00e1 al vendedor intereses moratorios sobre las cantidades vencidas y no pagadas a raz\u00f3n de tasa TIIE + 3 puntos (se entender\u00e1 como TIIE a la Tasa de Inter\u00e9s Interbancaria de Equilibrio) si la operaci\u00f3n es en moneda nacional, y tasa LIBOR a seis meses + 3 puntos (London Interbank Offered Rate) si la operaci\u00f3n es fijada en d\u00f3lares americanos.")
       + termsBlock("Para el ingreso del pedido es necesario", "Cotizaci\u00f3n firmada, Orden de Compra y/o Contratos firmados, pago de anticipo, formato de facturaci\u00f3n, constancia de situaci\u00f3n fiscal actualizada. Los tiempos de entrega mostrados en esta propuesta se considerar\u00e1n a partir de la recepci\u00f3n de estos documentos.")
       + termsBlock("Transferencia de la propiedad", "Para todos los efectos legales a los que pueda haber lugar, la propiedad de los bienes que son objeto de la presente cotizaci\u00f3n pasar\u00e1 al cliente en la fecha de instalaci\u00f3n de los mismos en el domicilio designado por el cliente o en la fecha de pago total del precio de compraventa, lo que ocurra despu\u00e9s.")
