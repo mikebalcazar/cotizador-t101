@@ -3522,7 +3522,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G78";
+const APP_VERSION = "G79";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -4965,6 +4965,13 @@ function Cotizador({
 
   const agregar = (tipo, data) => {
     try {
+      if (data && data._direct) {
+        const rest = Object.assign({}, data);
+        delete rest._direct;
+        setComps(p => [...p, Object.assign({ id: Date.now() + Math.random() }, rest)]);
+        setModK(k => k + 1);
+        return;
+      }
       const pi = perfil.int,
         pf = perfil.fre;
       // Entrepaños y postes: múltiples componentes, manejar separado
