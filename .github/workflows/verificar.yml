@@ -1,0 +1,153 @@
+# Los ojos del chat.
+#
+# El chat que desarrolla no alcanza producción: el proxy de salida le rechaza
+# *.workers.dev, *.netlify.app y api.cloudflare.com. El corredor de GitHub sí
+# tiene internet abierto. Así que la verificación se hace aquí y se escribe en
+# el log, con números; el chat lee el log por API y de ahí sale lo que se le
+# reporta a Mike.
+#
+# Dos maneras de usarlo:
+#
+#   1. Desde el workflow que publica, al final:
+#        verificar:
+#          needs: publicar
+#          uses: ./.github/workflows/verificar.yml
+#          with:
+#            url:   https://bitacora-obra.mike-929.workers.dev
+#            marca: quell101
+#            rutas: /api/salud
+#
+#   2. A mano, sin publicar nada, desde el chat:
+#        POST /repos/mikebalcazar/<REPO>/actions/workflows/verificar.yml/dispatches
+#        {"ref":"main","inputs":{"url":"https://…","marca":"quell101","rutas":"/api/salud"}}
+
+name: Verificar
+
+on:
+  workflow_call:
+    inputs:
+      url:
+        description: Dirección que tiene que responder
+        required: true
+        type: string
+      marca:
+        description: Texto que debe aparecer en la portada (vacío = no se revisa)
+        required: false
+        type: string
+        default: ''
+      rutas:
+        description: Rutas extra a comprobar, separadas por espacios
+        required: false
+        type: string
+        default: ''
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Dirección que tiene que responder
+        required: true
+        type: string
+      marca:
+        description: Texto que debe aparecer en la portada
+        required: false
+        type: string
+        default: ''
+      rutas:
+        description: Rutas extra, separadas por espacios
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verificar que responda
+        id: medir
+        env:
+          URL: ${{ inputs.url }}
+          MARCA: ${{ inputs.marca }}
+          RUTAS: ${{ inputs.rutas }}
+        run: |
+          set -u
+          # Todo lo que se imprima queda también en /tmp/salida.txt, para poder
+          # mandárselo al chat. El proxy de salida del chat rechaza el host al
+          # que redirige la descarga de logs de Actions
+          # (results-receiver.actions.githubusercontent.com), así que el log NO
+          # es un canal de vuelta: lo único que el chat ve de aquí es el
+          # comentario que deja el paso siguiente.
+          exec > >(tee /tmp/salida.txt) 2>&1
+          fallas=0
+
+          # Sin subshell a propósito: si esto viviera dentro de $( ), el
+          # contador se perdería al terminar y todo saldría verde siempre.
+          medir () {
+            local u="$1" dest="$2" datos codigo bytes segundos
+            datos=$(curl -sS -L --max-time 30 -o "$dest" \
+                    -w '%{http_code} %{size_download} %{time_total}' "$u" 2>/dev/null) \
+                    || datos="000 0 0"
+            codigo=${datos%% *}; datos=${datos#* }
+            bytes=${datos%% *}; segundos=${datos#* }
+            echo "  $u"
+            echo "    codigo=$codigo  bytes=$bytes  segundos=$segundos"
+            if [ "$codigo" != "200" ]; then
+              echo "    FALLA: se esperaba 200"
+              fallas=$((fallas + 1))
+            fi
+          }
+
+          echo "== Portada =="
+          medir "$URL" /tmp/portada
+
+          if [ -n "$MARCA" ]; then
+            if grep -qi -- "$MARCA" /tmp/portada 2>/dev/null; then
+              echo "    marca '$MARCA': presente"
+            else
+              echo "    FALLA: no aparece '$MARCA' en la respuesta"
+              echo "    primeros 400 caracteres de lo que llegó:"
+              head -c 400 /tmp/portada 2>/dev/null || true
+              echo
+              fallas=$((fallas + 1))
+            fi
+          fi
+
+          for r in $RUTAS; do
+            echo "== $r =="
+            medir "${URL%/}${r}" /tmp/ruta
+            echo "    respuesta: $(head -c 200 /tmp/ruta 2>/dev/null)"
+          done
+
+          echo
+          if [ "$fallas" -gt 0 ]; then
+            echo "RESULTADO: $fallas comprobación(es) fallaron"
+            echo "### Verificación: $fallas fallaron en $URL" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+            exit 1
+          fi
+          echo "RESULTADO: todo verde"
+          echo "### Verificación verde en $URL" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+
+      # Aquí está el canal de vuelta. api.github.com sí lo alcanza el chat.
+      # jq arma el JSON: la salida trae comillas, saltos y acentos, y pegarla
+      # a mano en el cuerpo lo rompería.
+      - name: Dejar el resultado en el commit
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -u
+          [ -f /tmp/salida.txt ] || echo "No hubo salida que reportar." > /tmp/salida.txt
+          jq -Rs '{body: ("**Verificacion**\n\n```\n" + .[-60000:] + "\n```")}' \
+            /tmp/salida.txt > /tmp/comentario.json
+          # Si el token de Actions viene de solo lectura, esto responde 403 y
+          # el chat se queda sin números: se arregla una vez en
+          # Settings -> Actions -> General -> Workflow permissions -> Read and
+          # write. No se pide con un bloque permissions: dentro de este archivo,
+          # porque un workflow llamado no puede pedir mas de lo que trae el que
+          # lo llama y el run se cae antes de arrancar (pasó, runs 37 y 38).
+          curl -sS -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/commits/$SHA/comments" \
+            -d @/tmp/comentario.json -o /tmp/respuesta.json -w 'comentario: %{http_code}\n'
+          head -c 300 /tmp/respuesta.json || true
