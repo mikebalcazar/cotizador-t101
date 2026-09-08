@@ -1,0 +1,25 @@
+# Verifica lo publicado cuando quien publica no es GitHub.
+#
+# Netlify construye por su cuenta al recibir el push, así que aquí no hay un
+# trabajo que esperar: se espera un rato y luego se mide. Si el sitio tarda más
+# de lo normal, el run sale rojo y hay que volver a dispararlo a mano.
+
+name: Verificar lo publicado
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  esperar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Darle tiempo a la construcción de afuera
+        run: sleep 120
+
+  verificar:
+    needs: esperar
+    uses: ./.github/workflows/verificar.yml
+    with:
+      url: https://cotizador-t101.netlify.app
