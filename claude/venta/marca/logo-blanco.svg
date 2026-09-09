@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 370 90" width="370" height="90">
+  <style>
+    .word { font-family: Sansation, 'Arial Black', sans-serif; font-weight: 700; }
+  </style>
+  <!-- fondo oscuro de muestra — eliminar para usar sobre fondo propio -->
+  <rect width="370" height="90" fill="#122733" rx="6"/>
+  <!-- "quote" en blanco -->
+  <text x="10" y="68" class="word" font-size="68" fill="white" letter-spacing="-2">quote</text>
+  <!-- raya separadora blanca -->
+  <rect x="210" y="26" width="18" height="5" fill="white" rx="2"/>
+  <!-- círculo blanco -->
+  <circle cx="330" cy="44" r="40" fill="white"/>
+  <!-- "101" en azul dentro del círculo -->
+  <text x="330" y="56" class="word" font-size="28" fill="#0080C1" text-anchor="middle">101</text>
+</svg>

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 370 90" width="370" height="90">
+  <style>
+    .word { font-family: Sansation, 'Arial Black', sans-serif; font-weight: 700; }
+  </style>
+  <!-- "quote" en azul de marca -->
+  <text x="0" y="68" class="word" font-size="68" fill="#0080C1" letter-spacing="-2">quote</text>
+  <!-- raya separadora -->
+  <rect x="200" y="26" width="18" height="5" fill="#0080C1" rx="2"/>
+  <!-- círculo de marca -->
+  <circle cx="320" cy="44" r="40" fill="#0080C1"/>
+  <!-- "101" en blanco dentro del círculo -->
+  <text x="320" y="56" class="word" font-size="28" fill="white" text-anchor="middle">101</text>
+</svg>

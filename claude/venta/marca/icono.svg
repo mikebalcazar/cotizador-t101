@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <style>
+    .num { font-family: Sansation, 'Arial Black', sans-serif; font-weight: 700; }
+  </style>
+  <!-- fondo redondeado azul -->
+  <rect width="120" height="120" rx="24" fill="#0080C1"/>
+  <!-- "101" en blanco centrado -->
+  <text x="60" y="76" class="num" font-size="42" fill="white" text-anchor="middle">101</text>
+</svg>
