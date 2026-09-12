@@ -1,0 +1,51 @@
+# quote101 como Worker de Cloudflare. Decisiones D1 y D2 del arranque.
+#
+# Dos Workers con el mismo código: `quote101-staging`, que habla con la API de
+# staging, y `quote101`, que habla con la de producción. El sitio de Netlify
+# (`cotizador-t101.netlify.app`) **sigue vivo al lado** hasta el corte (D3):
+# esto no apaga nada.
+#
+# Las llaves no están aquí ni pueden estarlo: el despliegue lo hace el corredor
+# con los secretos de Actions del repositorio.
+
+name = "quote101"
+main = "worker/index.js"
+compatibility_date = "2026-09-01"
+
+# Lo que se publica lo arma `scripts/armar.mjs` con una lista explícita:
+# `index.html`, `fonts/` y la página del 404. **No es la raíz del
+# repositorio.** El 12-sep, servir la raíz en Netlify dejó las notas de trabajo
+# del chat en internet; aquí no se hereda, se elige.
+#
+# `run_worker_first` deja que `/s101/*` llegue al Worker antes de que los
+# archivos contesten.
+[assets]
+directory = "./publicar"
+binding = "ASSETS"
+run_worker_first = ["/s101/*"]
+
+# La API, desde el mismo origen. No hay URL: es un *service binding*.
+[[services]]
+binding = "API"
+service = "suite101-api"
+
+[observability]
+enabled = true
+
+# ─────────────── staging ───────────────
+# Todo se prueba aquí primero (D5), contra la org `demo` (D6).
+
+[env.staging]
+name = "quote101-staging"
+
+[env.staging.assets]
+directory = "./publicar"
+binding = "ASSETS"
+run_worker_first = ["/s101/*"]
+
+[[env.staging.services]]
+binding = "API"
+service = "suite101-api-staging"
+
+[env.staging.observability]
+enabled = true
