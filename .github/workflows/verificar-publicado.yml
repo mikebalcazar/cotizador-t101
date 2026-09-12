@@ -9,6 +9,19 @@ name: Verificar lo publicado
 on:
   push:
     branches: [main]
+    # Netlify construye cuando cambia lo que sirve. Un archivo de texto no
+    # cambia nada de lo publicado, y este flujo se pasa dos minutos durmiendo
+    # antes de medir: dispararlo por una nota es gasto a cambio de nada.
+    #
+    # Se midió el 12-sep: un commit que sólo tocaba `claude/` disparó este
+    # flujo. Es el mismo defecto que ya se cerró en bitacora-obra, taller101 y
+    # suite101-api; este repositorio se había quedado fuera.
+    #
+    # `**.md` en vez de nombrar archivos uno por uno: en los otros repos la
+    # lista enumeraba y por ahí se colaba cada archivo nuevo.
+    paths-ignore:
+      - 'claude/**'
+      - '**.md'
   workflow_dispatch:
 
 jobs:
