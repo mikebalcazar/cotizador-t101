@@ -1,0 +1,16 @@
+{
+  "name": "quote101",
+  "private": true,
+  "type": "module",
+  "description": "quote101 — cotizaciones de mueble, como Worker de Cloudflare",
+  "scripts": {
+    "armar": "node scripts/armar.mjs",
+    "banco": "npm run armar && node pruebas/banco.mjs",
+    "prueba": "npm run armar && node --test pruebas/",
+    "publicar": "npm run armar && wrangler deploy"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.0",
+    "wrangler": "^4.0.0"
+  }
+}
