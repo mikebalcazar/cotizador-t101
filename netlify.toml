@@ -1,0 +1,33 @@
+# Netlify sirve la raíz de este repositorio tal cual, sin construir nada.
+#
+# Eso significa que **todo archivo del repositorio queda publicado en
+# internet**, no sólo `index.html`. Se midió el 12-sep-2026 y estaba servido:
+#
+#   /OPERAR.md                       200
+#   /CLAUDE.md                       200
+#   /README.md                       200
+#   /claude/continuar.md             200   ← notas de trabajo del chat
+#   /claude/arranque-coordinador.md  200   ← notas de trabajo del chat
+#
+# `claude/` es donde los chats dejan sus notas: qué se midió, qué está roto y
+# qué falta por cerrar. Eso no es contenido publicado, es el cuaderno de
+# trabajo, y publicarlo le entrega a cualquiera el mapa de lo que todavía no
+# se ha arreglado. Pasó exactamente eso: al subir la fase 0 de la migración,
+# `claude/continuar.md` —que describe un hueco abierto— quedó en una dirección
+# pública durante veinte minutos.
+#
+# Este archivo cierra `/claude/*`. No cambia dónde publica Netlify ni qué
+# construye: sólo agrega la regla.
+#
+# `force = true` es imprescindible: sin él, Netlify sirve el archivo de verdad
+# cuando existe y la regla no se aplica nunca. Es justo el caso de aquí.
+#
+# El `.md` de la raíz —OPERAR, CLAUDE, README— se queda servido a propósito:
+# el contrato de cómo se opera ya es público en el repositorio `descargas`, y
+# no dice nada de nadie.
+
+[[redirects]]
+  from = "/claude/*"
+  to = "/no-publicado.html"
+  status = 404
+  force = true
