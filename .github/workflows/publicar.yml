@@ -24,6 +24,15 @@ on:
       - '**.md'
   workflow_dispatch:
 
+defaults:
+  run:
+    # `node ... | tee` devuelve el código de `tee`, que siempre es 0. Sin
+    # pipefail, una medición en ROJO pasa por verde — y eso fue exactamente lo
+    # que pasó en el run 1: staging midió cuatro fallas y el paso salió bien.
+    # Es el mismo defecto que se le corrigió a `revisar.sh` de taller101 unas
+    # horas antes, en otra forma.
+    shell: bash -euo pipefail {0}
+
 concurrency:
   group: publicar-quote101
   cancel-in-progress: false
@@ -96,6 +105,8 @@ jobs:
       - name: Publicar en staging
         run: npx wrangler deploy --env staging 2>&1 | tee -a /tmp/salida.txt
 
+      # Si staging mide rojo, aquí se acaba: a producción sólo llega lo que ya
+      # salió verde en staging (D5). Con `pipefail` esto por fin es cierto.
       - name: Medir staging
         id: medir_staging
         run: node scripts/medir.mjs https://quote101-staging.mike-929.workers.dev staging 2>&1 | tee -a /tmp/salida.txt
@@ -106,7 +117,7 @@ jobs:
 
       - name: Medir producción
         id: medir_prod
-        continue-on-error: true
+        continue-on-error: true   # para que el comentario del commit se escriba igual
         run: node scripts/medir.mjs https://quote101.mike-929.workers.dev produccion 2>&1 | tee -a /tmp/salida.txt
 
       # El canal de vuelta (OPERAR §6): el chat no alcanza el log de Actions,

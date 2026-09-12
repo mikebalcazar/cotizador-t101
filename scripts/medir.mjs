@@ -40,18 +40,33 @@ const ok = (t) => console.log(`  ok    ${t}`);
 const mal = (t) => { console.log(`  FALLA ${t}`); fallas += 1; };
 const rev = (cond, t) => (cond ? ok(t) : mal(t));
 
-/** Reintenta: un Worker recién publicado tarda unos segundos en servir. */
-async function traer(ruta, intentos = 12) {
-  let ultimo;
+/** Trae una ruta, reintentando hasta que conteste lo que se espera.
+ *
+ *  **Se reintenta también el 404**, no sólo el 500. Un Worker recién
+ *  publicado contesta 404 unos segundos antes de que el borde lo suelte, y la
+ *  primera versión de este guion se lo tragó como falla: el run 1 midió cuatro
+ *  fallas contra un Worker que, comprobado medio minuto después, servía
+ *  perfectamente los 574 635 bytes. dash101 ya había pagado esa lección en
+ *  septiembre y aquí no se aplicó.
+ *
+ *  Para las rutas que SÍ deben dar 404 se pasa `esperado: 404`, y entonces
+ *  contestan a la primera. */
+async function traer(ruta, { esperado = 200, intentos = 18, espera = 5000 } = {}) {
+  let ultimo = 'sin respuesta';
   for (let i = 1; i <= intentos; i++) {
     try {
       const r = await fetch(BASE + ruta, { redirect: 'manual' });
-      if (r.status < 500) return r;
+      if (r.status === esperado) return r;
       ultimo = `${r.status}`;
+      // Un código que no es el esperado y tampoco es «todavía no está» (404 o
+      // 5xx) no va a cambiar por esperar: se devuelve y que falle la
+      // comprobación, con su número.
+      if (r.status !== 404 && r.status < 500) return r;
     } catch (e) { ultimo = e.cause?.code || e.message; }
-    await new Promise((s) => setTimeout(s, 5000));
+    if (i < intentos) await new Promise((s) => setTimeout(s, espera));
   }
-  throw new Error(`${ruta} no contestó tras ${intentos} intentos (${ultimo})`);
+  console.log(`  (${ruta}: ${intentos} intentos y seguía en ${ultimo})`);
+  return new Response(null, { status: 599 });
 }
 
 console.log(`Midiendo ${BASE}  (${ENTORNO})`);
@@ -85,11 +100,11 @@ if (cuerpo?.ok) {
 }
 
 // 4 · lo que NO se debe desviar ni publicar
-const casi = await traer('/s101cosas');
+const casi = await traer('/s101cosas', { esperado: 404 });
 rev(casi.status === 404, `/s101cosas no se desvía a la API (${casi.status})`);
-const notas = await traer('/claude/continuar.md');
+const notas = await traer('/claude/continuar.md', { esperado: 404 });
 rev(notas.status === 404, `las notas de trabajo no están publicadas (${notas.status})`);
-const operar = await traer('/OPERAR.md');
+const operar = await traer('/OPERAR.md', { esperado: 404 });
 rev(operar.status === 404, `ni el contrato: sólo se publica lo de la lista (${operar.status})`);
 
 console.log();
