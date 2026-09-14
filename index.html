@@ -789,10 +789,12 @@ function(a,b,c){if(!Vd(b))throw Error(m(200));return Wd(null,a,b,!1,c)};Q.unmoun
   /* sin halo: la sombra sigue el contorno del logotipo y del texto, corta y
      suave, sólo para despegarlos de la hoja (Mike, 14-sep: el halo parecía una mancha) */
   #splash101 .marca{position:relative;text-align:center;padding:36px 64px}
-  #splash101 .marca svg{display:block;margin:0 auto 12px;height:44px;
-    filter:drop-shadow(0 1px 1px rgba(0,0,0,.75)) drop-shadow(0 0 5px rgba(0,0,0,.45)) drop-shadow(0 8px 10px rgba(0,0,0,.3))}
-  #splash101 .sub,#splash101 .estado{text-shadow:0 1px 1px rgba(0,0,0,.8),0 0 6px rgba(0,0,0,.6),0 0 14px rgba(0,0,0,.35)}
-  #splash101 .estado i{box-shadow:0 1px 3px rgba(0,0,0,.6)}
+  /* la marca en el azul de la casa: contrasta con la hoja blanca (Mike, 14-sep) */
+  #splash101 .marca{color:#0080C1}
+  #splash101 .marca svg{display:block;margin:0 auto 12px;height:44px;fill:#0080C1;
+    filter:drop-shadow(0 1px 1px rgba(0,0,0,.25)) drop-shadow(0 6px 8px rgba(0,40,70,.22))}
+  #splash101 .sub,#splash101 .estado{text-shadow:0 1px 1px rgba(255,255,255,.7),0 3px 6px rgba(0,40,70,.18)}
+  #splash101 .marca .estado i{background:#0080C1;box-shadow:0 1px 2px rgba(0,40,70,.3)}
   #splash101 .sub{font-size:12px;letter-spacing:.18em;text-transform:uppercase;opacity:.8}
   #splash101 .estado{margin-top:14px;font-size:13px;min-height:18px;opacity:.95}
   #splash101 .estado i{display:inline-block;width:5px;height:5px;border-radius:50%;background:#fff;margin:0 2px;
