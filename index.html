@@ -676,7 +676,161 @@ function(a,b,c){if(!Vd(b))throw Error(m(200));return Wd(null,a,b,!1,c)};Q.unmoun
 </script>
 </head>
 <body style="margin:0;color:#2C2C2C;">
-<div id="root"><div style="display:flex;align-items:center;justify-content:center;min-height:100vh;color:#fff;font-family:Cifras,Raleway,sans-serif;font-size:14px;text-shadow:0 1px 4px rgba(0,0,0,0.3)">Cargando quote101...</div></div>
+<div id="root"></div>
+
+<!-- ── Pantalla de arranque ─────────────────────────────────────────────────
+  La pidió Mike el 14-sep-2026: «un splash bonito tipo los de draw101 y
+  nest101 para cuando está cargando». Misma idea que draw101/electron/
+  cargando.html: una hoja —aquí una cotización— flotando en perspectiva que se
+  va trazando sola mientras la app trae los datos, y la marca encima.
+
+  Dos redes de seguridad que el letrero anterior no tenía:
+  · Trae SU PROPIO fondo oscuro. El letrero viejo era texto blanco sin fondo:
+    si la app no arrancaba, la pantalla se veía en blanco (pasó el 14-sep en
+    un iPhone). Ahora, aunque no corra ni una línea de JavaScript, se ve la
+    marca y «Cargando».
+  · Si a los 8 s no ha cargado lo dice, y a los 20 s ofrece «Reintentar».
+
+  La app la quita llamando window.splash101.ocultar() cuando ya trajo los
+  datos (o cuando falló al traerlos: en ambos casos hay pantalla que enseñar).
+  Mientras tanto puede cambiar el renglón de estado con splash101.estado("…").
+──────────────────────────────────────────────────────────────────────────── -->
+<div id="splash101" role="status" aria-live="polite">
+  <div class="escena"><div class="hoja">
+    <svg viewBox="0 0 420 560" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <rect class="papel" x="0" y="0" width="420" height="560" rx="4"/>
+      <!-- encabezado: logo y título -->
+      <rect class="bloque traza t1" x="34" y="34" width="46" height="46" rx="6"/>
+      <path class="grueso traza t1" d="M96 50h120"/>
+      <path class="fino traza t1" d="M96 68h72"/>
+      <path class="fino traza t1" d="M300 44h86M300 60h86M300 76h60"/>
+      <!-- cliente y proyecto -->
+      <path class="fino traza t2" d="M34 118h150M34 136h110"/>
+      <path class="fino traza t2" d="M250 118h136M250 136h100"/>
+      <!-- tabla: cabecera -->
+      <path class="grueso traza t2" d="M34 172h352"/>
+      <path class="fino traza t2" d="M34 190h60M150 190h90M300 190h40M352 190h34"/>
+      <path class="grueso traza t2" d="M34 204h352"/>
+      <!-- renglones: muebles -->
+      <g class="traza t3">
+        <path class="fino" d="M34 234h120M150 234h110M300 234h30M340 234h46"/>
+        <path class="fino" d="M34 264h140M150 264h96M300 264h30M340 264h46"/>
+        <path class="fino" d="M34 294h104M150 294h120M300 294h30M340 294h46"/>
+        <path class="fino" d="M34 324h132M150 324h84M300 324h30M340 324h46"/>
+        <path class="fino" d="M34 354h116M150 354h104M300 354h30M340 354h46"/>
+        <path class="tenue" d="M34 249h352M34 279h352M34 309h352M34 339h352"/>
+      </g>
+      <!-- totales -->
+      <g class="traza t4">
+        <path class="grueso" d="M34 388h352"/>
+        <path class="fino" d="M250 410h60M340 410h46M250 430h60M340 430h46"/>
+        <rect class="total" x="240" y="448" width="146" height="30" rx="4"/>
+        <path class="finoclaro" d="M252 463h48M330 463h44"/>
+      </g>
+      <!-- firma -->
+      <g class="aparece">
+        <path class="fino" d="M34 520h130"/>
+        <path class="tenue" d="M34 534h90"/>
+        <text class="num" x="386" y="540" text-anchor="end">COT-0000 · 1/1</text>
+      </g>
+    </svg>
+  </div></div>
+
+  <div class="marca">
+    <svg viewBox="0 0 310 78" height="44" aria-label="quote101"><style>text{font-family:Sansation,"Arial Black",sans-serif;font-weight:700}</style><text x="0" y="62" font-size="62" fill="white" letter-spacing="-2">quote</text><rect x="197" y="23" width="16" height="5" fill="white" rx="2"/><circle cx="274" cy="40" r="36" fill="white"/><text x="274" y="52" font-size="26" fill="#0080C1" text-anchor="middle">101</text></svg>
+    <div class="sub">Cotizaciones · Taller 101</div>
+    <div class="estado" id="splash101-estado">Cargando aplicación <i></i><i></i><i></i></div>
+    <button type="button" id="splash101-reintentar" hidden onclick="location.reload()">Reintentar</button>
+  </div>
+</div>
+<style id="splash101-estilo">
+  #splash101{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;overflow:hidden;
+    /* fondo propio: la misma aurora de la app, pero aquí, para que nunca se vea en blanco */
+    background-color:#0a1828;
+    background-image:radial-gradient(circle at 18% 22%,rgba(0,153,214,.85) 0%,transparent 38%),
+      radial-gradient(circle at 78% 18%,rgba(80,130,220,.7) 0%,transparent 40%),
+      radial-gradient(circle at 88% 75%,rgba(0,200,230,.75) 0%,transparent 42%),
+      radial-gradient(circle at 22% 85%,rgba(100,90,200,.6) 0%,transparent 45%),
+      linear-gradient(135deg,#0a2540 0%,#15406b 50%,#0a3050 100%);
+    font-family:Raleway,system-ui,sans-serif;color:#fff;-webkit-user-select:none;user-select:none;
+    transition:opacity .35s ease-out}
+  #splash101.fuera{opacity:0;pointer-events:none}
+  /* la hoja flotando */
+  #splash101 .escena{position:absolute;inset:0;perspective:1100px;perspective-origin:50% 40%}
+  #splash101 .hoja{position:absolute;left:50%;top:50%;width:420px;height:560px;margin:-300px 0 0 -210px;
+    transform:rotateX(50deg) rotateZ(-10deg) translateY(40px) scale(.72);transform-style:preserve-3d;
+    filter:drop-shadow(0 30px 26px rgba(0,0,0,.45)) drop-shadow(0 4px 8px rgba(0,0,0,.25));
+    animation:splash101-flotar 9s ease-in-out infinite}
+  @keyframes splash101-flotar{0%,100%{transform:rotateX(50deg) rotateZ(-10deg) translateY(40px) scale(.72)}
+    50%{transform:rotateX(48deg) rotateZ(-8deg) translateY(26px) scale(.72)}}
+  @media (max-width:520px){#splash101 .hoja{transform:rotateX(50deg) rotateZ(-10deg) translateY(60px) scale(.52)}
+    @keyframes splash101-flotar{0%,100%{transform:rotateX(50deg) rotateZ(-10deg) translateY(60px) scale(.52)}
+      50%{transform:rotateX(48deg) rotateZ(-8deg) translateY(48px) scale(.52)}}}
+  #splash101 .hoja svg{width:100%;height:100%;overflow:visible}
+  #splash101 .papel{fill:rgba(255,255,255,.9);stroke:rgba(255,255,255,.6);stroke-width:1}
+  #splash101 .bloque{fill:rgba(0,128,193,.12);stroke:#0080C1;stroke-width:1.6}
+  #splash101 .grueso{fill:none;stroke:#0080C1;stroke-width:2.4;stroke-linecap:round}
+  #splash101 .fino{fill:none;stroke:#0080C1;stroke-width:1.5;stroke-linecap:round;opacity:.85}
+  #splash101 .tenue{fill:none;stroke:#0080C1;stroke-width:.7;opacity:.3}
+  #splash101 .total{fill:#0080C1;stroke:none}
+  #splash101 .finoclaro{fill:none;stroke:#fff;stroke-width:1.6;stroke-linecap:round}
+  #splash101 .num{font:9px Cifras,Raleway,sans-serif;fill:#0080C1;opacity:.8}
+  /* se trazan solos, como si la app estuviera escribiendo la cotización */
+  #splash101 .traza{stroke-dasharray:1200;stroke-dashoffset:1200;animation:splash101-trazar 1.1s ease-out forwards}
+  #splash101 .traza path,#splash101 .traza rect{stroke-dasharray:1200;stroke-dashoffset:1200;animation:splash101-trazar 1.1s ease-out forwards}
+  #splash101 .t1,#splash101 .t1 *{animation-delay:.05s}
+  #splash101 .t2,#splash101 .t2 *{animation-delay:.3s}
+  #splash101 .t3,#splash101 .t3 *{animation-delay:.55s}
+  #splash101 .t4,#splash101 .t4 *{animation-delay:.8s}
+  @keyframes splash101-trazar{to{stroke-dashoffset:0}}
+  #splash101 .aparece{opacity:0;animation:splash101-aparecer .5s ease-out 1s forwards}
+  @keyframes splash101-aparecer{to{opacity:1}}
+  /* la marca, en medio, con un halo para que se lea sobre la hoja */
+  #splash101 .marca{position:relative;text-align:center;padding:36px 64px;border-radius:50%;
+    background:radial-gradient(closest-side,rgba(10,37,64,.92) 40%,rgba(10,37,64,0) 100%)}
+  #splash101 .marca svg{display:block;margin:0 auto 12px;height:44px}
+  #splash101 .sub{font-size:12px;letter-spacing:.18em;text-transform:uppercase;opacity:.8}
+  #splash101 .estado{margin-top:14px;font-size:13px;min-height:18px;opacity:.95}
+  #splash101 .estado i{display:inline-block;width:5px;height:5px;border-radius:50%;background:#fff;margin:0 2px;
+    animation:splash101-latir 1.2s ease-in-out infinite}
+  #splash101 .estado i:nth-child(2){animation-delay:.2s}
+  #splash101 .estado i:nth-child(3){animation-delay:.4s}
+  @keyframes splash101-latir{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}
+  #splash101 button{margin-top:14px;padding:8px 22px;border:1px solid rgba(255,255,255,.6);border-radius:20px;
+    background:rgba(255,255,255,.12);color:#fff;font:600 13px Raleway,system-ui,sans-serif;cursor:pointer}
+  #splash101 button:hover{background:rgba(255,255,255,.22)}
+  @media (prefers-reduced-motion:reduce){#splash101 .hoja,#splash101 .traza,#splash101 .traza *,#splash101 .estado i{animation:none}
+    #splash101 .traza,#splash101 .traza *{stroke-dashoffset:0}#splash101 .aparece{opacity:1;animation:none}}
+</style>
+<script>
+  // La app manda avances con splash101.estado("…") y la quita con splash101.ocultar().
+  (function () {
+    var caja = document.getElementById("splash101");
+    var linea = document.getElementById("splash101-estado");
+    var boton = document.getElementById("splash101-reintentar");
+    var desde = Date.now();
+    var fuera = false;
+    function estado(t) {
+      if (fuera) return;
+      linea.innerHTML = "";
+      linea.appendChild(document.createTextNode(t + " "));
+      for (var i = 0; i < 3; i++) linea.appendChild(document.createElement("i"));
+    }
+    function ocultar() {
+      if (fuera) return;
+      fuera = true;
+      // que la hoja alcance a trazarse: mínimo 1,4 s en pantalla
+      var falta = Math.max(0, 1400 - (Date.now() - desde));
+      setTimeout(function () {
+        caja.classList.add("fuera");
+        setTimeout(function () { if (caja.parentNode) caja.parentNode.removeChild(caja); }, 400);
+      }, falta);
+    }
+    setTimeout(function () { if (!fuera) estado("Sigue cargando… revisa tu conexión"); }, 8000);
+    setTimeout(function () { if (!fuera) { estado("No se pudo cargar"); boton.hidden = false; } }, 20000);
+    window.splash101 = { estado: estado, ocultar: ocultar };
+  })();
+</script>
 
 <script>
 // Firestore REST API — no requiere SDK, funciona desde file://
@@ -9621,6 +9775,7 @@ function App() {
   const [mostrarConfig, setMostrarConfig] = useState(false);
   const [mostrarRecibo, setMostrarRecibo] = useState(false);
   useEffect(() => {
+    if (window.splash101) window.splash101.estado("Trayendo tus cotizaciones");
     window.firebaseDB.cargar().then(data => {
       setClientes(data.clientes || []);
       if (data.config) {
@@ -9635,6 +9790,7 @@ function App() {
         hydratePrices(data.prices);
       }
       setLoading(false);
+      if (window.splash101) window.splash101.ocultar();
     });
   }, []);
   useEffect(() => {
