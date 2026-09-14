@@ -786,9 +786,13 @@ function(a,b,c){if(!Vd(b))throw Error(m(200));return Wd(null,a,b,!1,c)};Q.unmoun
   #splash101 .aparece{opacity:0;animation:splash101-aparecer .5s ease-out 1s forwards}
   @keyframes splash101-aparecer{to{opacity:1}}
   /* la marca, en medio, con un halo para que se lea sobre la hoja */
-  #splash101 .marca{position:relative;text-align:center;padding:36px 64px;border-radius:50%;
-    background:radial-gradient(closest-side,rgba(10,37,64,.92) 40%,rgba(10,37,64,0) 100%)}
-  #splash101 .marca svg{display:block;margin:0 auto 12px;height:44px}
+  /* sin halo: la sombra sigue el contorno del logotipo y del texto, corta y
+     suave, sólo para despegarlos de la hoja (Mike, 14-sep: el halo parecía una mancha) */
+  #splash101 .marca{position:relative;text-align:center;padding:36px 64px}
+  #splash101 .marca svg{display:block;margin:0 auto 12px;height:44px;
+    filter:drop-shadow(0 1px 1px rgba(0,0,0,.75)) drop-shadow(0 0 5px rgba(0,0,0,.45)) drop-shadow(0 8px 10px rgba(0,0,0,.3))}
+  #splash101 .sub,#splash101 .estado{text-shadow:0 1px 1px rgba(0,0,0,.8),0 0 6px rgba(0,0,0,.6),0 0 14px rgba(0,0,0,.35)}
+  #splash101 .estado i{box-shadow:0 1px 3px rgba(0,0,0,.6)}
   #splash101 .sub{font-size:12px;letter-spacing:.18em;text-transform:uppercase;opacity:.8}
   #splash101 .estado{margin-top:14px;font-size:13px;min-height:18px;opacity:.95}
   #splash101 .estado i{display:inline-block;width:5px;height:5px;border-radius:50%;background:#fff;margin:0 2px;
