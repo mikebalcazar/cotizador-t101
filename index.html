@@ -738,8 +738,7 @@ function(a,b,c){if(!Vd(b))throw Error(m(200));return Wd(null,a,b,!1,c)};Q.unmoun
 
   <div class="marca">
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="126.33 208.74 441.84 194.51" height="44" role="img" aria-label="quote101" fill="#fff"><g transform="translate(0,351.34) scale(0.047783,-0.047783)"><path d="M3440.8 812.0Q3345.8 836.0 3265.8 836.0Q2980.8 836.0 2980.8 533.0Q2980.8 220.0 3227.8 220.0Q3351.8 220.0 3440.8 274.0ZM3705.8 -380.0H3440.8V50.0Q3332.8 0.0 3196.8 0.0Q2718.8 0.0 2718.8 531.0Q2718.8 1050.0 3263.8 1050.0Q3466.8 1050.0 3705.8 1007.0Z M4798.4 1050.0V0.0H4591.4L4559.4 134.0Q4378.4 0.0 4175.4 0.0Q3853.4 0.0 3853.4 381.0V1050.0H4118.4V388.0Q4118.4 214.0 4270.4 214.0Q4399.4 214.0 4533.4 317.0V1050.0Z M5416.0 200.0Q5671.0 200.0 5671.0 529.0Q5671.0 850.0 5416.0 850.0Q5161.0 850.0 5161.0 529.0Q5161.0 200.0 5416.0 200.0ZM4896.0 525.0Q4896.0 1053.0 5416.0 1053.0Q5936.0 1053.0 5936.0 525.0Q5936.0 -2.0 5416.0 -2.0Q4898.0 -2.0 4896.0 525.0Z M6018.6 1220.0H6214.6L6254.6 1050.0H6518.6V840.0H6283.6V357.0Q6283.6 210.0 6410.6 210.0H6518.6V0.0H6282.6Q6018.6 0.0 6018.6 283.0Z M7039.2 1050.0Q7517.2 1050.0 7517.2 562.0Q7517.2 497.0 7508.2 432.0H6811.2Q6811.2 210.0 7137.2 210.0Q7296.2 210.0 7455.2 240.0V30.0Q7316.2 0.0 7117.2 0.0Q6546.2 0.0 6546.2 537.0Q6546.2 1050.0 7039.2 1050.0ZM6811.2 616.0H7259.2V624.0Q7259.2 842.0 7039.2 842.0Q6829.2 842.0 6811.2 616.0Z"/></g><rect x="126.33" y="360.72" width="26.49" height="6.52"/><g transform="translate(39.42,0)"><path d="M431.49,208.74c-53.63,0-97.26,43.63-97.26,97.26,0,20.28,6.25,39.12,16.91,54.72h-209.06v6.52h213.93c17.85,21.95,45.05,36.01,75.48,36.01,53.63,0,97.26-43.63,97.26-97.26s-43.63-97.26-97.26-97.26ZM431.49,396.74c-29.48,0-55.72-14.14-72.3-35.99v-.02h-.01c-11.55-15.22-18.42-34.18-18.42-54.72,0-50.03,40.7-90.74,90.74-90.74s90.73,40.7,90.73,90.74-40.7,90.74-90.73,90.74Z"/><path d="M431.81,262.73c-26.11,0-39.16,14.87-39.16,44.62s13.05,44.38,39.16,44.38,38.48-14.79,38.48-44.38-12.83-44.62-38.48-44.62ZM431.81,337.61c-14.85,0-22.28-10.21-22.28-30.63s7.43-30.14,22.28-30.14,21.61,10.05,21.61,30.14-7.2,30.63-21.61,30.63Z"/><rect x="366.4" y="261.5" width="16.27" height="89.61"/><rect x="479.98" y="261.19" width="16.27" height="89.61"/></g></svg>
-    <div class="sub">Cotizaciones · Taller 101</div>
-    <div class="estado" id="splash101-estado">Cargando aplicación <i></i><i></i><i></i></div>
+        <div class="estado" id="splash101-estado">Cargando aplicación <i></i><i></i><i></i></div>
     <button type="button" id="splash101-reintentar" hidden onclick="location.reload()">Reintentar</button>
   </div>
 </div>
@@ -796,7 +795,9 @@ function(a,b,c){if(!Vd(b))throw Error(m(200));return Wd(null,a,b,!1,c)};Q.unmoun
   #splash101 .sub,#splash101 .estado{text-shadow:0 1px 1px rgba(255,255,255,.7),0 3px 6px rgba(0,40,70,.18)}
   #splash101 .marca .estado i{background:#0080C1;box-shadow:0 1px 2px rgba(0,40,70,.3)}
   #splash101 .sub{font-size:12px;letter-spacing:.18em;text-transform:uppercase;opacity:.8}
-  #splash101 .estado{margin-top:14px;font-size:13px;min-height:18px;opacity:.95}
+  /* sólo el logotipo (Mike, 14-sep): el estado se enseña únicamente si hay que avisar algo */
+  #splash101 .estado{display:none;margin-top:14px;font-size:13px;min-height:18px;opacity:.95}
+  #splash101.aviso .estado{display:block}
   #splash101 .estado i{display:inline-block;width:5px;height:5px;border-radius:50%;background:#fff;margin:0 2px;
     animation:splash101-latir 1.2s ease-in-out infinite}
   #splash101 .estado i:nth-child(2){animation-delay:.2s}
@@ -832,8 +833,8 @@ function(a,b,c){if(!Vd(b))throw Error(m(200));return Wd(null,a,b,!1,c)};Q.unmoun
         setTimeout(function () { if (caja.parentNode) caja.parentNode.removeChild(caja); }, 400);
       }, falta);
     }
-    setTimeout(function () { if (!fuera) estado("Sigue cargando… revisa tu conexión"); }, 8000);
-    setTimeout(function () { if (!fuera) { estado("No se pudo cargar"); boton.hidden = false; } }, 20000);
+    setTimeout(function () { if (!fuera) { caja.classList.add("aviso"); estado("Sigue cargando… revisa tu conexión"); } }, 8000);
+    setTimeout(function () { if (!fuera) { caja.classList.add("aviso"); estado("No se pudo cargar"); boton.hidden = false; } }, 20000);
     window.splash101 = { estado: estado, ocultar: ocultar };
   })();
 </script>
