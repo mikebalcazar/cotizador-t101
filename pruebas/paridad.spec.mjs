@@ -130,7 +130,9 @@ async function mirar(viewport) {
     texto: document.body.innerText.replace(/\s+/g, ' ').trim().length,
     anchoScroll: document.documentElement.scrollWidth,
     ventana: window.innerWidth,
-    marca: document.body.innerText.includes('quote'),
+    // La marca ya no es texto (desde el 14-sep va en trazos, como la de
+    // quell101): se busca el logotipo por su etiqueta accesible, no por la palabra.
+    marca: !!document.querySelector('svg[aria-label="quote101"]'),
   }));
 
   await ctx.close();
