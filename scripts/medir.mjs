@@ -73,11 +73,25 @@ console.log(`Midiendo ${BASE}  (${ENTORNO})`);
 console.log();
 
 // 1 · la portada, byte a byte contra este commit
+//
+// Se reintenta también cuando contesta 200 pero con la portada ANTERIOR: el
+// borde de Cloudflare suelta la versión nueva unos segundos después de que
+// wrangler dice «Deployed». El 14-sep (corrida 34900841447) la medición se
+// hizo al instante, comparó 574 635 bytes viejos contra 584 615 armados y
+// tumbó la corrida, con el Worker sirviendo la portada nueva medio minuto
+// después. Hasta 18 intentos cada 5 s; si sigue distinta, sí es falla.
 const local = await readFile(fileURLToPath(new URL('../publicar/index.html', import.meta.url)));
-const portada = await traer('/');
-const servido = Buffer.from(await portada.arrayBuffer());
+const hl = huella(local);
+let portada, servido, hs;
+for (let i = 1; i <= 18; i++) {
+  portada = await traer('/');
+  servido = Buffer.from(await portada.arrayBuffer());
+  hs = huella(servido);
+  if (portada.status === 200 && hs === hl) break;
+  if (i === 1) console.log('  (la portada servida todavía es la anterior: esperando a que el borde suelte la nueva)');
+  if (i < 18) await new Promise((s) => setTimeout(s, 5000));
+}
 rev(portada.status === 200, `la portada contesta 200 (${portada.status})`);
-const hl = huella(local), hs = huella(servido);
 rev(hl === hs,
   `la portada es idéntica al commit: ${servido.length} bytes servidos, ${local.length} armados ` +
   `(${hs.slice(0, 12)}… vs ${hl.slice(0, 12)}…)`);
