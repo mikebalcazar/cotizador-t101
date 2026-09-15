@@ -133,6 +133,10 @@ async function mirar(viewport) {
     // La marca ya no es texto (desde el 14-sep va en trazos, como la de
     // quell101): se busca el logotipo por su etiqueta accesible, no por la palabra.
     marca: !!document.querySelector('svg[aria-label="quote101"]'),
+    // Las dos librerías de cdnjs llegan con `integrity`: si el navegador las
+    // aceptó, existen como globales; si la huella no cuadrara, las bloquearía
+    // (y además saldría un error de consola).
+    librerias: { exceljs: typeof window.ExcelJS !== 'undefined', jspdf: typeof window.jspdf !== 'undefined' },
   }));
 
   await ctx.close();
@@ -172,6 +176,8 @@ for (const t of TAMANOS) {
     if (m.hayInternet) {
       assert.ok(m.cargoDatos, 'con internet, la app tiene que terminar de cargar los proyectos');
       assert.deepEqual(m.errores, [], 'cero errores de JavaScript');
+      assert.deepEqual(m.librerias, { exceljs: true, jspdf: true },
+        'el navegador aceptó las huellas (integrity) de exceljs y jspdf y las dejó correr');
       console.log(`    ${t.nombre} CON internet: ${m.nodos} elementos · ${m.botones} botones · ` +
                   `${m.campos} campos · ${m.texto} caracteres · ${propias.length} fuentes propias`);
     } else {
@@ -210,6 +216,32 @@ test('a quién le habla la app hoy, dicho con números', async () => {
     'sigue hablándole a Firestore: la fase 1 no cambia comportamiento, y eso es lo esperado');
   assert.ok(porHost['cdnjs.cloudflare.com'] > 0,
     'y sigue bajando exceljs y jspdf de un CDN: pendiente de la fase 2');
+});
+
+/* ─────────────── 3b. lo que viene de cdnjs viaja con huella ─────────────── */
+
+// Huellas oficiales de cdnjs (api.cdnjs.com/libraries/<lib>/<versión>?fields=sri),
+// comprobadas el 15-sep-2026 contra los archivos bajados: la misma huella. Si
+// cdnjs sirviera otra cosa, el navegador la rechaza en vez de correrla.
+const HUELLAS = {
+  'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js':
+    'sha512-dlPw+ytv/6JyepmelABrgeYgHI0O+frEwgfnPdXDTOIZz+eDgfW07QXG02/O8COfivBdGNINy+Vex+lYmJ5rxw==',
+  'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js':
+    'sha512-qZvrmS2ekKPF2mSznTQsxqPgnpkI4DNTlrdUmTzrDgektczlKNRRhy5X5AAOnx5S09ydFYWWNSfcEqDTTHgtNA==',
+};
+
+test('cada <script> de un tercero lleva integrity y crossorigin', async () => {
+  const html = await fetch(NUEVO + '/').then((r) => r.text());
+  const externos = [...html.matchAll(/<script\b[^>]*\bsrc="(https?:\/\/[^"]+)"[^>]*>/g)];
+  assert.equal(externos.length, Object.keys(HUELLAS).length,
+    `hay ${externos.length} <script> externos; se esperaban ${Object.keys(HUELLAS).length} (los de la lista de huellas)`);
+  for (const m of externos) {
+    const [etiqueta, src] = m;
+    assert.ok(HUELLAS[src], `${src} está en la lista de huellas`);
+    assert.ok(etiqueta.includes(`integrity="${HUELLAS[src]}"`), `${src} lleva su integrity exacto`);
+    assert.ok(/\bcrossorigin="anonymous"/.test(etiqueta), `${src} lleva crossorigin="anonymous" (sin él, integrity no aplica a un origen ajeno)`);
+  }
+  console.log(`    ${externos.length} scripts de cdnjs, los dos con huella sha512`);
 });
 
 /* ─────────────── 4. el reparto de rutas del Worker ─────────────── */

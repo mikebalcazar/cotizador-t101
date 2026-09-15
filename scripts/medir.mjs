@@ -96,6 +96,16 @@ rev(hl === hs,
   `la portada es idéntica al commit: ${servido.length} bytes servidos, ${local.length} armados ` +
   `(${hs.slice(0, 12)}… vs ${hl.slice(0, 12)}…)`);
 
+// 1b · lo que viene de cdnjs viaja con huella (15-sep-2026, barrido de
+// seguridad): cada <script> externo lleva integrity + crossorigin. La huella
+// exacta la comprueba paridad.spec.mjs contra la lista oficial de cdnjs; aquí
+// se mide que lo PUBLICADO la trae, en staging y en producción.
+const html = servido.toString('utf-8');
+const externos = [...html.matchAll(/<script\b[^>]*\bsrc="https?:\/\/[^"]+"[^>]*>/g)].map((m) => m[0]);
+rev(externos.length === 2, `hay ${externos.length} <script> externos (se esperaban 2: exceljs y jspdf)`);
+rev(externos.every((e) => /\bintegrity="sha(256|384|512)-[A-Za-z0-9+/=]+"/.test(e) && /\bcrossorigin="anonymous"/.test(e)),
+  'los dos llevan integrity y crossorigin: si cdnjs sirviera otra cosa, el navegador la rechaza');
+
 // 2 · las fuentes, del propio origen
 const fuente = await traer('/fonts/raleway-400.woff2');
 rev(fuente.status === 200 && Number(fuente.headers.get('content-length') || 1) > 0,
