@@ -5,6 +5,80 @@ Lo escribe la sesión de Claude Code que trabaja el repo. Lo más nuevo arriba.
 
 ---
 
+# 16-sep-2026 · Fase 2, primera mitad: la app ya no se entrega sin sesión
+
+**Medido aquí y sobre lo publicado.**
+
+## Qué quedó
+
+`entrar.html` es ahora la única página pública de quote101: la entrada de la
+suite 101, igual que en quell101 y roster101 —correo y código de 6 dígitos, PIN
+o Google—. A `index.html` sólo se llega con sesión de la suite que además traiga
+quote101 entre sus apps.
+
+El candado vive en el **Worker**, no dentro de la app. El Worker se niega a
+entregar la app; no la entrega pidiéndole a su JavaScript que se esconda solo.
+Lo segundo no es una puerta, es una cortina.
+
+Quien cotiza hoy son Mike y Fer, los dos ya en la suite con todas las apps.
+Confirmado con Mike antes de publicar: nadie más cotiza, nadie se quedó fuera.
+
+## ⚠️ Esto NO cerró el hueco de Firestore
+
+Se volvió a medir el 16-sep, y sigue igual que el 12: un documento que no existe
+contesta **404**, no 403. La base sigue abierta a lectura para cualquiera sin
+identificarse.
+
+La app le habla a Firestore **directo desde el navegador**. Quien le pegue a
+Firestore por su cuenta nunca pasa por el Worker, así que este candado no lo
+toca. **El hueco se cierra en las fases 3 a 5**, cuando las cotizaciones vivan
+en la suite y Firebase se apague. Mientras tanto sigue abierto, y eso está
+dicho y decidido (Mike, 12-sep), no olvidado.
+
+## La lección que costó una corrida
+
+Las 18 pruebas de mesa pasaron en verde **con el candado sin correr ni una
+vez**. `run_worker_first` estaba en `["/s101/*"]`, o sea que lo único que
+llegaba al Worker antes que la capa de archivos era la puerta a la suite; la
+app la contestaba la capa de archivos, sin pasar por el candado. En pruebas, `/`
+contestaba 200 sin sesión.
+
+Lo cachó la medición sobre lo publicado, que es justo lo que el banco advierte
+en su encabezado que él no puede ver: **la plataforma**. Ahora el banco sirve
+los archivos literales, como Cloudflare, para no volver a taparlo.
+
+Y el segundo, que habría sido peor: con el `html_handling` de fábrica,
+`/entrar.html` se redirige a `/entrar`; como `/entrar` no estaba en la lista de
+lo abierto, el Worker lo habría mandado de vuelta a `/entrar.html`. Rebote
+infinito **en la propia pantalla de entrada**: nadie entra. Se sirve literal y
+el Worker mapea `/` él mismo.
+
+**Regla para las fases que siguen:** una puerta que se apoya en la capa de
+archivos hay que medirla sobre lo publicado antes de creerle. El banco prueba el
+reparto de rutas; la plataforma sólo se prueba allá.
+
+## Lo que sigue
+
+3. **Fase 2, segunda mitad** — guardar en `cotizaciones` de la suite. Antes: el
+   folio, en el muro (D4). Hoy lo asigna la app leyendo `reciboCounter` y
+   sumándole uno: dos personas cotizando a la vez sacan el mismo.
+4. **Fase 3** — `items/exportar` y `items/vender`.
+5. **Fase 4** — mudar las 38 cotizaciones viejas, con el cuadre de pesos a
+   centavos. 37 de 38 traen decimales: es el punto más peligroso de todo esto.
+6. **Fase 5** — corte. Lo apaga Mike (D3).
+
+## Medido
+
+* Mesa de trabajo: 18 pruebas. 9 nuevas del candado (`pruebas/puerta.spec.mjs`),
+  la mayoría de lo que NO debe pasar; las 8 de paridad, adaptadas —ahora entran
+  de verdad contra la API de pruebas, donde `/auth/codigo` devuelve el código—.
+* Publicado: 21 comprobaciones en pruebas y 21 en producción, todas verdes.
+* Arreglo de paso: `npm run prueba` estaba roto desde antes —`node --test
+  pruebas/` cargaba la CARPETA como módulo y moría con MODULE_NOT_FOUND—, así
+  que salía en rojo dijeran lo que dijeran las pruebas.
+
+---
+
 # 12-sep-2026 · Fase 0, y dos cosas que no estaban en el plan
 
 Mike eligió por botones **mudar quote101 a la suite sin parche intermedio**.
