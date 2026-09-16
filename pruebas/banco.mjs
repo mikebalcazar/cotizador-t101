@@ -41,7 +41,25 @@ const TIPOS = {
   '.ico': 'image/x-icon',
 };
 
-/** El *service binding*, pero por HTTPS contra staging. */
+/** El *service binding*, pero por HTTPS contra staging.
+ *
+ * `accept-encoding` NO se reenvía, y esto costó cinco corridas el 16-sep.
+ *
+ * El navegador pide `gzip, deflate, br, zstd`. Si eso se le pasa tal cual a
+ * Cloudflare, Cloudflare puede contestar en **zstd**, que el `fetch` de Node no
+ * sabe abrir: el cuerpo llega ilegible con código 200. La app hacía
+ * `r.json()`, le tronaba, se quedaba con `{}` y concluía «esta cuenta no es
+ * miembro de ninguna empresa» — un error que manda a revisar membresías cuando
+ * lo que estaba roto era el transporte de esta máquina.
+ *
+ * Quitándolo, Node negocia su propia compresión con Cloudflare, la abre y
+ * entrega el cuerpo en claro. `host` se quita por lo mismo: el del banco no es
+ * el de la API.
+ *
+ * Es la misma clase de cosa que ya había mordido el 12-sep en la dirección
+ * contraria —relayar `content-encoding` de vuelta al navegador—, y está anotada
+ * abajo. Un banco que reenvía encabezados de compresión a ciegas es un banco
+ * que miente sobre el cuerpo. */
 const apiPorHttps = {
   async fetch(pet) {
     const u = new URL(pet.url);
@@ -49,9 +67,12 @@ const apiPorHttps = {
     destino.pathname = u.pathname;
     destino.search = u.search;
     const cuerpo = pet.method === 'GET' || pet.method === 'HEAD' ? undefined : await pet.arrayBuffer();
+    const cabeceras = new Headers(pet.headers);
+    cabeceras.delete('accept-encoding');
+    cabeceras.delete('host');
     return fetch(destino, {
       method: pet.method,
-      headers: pet.headers,
+      headers: cabeceras,
       body: cuerpo && cuerpo.byteLength ? cuerpo : undefined,
       redirect: 'manual',
     });
