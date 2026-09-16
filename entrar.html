@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a1828">
+<title>quote101 — Entrar</title>
+<link rel="icon" href="data:,">
+<style>
+/* Las mismas tres fuentes de la app, del propio origen: nada se le pide a
+   Google. Las cifras van primero en la pila y sólo cubren dígitos, así que el
+   código de 6 dígitos se lee alineado sin tocar el resto del texto. */
+@font-face{font-family:"Cifras";src:url("fonts/fira-cifras-400.woff2") format("woff2");font-weight:400 500;font-display:swap;unicode-range:U+0030-0039,U+00B0,U+00B1,U+00D7,U+0025}
+@font-face{font-family:"Raleway";src:url("fonts/raleway-400.woff2") format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Raleway";src:url("fonts/raleway-600.woff2") format("woff2");font-weight:600;font-display:swap}
+@font-face{font-family:"Sansation";src:url("fonts/sansation-700.woff2") format("woff2");font-weight:700;font-display:swap}
+
+:root { --tinta:#0a1828; --papel:#f7f9fb; --linea:#d7e0e8; --azul:#0381c2; --mal:#b3261e; --tenue:#5b6b7a; }
+*{box-sizing:border-box}
+body{
+  margin:0; min-height:100dvh; display:grid; place-items:center; padding:24px 16px;
+  font-family:"Cifras","Raleway",system-ui,sans-serif; color:var(--tinta);
+  background:var(--tinta);
+  background-image:radial-gradient(circle at 20% 15%, rgba(0,200,230,.18) 0%, transparent 55%),
+                   radial-gradient(circle at 85% 80%, rgba(80,130,220,.20) 0%, transparent 55%);
+}
+.caja{width:100%;max-width:380px;background:var(--papel);border-radius:14px;padding:26px 22px;box-shadow:0 18px 50px rgba(0,0,0,.35)}
+h1{font-family:"Sansation",sans-serif;font-size:26px;margin:0 0 2px;letter-spacing:.3px}
+.sub{margin:0 0 18px;color:var(--tenue);font-size:14px;line-height:1.5}
+label{display:block;font-size:13px;font-weight:600;margin:0 0 6px}
+input{
+  width:100%;padding:11px 12px;border:1px solid var(--linea);border-radius:9px;
+  font:inherit;font-size:16px;background:#fff;color:inherit
+}
+input:focus{outline:2px solid var(--azul);outline-offset:1px;border-color:var(--azul)}
+input.digitos{font-size:24px;letter-spacing:10px;text-align:center;font-variant-numeric:tabular-nums}
+button{
+  width:100%;margin-top:14px;padding:12px;border:0;border-radius:9px;font:inherit;font-weight:600;
+  font-size:15px;background:var(--azul);color:#fff;cursor:pointer
+}
+button.suave{background:#fff;color:var(--tinta);border:1px solid var(--linea)}
+button:disabled{opacity:.55;cursor:default}
+.err{color:var(--mal);font-size:13.5px;margin-top:10px;min-height:1.2em;line-height:1.4}
+.nota{color:var(--tenue);font-size:12.5px;margin:12px 0 0;line-height:1.5;text-align:center}
+.enlace{background:none;border:0;color:var(--azul);font:inherit;font-size:13px;padding:4px;cursor:pointer;width:auto;margin:0}
+.opciones{display:flex;justify-content:center;gap:10px;margin-top:10px;flex-wrap:wrap}
+[hidden]{display:none !important}
+</style>
+</head>
+<body>
+<main class="caja">
+  <!-- Correo -->
+  <section id="v-correo">
+    <h1>quote101</h1>
+    <p class="sub">Cotizaciones de mueble. Se entra con la cuenta de la suite 101, la misma de las demás aplicaciones.</p>
+    <label for="correo">Tu correo</label>
+    <input type="email" id="correo" autocomplete="username" inputmode="email" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="tu@correo.com">
+    <div class="err" id="err-correo"></div>
+    <button id="b-correo">Continuar</button>
+    <p class="nota">Te mandamos un código de 6 dígitos. Si ya tienes PIN, en la siguiente pantalla puedes entrar con él.</p>
+    <button class="suave" id="b-google">Entrar con Google</button>
+  </section>
+
+  <!-- Código o PIN -->
+  <section id="v-clave" hidden>
+    <h1 id="t-clave">Tu código</h1>
+    <p class="sub" id="p-clave"></p>
+    <label for="clave" id="l-clave">Código de 6 dígitos</label>
+    <input type="text" id="clave" class="digitos" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="······">
+    <div class="err" id="err-clave"></div>
+    <button id="b-clave">Entrar</button>
+    <div class="opciones">
+      <button class="enlace" id="b-modo"></button>
+      <button class="enlace" id="b-otro">Usar otro correo</button>
+    </div>
+  </section>
+
+  <!-- Entró a la suite, pero no trae quote101 entre sus apps -->
+  <section id="v-sinpaso" hidden>
+    <h1>Todavía no</h1>
+    <p class="sub" id="p-sinpaso"></p>
+    <button class="suave" id="b-otro-2">Usar otro correo</button>
+  </section>
+
+  <!-- Canjeando el boleto de Google -->
+  <section id="v-cargando" hidden>
+    <h1>Un momento</h1>
+    <p class="sub">Confirmando tu cuenta…</p>
+  </section>
+</main>
+<script src="entrar.js"></script>
+</body>
+</html>

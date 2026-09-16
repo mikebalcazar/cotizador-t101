@@ -6,9 +6,14 @@
  *
  * Qué comprueba, y por qué cada cosa:
  *
- *   · la portada contesta 200 y es **byte a byte** el `index.html` de este
- *     commit. No «parecida»: idéntica. Así se sabe que lo publicado es lo que
- *     se armó, y no una copia vieja que el borde todavía sirve;
+ *   · la app NO se entrega sin sesión: `/` manda a `entrar.html` (fase 2).
+ *     Es la comprobación que más importa de esta medición;
+ *   · `huella.txt` es **byte a byte** la huella del `index.html` de este
+ *     commit. Antes se bajaba la app entera y se comparaba; desde que la app
+ *     pide sesión eso ya no se puede, y la huella conserva la misma garantía:
+ *     que lo publicado es lo que se armó, y no una copia vieja que el borde
+ *     todavía sirve;
+ *   · la pantalla de entrada sí es pública, y trae su marca;
  *   · las fuentes salen del propio origen;
  *   · `/s101/salud` llega a la API y contesta el entorno que toca. Si eso
  *     falla, el *service binding* no está puesto y la fase 2 no podría ni
@@ -22,7 +27,7 @@
  * nada.
  */
 
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
@@ -72,35 +77,55 @@ async function traer(ruta, { esperado = 200, intentos = 18, espera = 5000 } = {}
 console.log(`Midiendo ${BASE}  (${ENTORNO})`);
 console.log();
 
-// 1 · la portada, byte a byte contra este commit
+// 1 · la app NO se entrega sin sesión
 //
-// Se reintenta también cuando contesta 200 pero con la portada ANTERIOR: el
-// borde de Cloudflare suelta la versión nueva unos segundos después de que
-// wrangler dice «Deployed». El 14-sep (corrida 34900841447) la medición se
-// hizo al instante, comparó 574 635 bytes viejos contra 584 615 armados y
-// tumbó la corrida, con el Worker sirviendo la portada nueva medio minuto
-// después. Hasta 18 intentos cada 5 s; si sigue distinta, sí es falla.
+// Es lo que trajo la fase 2. Hasta el 16-sep, quien supiera la dirección abría
+// el cotizador entero; ahora el Worker se niega a entregarlo y manda a la
+// pantalla de entrada. Se comprueba desde afuera, sin sesión, que es justo
+// como llegaría un desconocido.
+const raiz = await traer('/', { esperado: 302 });
+rev(raiz.status === 302, `la app pide sesión: / contesta 302 (${raiz.status})`);
+rev((raiz.headers.get('location') || '').endsWith('/entrar.html'),
+  `y manda a la pantalla de entrada (${raiz.headers.get('location') || 'sin location'})`);
+const appDirecta = await traer('/index.html', { esperado: 302 });
+rev(appDirecta.status === 302, `pedir /index.html a la mala tampoco la entrega (${appDirecta.status})`);
+
+// 1b · la pantalla de entrada sí es pública
+const entrada = await traer('/entrar.html');
+const htmlEntrada = await entrada.text();
+rev(entrada.status === 200, `la pantalla de entrada contesta 200 (${entrada.status})`);
+rev(htmlEntrada.includes('quote101'), 'y trae su marca');
+rev(!/firestore\.googleapis|AIza/.test(htmlEntrada),
+  'la pantalla pública no lleva ni la dirección de la base ni su llave');
+const entrajs = await traer('/entrar.js');
+rev(entrajs.status === 200, `su código sale del propio origen (/entrar.js → ${entrajs.status})`);
+
+// 1c · lo publicado es lo que se armó
+//
+// Antes esto se medía bajando `index.html` y comparándolo byte a byte. Ya no
+// se puede —pide sesión—, así que se compara su huella, que `armar.mjs` deja
+// en `huella.txt`. Se reintenta: el borde suelta la versión nueva unos
+// segundos después de que wrangler dice «Deployed», y el 14-sep una medición
+// hecha al instante tumbó una corrida buena.
 const local = await readFile(fileURLToPath(new URL('../publicar/index.html', import.meta.url)));
 const hl = huella(local);
-let portada, servido, hs;
+let hs = null;
 for (let i = 1; i <= 18; i++) {
-  portada = await traer('/');
-  servido = Buffer.from(await portada.arrayBuffer());
-  hs = huella(servido);
-  if (portada.status === 200 && hs === hl) break;
-  if (i === 1) console.log('  (la portada servida todavía es la anterior: esperando a que el borde suelte la nueva)');
+  const r = await traer('/huella.txt');
+  hs = r.status === 200 ? (await r.text()).trim() : null;
+  if (hs === hl) break;
+  if (i === 1) console.log('  (la huella servida todavía es la anterior: esperando a que el borde suelte la nueva)');
   if (i < 18) await new Promise((s) => setTimeout(s, 5000));
 }
-rev(portada.status === 200, `la portada contesta 200 (${portada.status})`);
-rev(hl === hs,
-  `la portada es idéntica al commit: ${servido.length} bytes servidos, ${local.length} armados ` +
-  `(${hs.slice(0, 12)}… vs ${hl.slice(0, 12)}…)`);
+rev(hs === hl,
+  `lo publicado es lo que se armó: ${local.length} bytes, sha256 ${String(hs).slice(0, 12)}… vs ${hl.slice(0, 12)}…`);
 
-// 1b · lo que viene de cdnjs viaja con huella (15-sep-2026, barrido de
+// 1d · lo que viene de cdnjs viaja con huella (15-sep-2026, barrido de
 // seguridad): cada <script> externo lleva integrity + crossorigin. La huella
 // exacta la comprueba paridad.spec.mjs contra la lista oficial de cdnjs; aquí
-// se mide que lo PUBLICADO la trae, en staging y en producción.
-const html = servido.toString('utf-8');
+// se mide sobre lo ARMADO, que es lo que se acaba de publicar y cuya huella
+// quedó comprobada arriba.
+const html = local.toString('utf-8');
 const externos = [...html.matchAll(/<script\b[^>]*\bsrc="https?:\/\/[^"]+"[^>]*>/g)].map((m) => m[0]);
 rev(externos.length === 2, `hay ${externos.length} <script> externos (se esperaban 2: exceljs y jspdf)`);
 rev(externos.every((e) => /\bintegrity="sha(256|384|512)-[A-Za-z0-9+/=]+"/.test(e) && /\bcrossorigin="anonymous"/.test(e)),
@@ -124,12 +149,26 @@ if (cuerpo?.ok) {
 }
 
 // 4 · lo que NO se debe desviar ni publicar
-const casi = await traer('/s101cosas', { esperado: 404 });
-rev(casi.status === 404, `/s101cosas no se desvía a la API (${casi.status})`);
-const notas = await traer('/claude/continuar.md', { esperado: 404 });
-rev(notas.status === 404, `las notas de trabajo no están publicadas (${notas.status})`);
-const operar = await traer('/OPERAR.md', { esperado: 404 });
-rev(operar.status === 404, `ni el contrato: sólo se publica lo de la lista (${operar.status})`);
+//
+// `/s101cosas` no lleva sesión, así que desde la fase 2 lo que contesta es el
+// 302 de la puerta. Lo que se mide sigue siendo lo mismo: que NO se desvíe a
+// la API, o sea que no conteste lo que contestaría la API.
+const casi = await traer('/s101cosas', { esperado: 302 });
+rev(casi.status === 302 || casi.status === 404, `/s101cosas no se desvía a la API (${casi.status})`);
+rev(!(casi.headers.get('content-type') || '').includes('json'), 'y desde luego no contesta JSON de la API');
+
+// Que las notas y el contrato no salgan se mide en DOS lados, porque la puerta
+// tapa el síntoma pero no la causa: sin sesión contestan 302, pero si alguien
+// los metiera a la lista de `armar.mjs`, cualquiera CON sesión podría leerlos.
+// Por eso se comprueba también la carpeta que se acaba de armar.
+for (const ruta of ['/claude/continuar.md', '/OPERAR.md']) {
+  const r = await traer(ruta, { esperado: 302 });
+  rev(r.status === 302 || r.status === 404, `${ruta} no se entrega (${r.status})`);
+}
+for (const nombre of ['claude', 'OPERAR.md', 'README.md']) {
+  const hay = await stat(fileURLToPath(new URL('../publicar/' + nombre, import.meta.url))).then(() => true).catch(() => false);
+  rev(!hay, `${nombre} no está en lo que se publicó`);
+}
 
 console.log();
 if (fallas > 0) {

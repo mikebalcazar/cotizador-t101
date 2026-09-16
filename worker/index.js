@@ -1,9 +1,19 @@
 /* quote101 como Worker de Cloudflare — la puerta.
  *
- * Fase 1 de la migración: **mudanza sin cambiar comportamiento**. La app es la
- * misma de siempre (`index.html`, con React incrustado) y sigue hablándole a
- * Firestore por su cuenta. Lo único nuevo es dónde vive y que ya tiene por
- * dónde hablarle a la suite.
+ * Fase 2: **la app ya no se entrega sin sesión**. Hasta ahora quote101 no
+ * tenía ninguna puerta: quien supiera la dirección abría el cotizador entero.
+ * Ahora la única página pública es `entrar.html`, y a `index.html` sólo se
+ * llega con una sesión de la suite 101 que además traiga quote101 entre sus
+ * apps.
+ *
+ * El candado vive AQUÍ y no dentro de la app a propósito: así el Worker se
+ * niega a entregar la app, en vez de entregarla y pedirle a su JavaScript que
+ * se esconda solo. Lo segundo no es una puerta, es una cortina.
+ *
+ * Lo que esto NO cierra, y conviene tenerlo claro: la app sigue hablándole a
+ * Firestore directo desde el navegador, y esa base sigue abierta a quien le
+ * pegue por su cuenta sin pasar por aquí. Eso se cierra cuando las cotizaciones
+ * vivan en la suite y Firebase se apague (fases 3 a 5), no con este candado.
  *
  * Decisión D1 del coordinador: cada app vive en su propio Worker y le habla a
  * `suite101-api` **desde su mismo origen**, por `/s101/*`, con un *service
@@ -24,6 +34,42 @@
  */
 
 const PREFIJO = '/s101';
+const APP = 'cotizador101';
+
+/** La llave con la que la suite guarda la lista de apps de cada persona.
+ *  NO es el nombre de la app: `miembros.apps` lleva llaves cortas
+ *  (`cotizador`, `dash`, `quell`…), que es lo que escribe workshop101 y lo que
+ *  compara la propia API (`LLAVE_APP` en schema/tipos.ts). Compararla contra
+ *  el nombre largo no coincide nunca, y deja fuera a cualquiera con una lista
+ *  específica; pasó el 16-sep en quell101 y en roster101. Se acepta también el
+ *  nombre largo por si alguna lista se escribió a mano. */
+const LLAVE = 'cotizador';
+
+/** Lo que se entrega sin sesión. Todo lo demás pide una.
+ *
+ *  Las fuentes van abiertas porque las pide la propia pantalla de entrada, y
+ *  no dicen nada de nadie. `no-publicado.html` es la página del 404. */
+const ABIERTO = new Set(['/entrar.html', '/entrar.js', '/no-publicado.html', '/huella.txt']);
+const esAbierto = (ruta) => ABIERTO.has(ruta) || ruta.startsWith('/fonts/');
+
+/** ¿Quién viene, según la suite? Devuelve lo que contesta `/yo`, o null. */
+async function laSuiteDiceQuien(req, env) {
+  const galleta = req.headers.get('cookie');
+  if (!galleta || !galleta.includes('s101=')) return null;
+  const r = await env.API.fetch(new Request('https://suite101-api/yo', {
+    headers: { cookie: galleta, 'X-App': APP },
+  }));
+  if (!r.ok) return null;
+  const cuerpo = await r.json().catch(() => null);
+  return cuerpo?.data || null;
+}
+
+/** ¿La suite le abre quote101? El dueño de la suite entra a todo; a los demás
+ *  se lo dice la lista de apps que les puso quien administra su empresa en
+ *  workshop101. Vacía quiere decir todas. */
+const laSuiteLeAbre = (yo) =>
+  !!yo && (yo.superadmin === true ||
+    (yo.orgs || []).some((o) => !o.apps?.length || o.apps.includes(LLAVE) || o.apps.includes(APP)));
 
 export default {
   async fetch(req, env) {
@@ -37,8 +83,16 @@ export default {
       // entraría aquí y se le mandaría a la API convertida en `cosas`.
       u.pathname = u.pathname.slice(PREFIJO.length) || '/';
       const r = new Request(u, req);
-      r.headers.set('X-App', 'cotizador101');
+      r.headers.set('X-App', APP);
       return env.API.fetch(r);
+    }
+
+    if (esAbierto(u.pathname)) return env.ASSETS.fetch(req);
+
+    // Todo lo demás —empezando por la app— pide sesión.
+    const yo = await laSuiteDiceQuien(req, env);
+    if (!laSuiteLeAbre(yo)) {
+      return Response.redirect(new URL('/entrar.html', u.origin).toString(), 302);
     }
 
     return env.ASSETS.fetch(req);
