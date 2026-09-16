@@ -25,11 +25,18 @@
  * respuesta, así que se puede abrir sesión sin buzón de correo. Nada de esto
  * toca producción.
  *
- * ⚠️ NADA DE ESCRIBIR. La app de hoy le habla directo a Firestore de
- * producción, donde están los clientes de verdad. Estas pruebas sólo **leen**,
- * y hay una comprobación explícita de que no salió ni un POST ni un PATCH. El
- * «flujo de punta a punta» que guarda una cotización se hará en la fase 3,
- * contra la org `demo` de staging, no aquí.
+ * ── 16-sep-2026, la app deja Firebase ────────────────────────────────────
+ * El aviso de «NADA DE ESCRIBIR» que estaba aquí ya no aplica, y por la mejor
+ * de las razones: existía porque la app le pegaba a Firestore de PRODUCCIÓN,
+ * con los clientes de verdad adentro, y una escritura desde una prueba les
+ * habría escrito encima. Ahora la app guarda en la suite de PRUEBAS, por
+ * `/s101/*` y con la sesión de esta prueba.
+ *
+ * Lo que sí se comprueba ahora es lo contrario: que no salga **ni una**
+ * petición a Firebase. Mientras salga una, apagarlo rompe la app. El detalle
+ * de cómo guarda —qué se crea, qué se actualiza, qué se borra y cómo se
+ * convierte el dinero— se prueba sin navegador en `guardado.spec.mjs`, que es
+ * donde se puede mirar de cerca.
  *
  *   node --test pruebas/paridad.spec.mjs
  */
@@ -147,7 +154,7 @@ async function mirar(viewport) {
   const res = await pag.goto(NUEVO, { waitUntil: 'load', timeout: 60000 });
 
   // La app arranca en dos tiempos: primero cambia «Cargando quote101…» por su
-  // marco, y después, cuando le contesta Firestore, cambia «Cargando
+  // marco, y después, cuando le contesta la suite, cambia «Cargando
   // proyectos…» por la lista. **Hay que esperar los dos.** Esperar sólo el
   // primero fue un error de esta misma prueba el 12-sep: pasaba en verde con
   // la app a medio cargar, que es precisamente lo que no se quiere medir.
@@ -183,7 +190,9 @@ async function mirar(viewport) {
   await ctx.close();
   // ¿Este navegador pudo salir a internet? Si no, la app cargó sin datos y
   // eso cambia qué se puede afirmar.
-  const hayInternet = !fallidas.includes('firestore.googleapis.com');
+  // ¿El camino de datos se pudo medir? Ya no depende de internet: la app le
+  // habla a la suite por su propio origen, y el banco la tiene enfrente.
+  const hayInternet = !fallidas.includes(soloHost(NUEVO));
   return { codigo: res?.status(), errores, peticiones, escrituras, fallidas, cargoDatos, hayInternet, ...m };
 }
 
@@ -233,30 +242,58 @@ for (const t of TAMANOS) {
   });
 }
 
-/* ─────────────── 3. que no toque los datos de verdad ─────────────── */
+/* ─────────────── 3. a quién le habla la app ───────────────
+ *
+ * Aquí estaban las dos pruebas de la fase 1, y las dos decían lo contrario de
+ * lo que hay que decir hoy:
+ *
+ *   · «cargar la app no escribe nada» existía porque la app le pegaba a
+ *     Firestore de PRODUCCIÓN, donde estaban los clientes de verdad: un POST
+ *     desde una prueba les habría escrito encima. Ahora la app le habla a la
+ *     suite de pruebas, y un POST no es un peligro — al contrario, el primer
+ *     arranque de una empresa sin negocio crea el suyo, y eso es correcto.
+ *   · «sigue hablándole a Firestore» dejaba anotado el punto de partida para
+ *     saber qué tenía que dejar de salir. Ya dejó de salir; lo que queda es
+ *     comprobarlo.
+ *
+ * Lo que sí importa medir es a qué HOST sale, nunca la URL completa: la de
+ * Firestore llevaba la llave. */
 
-test('cargar la app no escribe nada: sólo lecturas', async () => {
+test('la app ya NO le habla a Firebase: ni una petición', async () => {
+  // Es la prueba de esta entrega. Mientras salga una sola petición a Firebase,
+  // apagarlo rompe la app.
   const m = await mirar({ width: 1440, height: 900 });
-  assert.deepEqual(m.escrituras, [],
-    'cargar la app no debe mandar ni un POST ni un PATCH: son datos de clientes de verdad');
+  const hosts = [...new Set(m.peticiones
+    .filter((p) => !p.url.startsWith(NUEVO) && !p.url.startsWith('data:') && !p.url.startsWith('blob:'))
+    .map((p) => soloHost(p.url)))];
+  console.log('    la app sale a:', hosts.join(', ') || '(a ningún tercero)');
+  const firebase = hosts.filter((h) => /firebase|firestore|googleapis/.test(h));
+  assert.deepEqual(firebase, [], 'cero peticiones a Firebase: es lo que permite apagarlo');
 });
 
-test('a quién le habla la app hoy, dicho con números', async () => {
-  // No es pasa/no pasa: es dejar anotado a dónde sale la app tal como está,
-  // para que la fase 2 sepa qué tiene que dejar de salir. Se cuenta a qué
-  // HOST sale, nunca la URL completa: la de Firestore lleva la llave.
+test('y lo que escribe lo escribe en su propio origen, por /s101', async () => {
+  // No se exige cero escrituras: el primer arranque de una empresa sin negocio
+  // crea el suyo, y eso está bien. Lo que no puede pasar es que una escritura
+  // salga a un tercero.
   const m = await mirar({ width: 1440, height: 900 });
-  const porHost = {};
-  for (const p of m.peticiones) {
-    if (p.url.startsWith(NUEVO) || p.url.startsWith('data:') || p.url.startsWith('blob:')) continue;
-    const h = soloHost(p.url);
-    porHost[h] = (porHost[h] || 0) + 1;
+  const afuera = m.peticiones
+    .filter((p) => p.metodo !== 'GET' && p.metodo !== 'HEAD')
+    .filter((p) => !p.url.startsWith(NUEVO));
+  assert.deepEqual(afuera.map((p) => `${p.metodo} ${soloHost(p.url)}`), [],
+    'ninguna escritura sale del origen de la app');
+  for (const e of m.peticiones.filter((p) => p.metodo !== 'GET' && p.metodo !== 'HEAD')) {
+    assert.ok(new URL(e.url).pathname.startsWith('/s101/'),
+      `una escritura fuera de /s101: ${e.metodo} ${new URL(e.url).pathname}`);
   }
-  console.log('    la app sale a:', JSON.stringify(porHost));
-  assert.ok(porHost['firestore.googleapis.com'] > 0,
-    'sigue hablándole a Firestore: la fase 1 no cambia comportamiento, y eso es lo esperado');
-  assert.ok(porHost['cdnjs.cloudflare.com'] > 0,
-    'y sigue bajando exceljs y jspdf de un CDN: pendiente de la fase 2');
+});
+
+test('las librerías de terceros siguen siendo las dos de cdnjs, y nada más', async () => {
+  const m = await mirar({ width: 1440, height: 900 });
+  const terceros = [...new Set(m.peticiones
+    .filter((p) => !p.url.startsWith(NUEVO) && !p.url.startsWith('data:') && !p.url.startsWith('blob:'))
+    .map((p) => soloHost(p.url)))];
+  assert.deepEqual(terceros, ['cdnjs.cloudflare.com'],
+    'la app sólo sale a cdnjs (exceljs y jspdf, con integrity). Cualquier otro host es nuevo y hay que mirarlo');
 });
 
 /* ─────────────── 3b. lo que viene de cdnjs viaja con huella ─────────────── */

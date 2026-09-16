@@ -144,6 +144,30 @@ rev(externos.length === 2, `hay ${externos.length} <script> externos (se esperab
 rev(externos.every((e) => /\bintegrity="sha(256|384|512)-[A-Za-z0-9+/=]+"/.test(e) && /\bcrossorigin="anonymous"/.test(e)),
   'los dos llevan integrity y crossorigin: si cdnjs sirviera otra cosa, el navegador la rechaza');
 
+// 1e · la app ya no lleva Firebase adentro
+//
+// Es la comprobación de esta entrega, y se hace sobre lo ARMADO porque
+// `index.html` ya no se puede bajar sin sesión —y su huella, que sí se acaba de
+// comprobar arriba, es de este mismo archivo—.
+//
+// Se buscan tres cosas: la dirección de Firestore, la de Storage, y el prefijo
+// `AIza` de una llave de Google. Mientras alguna esté, la app sigue teniendo un
+// camino a Firebase y apagarlo la rompe. Y la llave, además, estaba a la vista
+// de cualquiera que abriera la página: era el hueco, no un detalle.
+const rastros = [
+  ['firestore.googleapis.com', /firestore\.googleapis\.com/],
+  ['firebasestorage', /firebasestorage/],
+  ['una llave de Google (AIza…)', /AIza[0-9A-Za-z_-]{20,}/],
+];
+for (const [que, patron] of rastros) {
+  // Los comentarios del código sí pueden nombrar a Firestore para contar de
+  // dónde se viene: lo que no puede quedar es una dirección viva ni una llave.
+  const sinComentarios = html
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n').map((l) => l.replace(/(^|\s)\/\/.*$/, '')).join('\n');
+  rev(!patron.test(sinComentarios), `la app publicada no lleva ${que}`);
+}
+
 // 2 · las fuentes, del propio origen
 const fuente = await traer('/fonts/raleway-400.woff2');
 rev(fuente.status === 200 && Number(fuente.headers.get('content-length') || 1) > 0,
