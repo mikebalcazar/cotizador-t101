@@ -13,6 +13,13 @@
  * service binding de verdad. Eso se mide sobre lo publicado, desde el
  * corredor.
  *
+ * Y no es teoría: el 16-sep el candado de la fase 2 pasó las 18 pruebas de
+ * aquí y no corrió ni una vez en pruebas, porque `run_worker_first` sólo
+ * dejaba entrar `/s101/*` y la capa de archivos contestaba la app sin pasar
+ * por el Worker. Lo cachó la medición sobre lo publicado. Por eso los archivos
+ * de aquí se sirven LITERALES, como los sirve Cloudflare: para que el banco no
+ * tape lo que la plataforma sí hace.
+ *
  *   node pruebas/banco.mjs [puerto]
  */
 
@@ -55,7 +62,10 @@ const apiPorHttps = {
 const archivos = {
   async fetch(pet) {
     const u = new URL(pet.url);
-    const rel = normalize(u.pathname === '/' ? '/index.html' : u.pathname).replace(/^(\.\.[/\\])+/, '');
+    // Literal, como `html_handling = "none"` en Cloudflare: el Worker es quien
+    // mapea `/` a `/index.html`. Si aquí se mapeara también, el banco taparía
+    // justo el fallo que costó una corrida el 16-sep.
+    const rel = normalize(u.pathname).replace(/^(\.\.[/\\])+/, '');
     try {
       const cuerpo = await readFile(join(PUBLICO, rel));
       return new Response(cuerpo, { headers: { 'Content-Type': TIPOS[extname(rel)] ?? 'application/octet-stream' } });

@@ -74,8 +74,23 @@ test('con sesión y con quote101 entre sus apps, la app se entrega', async () =>
   for (const galleta of ['duena', 'cotiza', 'todas', 'nombre_largo']) {
     const r = await pide('/', como(galleta));
     assert.equal(r.status, 200, `${galleta} debería entrar`);
-    assert.equal(await r.text(), 'archivo: /');
+    // `/` lo mapea el Worker, no la plataforma: en Cloudflare los archivos se
+    // sirven literales (`html_handling = "none"`).
+    assert.equal(await r.text(), 'archivo: /index.html');
   }
+});
+
+test('el Worker mapea las rutas él mismo, sin depender de la plataforma', async () => {
+  // Con el valor de fábrica de `html_handling`, `/entrar.html` rebotaba a
+  // `/entrar` y el candado lo regresaba a `/entrar.html`: un rebote infinito
+  // en la propia pantalla de entrada. Por eso se sirve literal y se mapea
+  // aquí. `/entrar` se acepta por si queda una liga vieja.
+  const entrar = await pide('/entrar');
+  assert.equal(entrar.status, 200, '/entrar sin sesión NO debe rebotar: es la pantalla de entrada');
+  assert.equal(await entrar.text(), 'archivo: /entrar.html');
+
+  const app = await pide('/index.html', como('duena'));
+  assert.equal(await app.text(), 'archivo: /index.html');
 });
 
 test('con sesión pero sin quote101 entre sus apps, NO se entrega', async () => {
