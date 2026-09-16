@@ -32,7 +32,7 @@ function bloqueDeGuardado() {
 /** Levanta el módulo con un `fetch` de mentiras. `rutas` contesta por
  *  `MÉTODO /ruta`; lo que no esté contestado truena, para que ninguna prueba
  *  pase por accidente creyendo que algo respondió. */
-function levantar(rutas = {}) {
+function levantar(rutas = {}, alAvisar = () => {}) {
   const pedidas = [];
   const ventana = {};
   const sitio = { href: '/' };
@@ -55,7 +55,7 @@ function levantar(rutas = {}) {
   };
 
   // eslint-disable-next-line no-new-func
-  new Function('window', 'location', 'fetch', bloqueDeGuardado())(ventana, sitio, fetchFalso);
+  new Function('window', 'location', 'fetch', 'alert', bloqueDeGuardado())(ventana, sitio, fetchFalso, alAvisar);
   return { db: ventana.suiteDB, pedidas, sitio };
 }
 
@@ -427,5 +427,23 @@ describe('los dos huecos que salieron al revisar el diff a la contra', () => {
     assert.equal(await db.guardar(arbol), true);
     const cot = pedidas.find((p) => p.metodo === 'POST' && p.ruta.endsWith('/cotizaciones'));
     assert.equal(cot.cuerpo.total, 100000);
+  });
+});
+
+describe('una cuenta que no es miembro de ninguna empresa', () => {
+  test('se le dice, en vez de enseñarle una app vacía', async () => {
+    /* `orgs` son las membresías de quien entró. Una cuenta de dueño de la suite
+     * alcanza cualquier empresa pero no es miembro de ninguna, así que la lista
+     * le llega vacía. Es un caso real: con esa cuenta entraba la prueba de
+     * `paridad.spec.mjs` hasta hoy, y la app se quedaba en blanco.
+     *
+     * Una app vacía se lee como «no tienes clientes», que es otra cosa y manda
+     * a buscar el problema donde no está. */
+    const avisos = [];
+    const { db } = levantar({ 'GET /s101/yo': { data: { orgs: [], superadmin: true } } }, (t) => avisos.push(t));
+    const r = await db.cargar();
+    assert.deepEqual(r.clientes, []);
+    assert.equal(avisos.length, 1, 'se avisó');
+    assert.match(avisos[0], /no está dada de alta en ninguna empresa/);
   });
 });
