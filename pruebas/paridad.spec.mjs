@@ -6,15 +6,24 @@
  *
  * Se cumple, pero repartido en dos mediciones distintas y por una razón:
  *
- *   1. **Que sea la misma app** se comprueba comparando los BYTES que sirve
- *      cada uno, no contando elementos en dos navegadores. Es una afirmación
- *      más fuerte —idéntico byte a byte no admite matices— y además no
- *      depende de que el navegador pueda salir a internet, que aquí no puede:
- *      el Chromium de Playwright no alcanza `netlify.app` ni pasándole el
- *      proxy (ERR_CONNECTION_RESET), aunque `curl` y el `fetch` de Node sí.
+ *   1. **Que sea la misma app** se comprueba comparando los BYTES, no
+ *      contando elementos en dos navegadores. Es una afirmación más fuerte
+ *      —idéntico byte a byte no admite matices— y no depende de que el
+ *      navegador salga a internet.
  *   2. **Que funcione** se comprueba con el navegador contra el Worker: que
  *      pinte a los dos tamaños, sin errores de JavaScript, sin Google Fonts y
  *      sin scroll horizontal. Eso es lo que la mudanza podría romper.
+ *
+ * ── 16-sep-2026, fase 2 ──────────────────────────────────────────────────
+ * La comparación contra Netlify se retiró: medía que la mudanza NO cambiara
+ * nada, y la fase 2 cambia algo a propósito —la app ya no se entrega sin
+ * sesión—. En su lugar se comprueba que la puerta esté puesta y que lo que se
+ * entrega CON sesión siga siendo, byte a byte, el `index.html` armado.
+ *
+ * Y para llegar a la app, estas pruebas ahora entran de verdad: el banco habla
+ * con la API de PRUEBAS, donde `/auth/codigo` devuelve el código en la
+ * respuesta, así que se puede abrir sesión sin buzón de correo. Nada de esto
+ * toca producción.
  *
  * ⚠️ NADA DE ESCRIBIR. La app de hoy le habla directo a Firestore de
  * producción, donde están los clientes de verdad. Estas pruebas sólo **leen**,
@@ -28,19 +37,41 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 
 import { arrancar, cerrar } from './banco.mjs';
 
 const PUERTO = 8793;
 const NUEVO = `http://127.0.0.1:${PUERTO}`;
-const VIEJO = process.env.URL_VIEJO || 'https://cotizador-t101.netlify.app';
 
 let nav;
+let galleta = '';   // la sesión de la suite, en la API de pruebas
+
+/** Abre sesión contra la API de PRUEBAS, por el mismo `/s101/*` del Worker.
+ *
+ *  Fuera de producción `/auth/codigo` devuelve el código en la respuesta: es
+ *  justo lo que permite que una prueba entre sola. En producción eso no pasa
+ *  nunca, y la prueba de humo de la API lo comprueba. */
+async function entrar(correo = process.env.CORREO_SUPERADMIN || 'mike@forespot.com') {
+  const pide = (ruta, cuerpo) => fetch(NUEVO + ruta, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cuerpo), redirect: 'manual',
+  });
+  const cod = await pide('/s101/auth/codigo', { correo }).then((r) => r.json());
+  const codigo = cod?.data?.codigo_prueba;
+  assert.ok(codigo, `la API de pruebas tiene que devolver el código para poder entrar (dijo: ${JSON.stringify(cod).slice(0, 160)})`);
+  const ent = await pide('/s101/auth/entrar', { correo, codigo });
+  assert.equal(ent.status, 200, 'entrar a la suite de pruebas');
+  const puesta = ent.headers.getSetCookie?.() ?? [ent.headers.get('set-cookie')];
+  const s101 = puesta.filter(Boolean).map((c) => c.split(';')[0]).find((c) => c.startsWith('s101='));
+  assert.ok(s101, 'la API tiene que dejar la galleta de sesión');
+  return s101;
+}
 
 before(async () => {
   await arrancar(PUERTO);
   nav = await chromium.launch();
+  galleta = await entrar();
 });
 
 after(async () => {
@@ -50,24 +81,30 @@ after(async () => {
 
 const huella = (b) => createHash('sha256').update(Buffer.from(b)).digest('hex');
 
-/* ─────────────── 1. la misma app, byte a byte ─────────────── */
+/* ─────────────── 1. la puerta, y la app byte a byte ─────────────── */
 
-test('el Worker sirve exactamente los mismos bytes que Netlify', async () => {
+test('sin sesión, la app no se entrega: manda a la pantalla de entrada', async () => {
+  for (const ruta of ['/', '/index.html']) {
+    const r = await fetch(NUEVO + ruta, { redirect: 'manual' });
+    assert.equal(r.status, 302, `${ruta} debería mandar a entrar`);
+    assert.ok(String(r.headers.get('location')).endsWith('/entrar.html'), `${ruta} → ${r.headers.get('location')}`);
+  }
+  const entrada = await fetch(NUEVO + '/entrar.html');
+  assert.equal(entrada.status, 200, 'la pantalla de entrada sí es pública');
+});
+
+test('con sesión, el Worker entrega exactamente el index.html que se armó', async () => {
   const rutas = ['/', '/fonts/raleway-400.woff2', '/fonts/fira-cifras-400.woff2'];
   for (const ruta of rutas) {
-    const [a, b] = await Promise.all([
-      fetch(NUEVO + ruta).then(async (r) => ({ codigo: r.status, cuerpo: await r.arrayBuffer() })),
-      fetch(VIEJO + ruta).then(async (r) => ({ codigo: r.status, cuerpo: await r.arrayBuffer() })),
-    ]);
-    assert.equal(a.codigo, 200, `el Worker contesta 200 en ${ruta}`);
-    assert.equal(b.codigo, 200, `Netlify contesta 200 en ${ruta}`);
-    const ha = huella(a.cuerpo), hb = huella(b.cuerpo);
-    assert.equal(
-      ha, hb,
-      `${ruta}: el Worker sirve ${a.cuerpo.byteLength} bytes (${ha.slice(0, 12)}…) ` +
-      `y Netlify ${b.cuerpo.byteLength} (${hb.slice(0, 12)}…)`,
-    );
-    console.log(`    ${ruta}: ${a.cuerpo.byteLength} bytes, idénticos (${ha.slice(0, 12)}…)`);
+    const servido = await fetch(NUEVO + ruta, { headers: { Cookie: galleta } })
+      .then(async (r) => ({ codigo: r.status, cuerpo: Buffer.from(await r.arrayBuffer()) }));
+    assert.equal(servido.codigo, 200, `el Worker contesta 200 en ${ruta}`);
+    const local = await readFile(new URL('../publicar' + (ruta === '/' ? '/index.html' : ruta), import.meta.url));
+    const ha = huella(servido.cuerpo), hb = huella(local);
+    assert.equal(ha, hb,
+      `${ruta}: el Worker sirve ${servido.cuerpo.length} bytes (${ha.slice(0, 12)}…) ` +
+      `y lo armado son ${local.length} (${hb.slice(0, 12)}…)`);
+    console.log(`    ${ruta}: ${servido.cuerpo.length} bytes, idénticos (${ha.slice(0, 12)}…)`);
   }
 });
 
@@ -88,7 +125,11 @@ const soloHost = (u) => { try { return new URL(u).host; } catch { return '(url r
 
 /** Carga el Worker y devuelve lo que hace falta para juzgarlo. */
 async function mirar(viewport) {
+  // Con la sesión de la suite puesta: sin ella, el Worker manda a la pantalla
+  // de entrada y la app no se carga nunca.
+  const [nombre, valor] = galleta.split('=');
   const ctx = await nav.newContext({ viewport, locale: 'es-MX' });
+  await ctx.addCookies([{ name: nombre, value: valor, url: NUEVO }]);
   const pag = await ctx.newPage();
 
   const errores = [];
@@ -231,7 +272,8 @@ const HUELLAS = {
 };
 
 test('cada <script> de un tercero lleva integrity y crossorigin', async () => {
-  const html = await fetch(NUEVO + '/').then((r) => r.text());
+  // Con sesión: desde la fase 2 la app no se entrega sin ella.
+  const html = await fetch(NUEVO + '/', { headers: { Cookie: galleta } }).then((r) => r.text());
   const externos = [...html.matchAll(/<script\b[^>]*\bsrc="(https?:\/\/[^"]+)"[^>]*>/g)];
   assert.equal(externos.length, Object.keys(HUELLAS).length,
     `hay ${externos.length} <script> externos; se esperaban ${Object.keys(HUELLAS).length} (los de la lista de huellas)`);
@@ -247,12 +289,20 @@ test('cada <script> de un tercero lleva integrity y crossorigin', async () => {
 /* ─────────────── 4. el reparto de rutas del Worker ─────────────── */
 
 test('las notas de trabajo no se publican, y /s101cosas no se desvía', async () => {
-  const notas = await fetch(`${NUEVO}/claude/continuar.md`);
-  assert.equal(notas.status, 404, 'claude/ no está en lo que se publica');
+  // Se pide CON sesión a propósito. Sin ella todo contesta 302 y la prueba
+  // pasaría por la puerta, no por lo que se quiere medir: que estos archivos
+  // no estén en lo que se publica. La puerta tapa el síntoma; esto mira la
+  // causa.
+  const conSesion = { headers: { Cookie: galleta } };
+  const notas = await fetch(`${NUEVO}/claude/continuar.md`, conSesion);
+  assert.equal(notas.status, 404, 'claude/ no está en lo que se publica, ni para quien entró');
+
+  const operar = await fetch(`${NUEVO}/OPERAR.md`, conSesion);
+  assert.equal(operar.status, 404, 'ni el contrato: sólo se publica lo de la lista');
 
   // Con `startsWith('/s101')` a secas, esto se le mandaría a la API
   // convertido en `cosas`.
-  const casi = await fetch(`${NUEVO}/s101cosas`);
+  const casi = await fetch(`${NUEVO}/s101cosas`, conSesion);
   assert.equal(casi.status, 404, '/s101cosas es un archivo que no existe, no una ruta de la API');
 
   const salud = await fetch(`${NUEVO}/s101/salud`);

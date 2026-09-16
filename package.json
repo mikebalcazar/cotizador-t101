@@ -6,7 +6,7 @@
   "scripts": {
     "armar": "node scripts/armar.mjs",
     "banco": "npm run armar && node pruebas/banco.mjs",
-    "prueba": "npm run armar && node --test pruebas/",
+    "prueba": "npm run armar && node --test pruebas/*.spec.mjs",
     "publicar": "npm run armar && wrangler deploy"
   },
   "devDependencies": {
