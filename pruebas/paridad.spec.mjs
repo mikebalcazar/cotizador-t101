@@ -323,7 +323,17 @@ test('el navegador ve la misma empresa que la sesión con la que se armó', asyn
   const visto = await pag.evaluate(async () => {
     const r = await fetch('/s101/yo', { credentials: 'same-origin' });
     const j = await r.json().catch(() => ({}));
-    return { estado: r.status, orgs: (j?.data?.orgs || []).map((o) => o.id), superadmin: !!j?.data?.superadmin };
+    return {
+      estado: r.status,
+      orgs: (j?.data?.orgs || []).map((o) => o.id),
+      superadmin: !!j?.data?.superadmin,
+      // Qué galleta lleva la página, para poder compararla con la de node. No
+      // se enseña el valor: se enseña su largo y sus primeros caracteres, que
+      // es lo que hace falta para saber si es la misma y si llegó entera.
+      galleta: document.cookie,
+      // Y de quién dice la API que es la sesión, sin el correo completo.
+      correo: String(j?.data?.usuario?.correo || '').split('@')[0],
+    };
   });
   await ctx.close();
 
@@ -334,7 +344,10 @@ test('el navegador ve la misma empresa que la sesión con la que se armó', asyn
   const orgsNode = (enNode.data?.orgs || []).map((o) => o.id);
   console.log(`    el navegador ve: ${visto.estado} · orgs ${JSON.stringify(visto.orgs)} · superadmin ${visto.superadmin}`);
   console.log(`    node ve:         ${enNode.estado} · orgs ${JSON.stringify(orgsNode)} · superadmin ${!!enNode.data?.superadmin}`);
-  console.log(`    galleta: nombre=${galleta.slice(0, corte)} · ${galleta.length - corte - 1} caracteres de valor`);
+  console.log(`    galleta de node:      ${galleta.length - corte - 1} caracteres · empieza ${galleta.slice(corte + 1, corte + 9)}…`);
+  console.log(`    galleta del navegador: ${visto.galleta ? visto.galleta.length - visto.galleta.indexOf('=') - 1 : 0} caracteres · ${visto.galleta ? 'empieza ' + visto.galleta.slice(visto.galleta.indexOf('=') + 1, visto.galleta.indexOf('=') + 9) + '…' : '(la página no ve ninguna)'}`);
+  console.log(`    la API dice que la sesión del navegador es de: ${visto.correo || '(no dijo)'}`);
+  console.log(`    y node entró como: ${SOCIA.split('@')[0]}`);
 
   assert.equal(visto.estado, 200, 'la página tiene que poder preguntar quién es');
   assert.deepEqual(visto.orgs, orgsNode,
