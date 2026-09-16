@@ -17,12 +17,22 @@ compatibility_date = "2026-09-01"
 # repositorio.** El 12-sep, servir la raíz en Netlify dejó las notas de trabajo
 # del chat en internet; aquí no se hereda, se elige.
 #
-# `run_worker_first` deja que `/s101/*` llegue al Worker antes de que los
-# archivos contesten.
+# `run_worker_first` decide qué llega al Worker ANTES que la capa de archivos.
+# Con `["/s101/*"]` sólo entraba la puerta a la suite, y todo lo demás —la app
+# incluida— lo contestaba la capa de archivos sin pasar por el Worker: el
+# candado de la fase 2 nunca corría. Se midió en pruebas el 16-sep, `/`
+# contestando 200 sin sesión. Ahora entra todo y el Worker decide.
+#
+# `html_handling = "none"` sirve las rutas tal cual. Con el valor de fábrica,
+# `/entrar.html` se redirige a `/entrar`, y como `/entrar` no está en la lista
+# de lo abierto, el Worker lo mandaría otra vez a `/entrar.html`: un rebote
+# infinito en la propia pantalla de entrada. Sirviendo literal no hay a dónde
+# rebotar, y a cambio el Worker mapea `/` a `/index.html` él mismo.
 [assets]
 directory = "./publicar"
 binding = "ASSETS"
-run_worker_first = ["/s101/*"]
+run_worker_first = ["/*"]
+html_handling = "none"
 
 # La API, desde el mismo origen. No hay URL: es un *service binding*.
 [[services]]
@@ -41,7 +51,8 @@ name = "quote101-staging"
 [env.staging.assets]
 directory = "./publicar"
 binding = "ASSETS"
-run_worker_first = ["/s101/*"]
+run_worker_first = ["/*"]
+html_handling = "none"
 
 [[env.staging.services]]
 binding = "API"

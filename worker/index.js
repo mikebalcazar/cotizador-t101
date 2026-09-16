@@ -52,6 +52,24 @@ const LLAVE = 'cotizador';
 const ABIERTO = new Set(['/entrar.html', '/entrar.js', '/no-publicado.html', '/huella.txt']);
 const esAbierto = (ruta) => ABIERTO.has(ruta) || ruta.startsWith('/fonts/');
 
+/** La capa de archivos sirve las rutas tal cual (`html_handling = "none"`), así
+ *  que `/` no encuentra nada por su cuenta: se mapea aquí. Se hace en el
+ *  Worker a propósito, para que no haya una redirección de la plataforma que
+ *  el candado no vea; con el valor de fábrica, `/entrar.html` rebotaba a
+ *  `/entrar` y el candado lo regresaba a `/entrar.html`, sin salida. */
+const archivo = (u) => {
+  const p = u.pathname;
+  if (p === '/' || p === '/index.html') return '/index.html';
+  // Por si queda una liga vieja a la forma sin extensión.
+  if (p === '/entrar') return '/entrar.html';
+  return p;
+};
+const pedirArchivo = (req, u, env) => {
+  const destino = new URL(req.url);
+  destino.pathname = archivo(u);
+  return env.ASSETS.fetch(new Request(destino, req));
+};
+
 /** ¿Quién viene, según la suite? Devuelve lo que contesta `/yo`, o null. */
 async function laSuiteDiceQuien(req, env) {
   const galleta = req.headers.get('cookie');
@@ -87,7 +105,7 @@ export default {
       return env.API.fetch(r);
     }
 
-    if (esAbierto(u.pathname)) return env.ASSETS.fetch(req);
+    if (esAbierto(archivo(u))) return pedirArchivo(req, u, env);
 
     // Todo lo demás —empezando por la app— pide sesión.
     const yo = await laSuiteDiceQuien(req, env);
@@ -95,6 +113,6 @@ export default {
       return Response.redirect(new URL('/entrar.html', u.origin).toString(), 302);
     }
 
-    return env.ASSETS.fetch(req);
+    return pedirArchivo(req, u, env);
   },
 };
