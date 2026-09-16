@@ -48,6 +48,16 @@ const ok = (t) => console.log(`  ok    ${t}`);
 const mal = (t) => { console.log(`  FALLA ${t}`); fallas += 1; };
 const rev = (cond, t) => (cond ? ok(t) : mal(t));
 
+/** Un estado que NO tumba el despliegue, porque no lo puede arreglar este
+ *  repositorio.
+ *
+ *  Se usa para `cotizador-t101-old`: es un sitio de Netlify sin repositorio
+ *  conectado, y se cambia soltándole una carpeta encima a mano. Contarlo como
+ *  falla dejaría el despliegue en rojo por algo que ningún commit puede
+ *  cerrar. Se reporta en cada medición, con la palabra PENDIENTE, hasta que
+ *  esté cerrado; entonces se convierte en un `rev` de verdad. */
+const aviso = (cond, t) => console.log(`  ${cond ? 'ok   ' : 'PENDIENTE'} ${t}`);
+
 /** Trae una ruta, reintentando hasta que conteste lo que se espera.
  *
  *  **Se reintenta también el 404**, no sólo el 500. Un Worker recién
@@ -204,6 +214,25 @@ if (ENTORNO === 'produccion') {
     const alFinal = await fetch(destino, { redirect: 'manual' });
     rev(alFinal.status === 302, `y ahí sí se pide sesión (${alFinal.status})`);
   }
+
+  /* La tercera dirección: `cotizador-t101-old`.
+   *
+   * Sitio de Netlify sin repositorio conectado —envío manual de una sola
+   * vez—, así que ningún commit de aquí lo cambia: se le suelta encima la
+   * carpeta `netlify-viejo/`. Por eso esto avisa y no tumba el despliegue.
+   * Queda reportado en cada medición hasta que esté cerrado.
+   */
+  const OTRA = 'https://cotizador-t101-old.netlify.app';
+  let vieja = null, comoEsta = 'sin respuesta';
+  try {
+    vieja = await fetch(OTRA + '/', { redirect: 'manual' });
+    comoEsta = String(vieja.status);
+  } catch (e) { comoEsta = e.cause?.code || e.message; }
+  const redirige = vieja?.status === 302 || vieja?.status === 301;
+  aviso(redirige, redirige
+    ? `cotizador-t101-old ya redirige (${comoEsta} → ${vieja.headers.get('location')})`
+    : `cotizador-t101-old sigue sirviendo el cotizador SIN puerta (${comoEsta}). ` +
+      'Se cierra soltándole la carpeta netlify-viejo/ en su pestaña Deploys; no lo puede hacer un commit.');
 }
 
 console.log();
