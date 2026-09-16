@@ -932,8 +932,26 @@ let NEGOCIO = null;
 async function identidad() {
   if (ORG && NEGOCIO) return true;
   const yo = await pedir('/yo');
+  /* En qué empresa trabaja esta cuenta.
+   *
+   * `orgs` son las MEMBRESÍAS de quien entró. Para Mike y para Fer hay una y
+   * es la suya. Puede venir vacía en un caso real: una cuenta de dueño de la
+   * suite —superadmin— alcanza cualquier empresa pero no es miembro de
+   * ninguna, así que esta lista le llega vacía.
+   *
+   * Cuando eso pasa no hay nada que adivinar, y lo importante es NO quedarse
+   * callado: una app vacía se lee como «no tienes clientes», que es otra cosa
+   * muy distinta y manda a buscar el problema donde no está. */
   ORG = yo.data?.orgs?.[0]?.id || null;
-  if (!ORG) throw new Error('tu cuenta no está en ninguna empresa de la suite');
+  if (!ORG) {
+    alert(
+      'Tu cuenta entró a la suite, pero no está dada de alta en ninguna empresa, '
+      + 'así que el cotizador no tiene de dónde traer tus clientes.\n\n'
+      + 'Si eres la cuenta de dueño de la suite, entra con tu cuenta de la empresa. '
+      + 'Si no, pídele a quien administra la empresa que te agregue.',
+    );
+    throw new Error('la cuenta no es miembro de ninguna empresa');
+  }
 
   const negs = await pedir(`/orgs/${ORG}/negocios`);
   NEGOCIO = negs.data?.filas?.[0]?.id || null;

@@ -53,7 +53,10 @@ const PUERTO = 8793;
 const NUEVO = `http://127.0.0.1:${PUERTO}`;
 
 let nav;
-let galleta = '';   // la sesión de la suite, en la API de pruebas
+let galleta = '';   // la sesión con la que el navegador abre la app
+let galletaSuper = '';  // la del superadmin, sólo para armar y desarmar la empresa
+const EMPRESA = `banco-${process.env.GITHUB_RUN_ID || Date.now()}`.slice(0, 40);
+const SOCIA = `banco-${process.env.GITHUB_RUN_ID || Date.now()}@ejemplo.mx`.slice(0, 60);
 
 /** Abre sesión contra la API de PRUEBAS, por el mismo `/s101/*` del Worker.
  *
@@ -75,14 +78,53 @@ async function entrar(correo = process.env.CORREO_SUPERADMIN || 'mike@forespot.c
   return s101;
 }
 
+/** Una petición a la suite de pruebas con una galleta dada. */
+const conSesion = (ruta, opciones = {}, cookie = galletaSuper) => fetch(NUEVO + ruta, {
+  method: opciones.method || 'GET',
+  headers: { 'Content-Type': 'application/json', Cookie: cookie },
+  body: opciones.cuerpo ? JSON.stringify(opciones.cuerpo) : undefined,
+  redirect: 'manual',
+}).then(async (r) => ({ estado: r.status, ...(await r.json().catch(() => ({}))) }));
+
+/* La prueba se arma su propia empresa y entra como MIEMBRO de ella.
+ *
+ * No es ceremonia: hasta hoy entraba como superadmin, y un superadmin **no es
+ * miembro de ninguna empresa**. Puede alcanzar cualquiera —para eso es—, pero
+ * `/yo` le devuelve `orgs: []`, porque esa lista es de membresías. La app
+ * necesita saber en qué empresa está, y con la lista vacía no hay respuesta
+ * posible: se queda sin nada que enseñar.
+ *
+ * Eso tumbó esta corrida y fue una falla de verdad, no del banco: la prueba
+ * estaba entrando con una cuenta que ninguna persona usa así. Mike y Fer sí son
+ * miembros de Taller 101, y es su caso el que hay que medir.
+ *
+ * La empresa se borra al final. Lleva el número de la corrida en el nombre para
+ * que dos corridas a la vez no se estorben. */
 before(async () => {
   await arrancar(PUERTO);
   nav = await chromium.launch();
-  galleta = await entrar();
+
+  galletaSuper = await entrar();
+  const creada = await conSesion('/s101/admin/orgs', { method: 'POST', cuerpo: { id: EMPRESA, nombre: 'Banco de pruebas' } });
+  assert.ok(creada.estado === 201 || creada.estado === 409, `crear la empresa de pruebas: ${creada.estado} ${creada.error || ''}`);
+  const miembro = await conSesion(`/s101/admin/orgs/${EMPRESA}/miembros`, {
+    method: 'POST', cuerpo: { correo: SOCIA, rol: 'owner', nombre: 'Socia del banco' },
+  });
+  assert.ok(miembro.estado === 201 || miembro.estado === 409, `dar de alta a la socia: ${miembro.estado} ${miembro.error || ''}`);
+
+  galleta = await entrar(SOCIA);
+  const yo = await conSesion('/s101/yo', {}, galleta);
+  assert.deepEqual((yo.data?.orgs || []).map((o) => o.id), [EMPRESA],
+    'la cuenta con la que se mide tiene que ser miembro de UNA empresa: es el caso de Mike y de Fer');
 });
 
 after(async () => {
   await nav?.close();
+  // La empresa de pruebas se va con todo lo que la app haya escrito adentro.
+  if (galletaSuper) {
+    const r = await conSesion(`/s101/admin/orgs/${EMPRESA}`, { method: 'DELETE' });
+    console.log(`    empresa de pruebas ${EMPRESA}: ${r.estado === 200 ? 'borrada' : 'NO se pudo borrar (' + r.estado + ')'}`);
+  }
   await cerrar();
 });
 
