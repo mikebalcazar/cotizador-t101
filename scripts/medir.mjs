@@ -51,11 +51,11 @@ const rev = (cond, t) => (cond ? ok(t) : mal(t));
 /** Un estado que NO tumba el despliegue, porque no lo puede arreglar este
  *  repositorio.
  *
- *  Se usa para `cotizador-t101-old`: es un sitio de Netlify sin repositorio
- *  conectado, y se cambia soltándole una carpeta encima a mano. Contarlo como
- *  falla dejaría el despliegue en rojo por algo que ningún commit puede
- *  cerrar. Se reporta en cada medición, con la palabra PENDIENTE, hasta que
- *  esté cerrado; entonces se convierte en un `rev` de verdad. */
+ *  Se usa para `cotizador-t101-old`: es un sitio de Netlify que Mike va a
+ *  borrar a mano. Contarlo como falla dejaría el despliegue en rojo por algo
+ *  que ningún commit puede cerrar. Se reporta en cada medición, con la palabra
+ *  PENDIENTE, hasta que esté cerrado; entonces se convierte en un `rev` de
+ *  verdad. */
 const aviso = (cond, t) => console.log(`  ${cond ? 'ok   ' : 'PENDIENTE'} ${t}`);
 
 /** Trae una ruta, reintentando hasta que conteste lo que se espera.
@@ -217,22 +217,27 @@ if (ENTORNO === 'produccion') {
 
   /* La tercera dirección: `cotizador-t101-old`.
    *
-   * Sitio de Netlify sin repositorio conectado —envío manual de una sola
-   * vez—, así que ningún commit de aquí lo cambia: se le suelta encima la
-   * carpeta `netlify-viejo/`. Por eso esto avisa y no tumba el despliegue.
-   * Queda reportado en cada medición hasta que esté cerrado.
+   * Mike lo revisó y decidió borrar el proyecto (16-sep). Eso no lo puede
+   * hacer ningún commit, ni el conector de Netlify que tiene el chat —sólo
+   * lee, renombra, pone contraseña y maneja variables—, así que esto avisa en
+   * cada medición hasta que esté cerrado.
+   *
+   * Lo que se mide es lo que importa, y no la forma de cerrarlo: que esa
+   * dirección YA NO SIRVA el cotizador. Borrado contesta 404, o deja de
+   * resolver el nombre; cualquiera de las dos cuenta. Sólo un 200 sigue
+   * siendo un problema.
    */
   const OTRA = 'https://cotizador-t101-old.netlify.app';
-  let vieja = null, comoEsta = 'sin respuesta';
+  let vieja = null, comoEsta = 'no resuelve';
   try {
     vieja = await fetch(OTRA + '/', { redirect: 'manual' });
     comoEsta = String(vieja.status);
   } catch (e) { comoEsta = e.cause?.code || e.message; }
-  const redirige = vieja?.status === 302 || vieja?.status === 301;
-  aviso(redirige, redirige
-    ? `cotizador-t101-old ya redirige (${comoEsta} → ${vieja.headers.get('location')})`
-    : `cotizador-t101-old sigue sirviendo el cotizador SIN puerta (${comoEsta}). ` +
-      'Se cierra soltándole la carpeta netlify-viejo/ en su pestaña Deploys; no lo puede hacer un commit.');
+  const sirveLaApp = vieja?.status === 200;
+  aviso(!sirveLaApp, sirveLaApp
+    ? `cotizador-t101-old sigue sirviendo el cotizador SIN puerta (${comoEsta}). ` +
+      'Se cierra borrando el proyecto en Netlify; no lo puede hacer un commit.'
+    : `cotizador-t101-old ya no sirve el cotizador (${comoEsta})`);
 }
 
 console.log();

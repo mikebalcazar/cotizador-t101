@@ -1,5 +1,0 @@
-# cotizador-t101-old: todo se va a la dirección con puerta.
-#
-# El 302 (y no 301) es a propósito: un 301 se queda pegado en el caché del
-# navegador de la gente y sobreviviría a que quitáramos esto.
-/*  https://quote101.mike-929.workers.dev/:splat  302!
