@@ -21,7 +21,10 @@
  *   · `/s101cosas` NO se desvía a la API;
  *   · `claude/` no está publicado. Esto no es paranoia: el 12-sep las notas
  *     de trabajo del chat acabaron en internet por servir la raíz del
- *     repositorio en Netlify.
+ *     repositorio en Netlify;
+ *   · y, midiendo producción, que la dirección VIEJA de Netlify ya no sirva
+ *     el cotizador sin puerta. El 16-sep el candado se saltaba con sólo usar
+ *     esa liga, y estuvo a punto de quedar reportado como cerrado.
  *
  * Sale con 1 si algo no cuadra. Una medición que no puede fallar no prueba
  * nada.
@@ -168,6 +171,39 @@ for (const ruta of ['/claude/continuar.md', '/OPERAR.md']) {
 for (const nombre of ['claude', 'OPERAR.md', 'README.md']) {
   const hay = await stat(fileURLToPath(new URL('../publicar/' + nombre, import.meta.url))).then(() => true).catch(() => false);
   rev(!hay, `${nombre} no está en lo que se publicó`);
+}
+
+/* 5 · la puerta vieja de Netlify, sólo al medir producción
+ *
+ * El candado vive en el Worker, pero `cotizador-t101.netlify.app` servía la
+ * MISMA app desde la raíz del repositorio, sin puerta, y se rearmaba en cada
+ * cambio. Una puerta en una de tres entradas no es una puerta. Ahora redirige,
+ * y aquí se comprueba desde afuera: el chat no alcanza `*.netlify.app`, el
+ * corredor sí.
+ *
+ * Netlify tarda en rearmar después de un cambio, así que se reintenta.
+ */
+if (ENTORNO === 'produccion') {
+  const VIEJA = 'https://cotizador-t101.netlify.app';
+  let r = null, estado = 'sin respuesta';
+  for (let i = 1; i <= 12; i++) {
+    try {
+      r = await fetch(VIEJA + '/', { redirect: 'manual' });
+      estado = String(r.status);
+      if (r.status === 302) break;
+    } catch (e) { estado = e.cause?.code || e.message; }
+    if (i < 12) await new Promise((s) => setTimeout(s, 10000));
+  }
+  const destino = r?.headers?.get('location') || '';
+  rev(r?.status === 302, `la dirección vieja de Netlify ya no sirve el cotizador (${estado})`);
+  rev(destino.startsWith(BASE), `y manda a la dirección con puerta (${destino || 'sin location'})`);
+
+  // Y que lo que manda sí pida sesión: si redirigiera a algo abierto, no
+  // habríamos cerrado nada.
+  if (destino.startsWith(BASE)) {
+    const alFinal = await fetch(destino, { redirect: 'manual' });
+    rev(alFinal.status === 302, `y ahí sí se pide sesión (${alFinal.status})`);
+  }
 }
 
 console.log();
