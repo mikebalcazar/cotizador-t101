@@ -35,6 +35,29 @@ toca. **El hueco se cierra en las fases 3 a 5**, cuando las cotizaciones vivan
 en la suite y Firebase se apague. Mientras tanto sigue abierto, y eso está
 dicho y decidido (Mike, 12-sep), no olvidado.
 
+## Había una segunda entrada, y casi queda abierta
+
+El candado está en el Worker de Cloudflare. Pero `cotizador-t101.netlify.app`
+seguía sirviendo **la misma app** desde la raíz de este repositorio, sin puerta
+ninguna, y se rearmaba en cada cambio. El candado se saltaba con sólo usar la
+liga vieja.
+
+Lo encontró el aviso de despliegue que Netlify dejó en la solicitud #20. Sin
+ese aviso, el día habría quedado reportado como «el cotizador ya no se abre sin
+cuenta», que no era cierto.
+
+Ya redirige (`netlify.toml`, 302 y no 301, para poder deshacerlo sin pedirle a
+nadie que limpie su navegador), y está **medido desde el corredor**: la
+dirección vieja contesta 302, manda a la dirección con puerta, y ahí sí se pide
+sesión. Las tres cosas, porque redirigir a una puerta abierta no cierra nada.
+
+**Sigue abierta `cotizador-t101-old.netlify.app`**: es otro sitio de Netlify,
+NO lo publica este repositorio, y sirve el cotizador sin puerta. Apagarlo es de
+Mike; está avisado.
+
+**Regla:** antes de decir que una app quedó cerrada, hay que preguntarse por
+cuántas direcciones se llega. Aquí eran tres.
+
 ## La lección que costó una corrida
 
 Las 18 pruebas de mesa pasaron en verde **con el candado sin correr ni una
@@ -72,7 +95,9 @@ reparto de rutas; la plataforma sólo se prueba allá.
 * Mesa de trabajo: 18 pruebas. 9 nuevas del candado (`pruebas/puerta.spec.mjs`),
   la mayoría de lo que NO debe pasar; las 8 de paridad, adaptadas —ahora entran
   de verdad contra la API de pruebas, donde `/auth/codigo` devuelve el código—.
-* Publicado: 21 comprobaciones en pruebas y 21 en producción, todas verdes.
+* Publicado: 21 comprobaciones en pruebas y 24 en producción, todas verdes.
+  Las tres últimas son la puerta vieja de Netlify, medidas desde el corredor,
+  que es el único que alcanza `*.netlify.app`.
 * Arreglo de paso: `npm run prueba` estaba roto desde antes —`node --test
   pruebas/` cargaba la CARPETA como módulo y moría con MODULE_NOT_FOUND—, así
   que salía en rojo dijeran lo que dijeran las pruebas.
