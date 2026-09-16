@@ -1,7 +1,37 @@
-# Netlify sirve la raíz de este repositorio tal cual, sin construir nada.
+# Netlify ya no sirve el cotizador: lo manda a la dirección con puerta.
 #
-# Eso significa que **todo archivo del repositorio queda publicado en
-# internet**, no sólo `index.html`. Se midió el 12-sep-2026 y estaba servido:
+# ── 16-sep-2026 ──────────────────────────────────────────────────────────
+# El 16-sep quote101 pasó a pedir sesión de la suite 101, y el candado vive en
+# el Worker de Cloudflare. Pero esta dirección seguía sirviendo la MISMA app
+# desde este repositorio, sin puerta ninguna: el candado se saltaba con sólo
+# usar la liga vieja. Una puerta en una de tres entradas no es una puerta.
+#
+# Así que aquí todo se manda a la dirección con puerta. No se apaga ni se borra
+# nada en Netlify —eso es de Mike—: esto es una regla del repositorio y se quita
+# quitándola.
+#
+# `status = 302` y no 301 a propósito: un 301 se queda pegado en el caché del
+# navegador de la gente y sobreviviría a que quitáramos esta regla. Mientras la
+# mudanza no termine, conviene poder deshacerla sin pedirle a nadie que limpie
+# su navegador.
+#
+# `force = true` es imprescindible: sin él, Netlify sirve el archivo de verdad
+# cuando existe y la regla no se aplica nunca. Es justo el caso de aquí, porque
+# `index.html` está en la raíz del repositorio.
+#
+# Queda fuera `no-publicado.html`, que es la página del 404 y no lleva a
+# ninguna parte.
+
+[[redirects]]
+  from = "/*"
+  to = "https://quote101.mike-929.workers.dev/:splat"
+  status = 302
+  force = true
+
+# ── lo de antes, que sigue valiendo ──────────────────────────────────────
+# Netlify sirve la raíz de este repositorio tal cual, sin construir nada. Eso
+# significa que **todo archivo del repositorio queda publicado en internet**,
+# no sólo `index.html`. Se midió el 12-sep-2026 y estaba servido:
 #
 #   /OPERAR.md                       200
 #   /CLAUDE.md                       200
@@ -11,20 +41,15 @@
 #
 # `claude/` es donde los chats dejan sus notas: qué se midió, qué está roto y
 # qué falta por cerrar. Eso no es contenido publicado, es el cuaderno de
-# trabajo, y publicarlo le entrega a cualquiera el mapa de lo que todavía no
-# se ha arreglado. Pasó exactamente eso: al subir la fase 0 de la migración,
+# trabajo, y publicarlo le entrega a cualquiera el mapa de lo que todavía no se
+# ha arreglado. Pasó exactamente eso: al subir la fase 0 de la migración,
 # `claude/continuar.md` —que describe un hueco abierto— quedó en una dirección
 # pública durante veinte minutos.
 #
-# Este archivo cierra `/claude/*`. No cambia dónde publica Netlify ni qué
-# construye: sólo agrega la regla.
-#
-# `force = true` es imprescindible: sin él, Netlify sirve el archivo de verdad
-# cuando existe y la regla no se aplica nunca. Es justo el caso de aquí.
-#
-# El `.md` de la raíz —OPERAR, CLAUDE, README— se queda servido a propósito:
-# el contrato de cómo se opera ya es público en el repositorio `descargas`, y
-# no dice nada de nadie.
+# La regla de arriba ya se los lleva a todos, pero ésta se queda: si algún día
+# se quita la redirección, `claude/*` no debe volver a quedar servido por el
+# descuido de haber quitado otra cosa. Va DESPUÉS a propósito —Netlify aplica
+# la primera que coincide— así que hoy no se usa; está aquí como red.
 
 [[redirects]]
   from = "/claude/*"
