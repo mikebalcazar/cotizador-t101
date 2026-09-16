@@ -205,8 +205,15 @@ if (ENTORNO === 'produccion') {
     if (i < 12) await new Promise((s) => setTimeout(s, 10000));
   }
   const destino = r?.headers?.get('location') || '';
-  rev(r?.status === 302, `la dirección vieja de Netlify ya no sirve el cotizador (${estado})`);
-  rev(destino.startsWith(BASE), `y manda a la dirección con puerta (${destino || 'sin location'})`);
+  if (Number(estado) >= 500) {
+    // Netlify caído: la redirección puede estar bien puesta y no poder
+    // comprobarse. Se dice con esas palabras en vez de acusar al repositorio.
+    mal(`Netlify contestó ${estado} en la dirección vieja: no se pudo comprobar la redirección. ` +
+        'El sitio puede estar caído o el equipo suspendido; con Netlify abajo, esa dirección no se puede dar por cerrada.');
+  } else {
+    rev(r?.status === 302, `la dirección vieja de Netlify ya no sirve el cotizador (${estado})`);
+    rev(destino.startsWith(BASE), `y manda a la dirección con puerta (${destino || 'sin location'})`);
+  }
 
   // Y que lo que manda sí pida sesión: si redirigiera a algo abierto, no
   // habríamos cerrado nada.
@@ -224,8 +231,13 @@ if (ENTORNO === 'produccion') {
    *
    * Lo que se mide es lo que importa, y no la forma de cerrarlo: que esa
    * dirección YA NO SIRVA el cotizador. Borrado contesta 404, o deja de
-   * resolver el nombre; cualquiera de las dos cuenta. Sólo un 200 sigue
-   * siendo un problema.
+   * resolver el nombre; cualquiera de las dos cuenta.
+   *
+   * Y lo que NO cuenta como cerrado: un 5xx. El 16-sep las dos direcciones de
+   * Netlify contestaron 503 con los sitios en `ready`, y la primera versión de
+   * esto lo cantó como «ya no sirve el cotizador» — se dio por buena con una
+   * caída. **Un sitio caído no es un sitio cerrado**: mañana vuelve, y con él
+   * el cotizador abierto. Un 5xx es «no se pudo saber», y se dice así.
    */
   const OTRA = 'https://cotizador-t101-old.netlify.app';
   let vieja = null, comoEsta = 'no resuelve';
@@ -233,11 +245,16 @@ if (ENTORNO === 'produccion') {
     vieja = await fetch(OTRA + '/', { redirect: 'manual' });
     comoEsta = String(vieja.status);
   } catch (e) { comoEsta = e.cause?.code || e.message; }
-  const sirveLaApp = vieja?.status === 200;
-  aviso(!sirveLaApp, sirveLaApp
-    ? `cotizador-t101-old sigue sirviendo el cotizador SIN puerta (${comoEsta}). ` +
-      'Se cierra borrando el proyecto en Netlify; no lo puede hacer un commit.'
-    : `cotizador-t101-old ya no sirve el cotizador (${comoEsta})`);
+  const codigo = vieja?.status ?? 0;
+  const cerrado = codigo === 404 || codigo === 410 || codigo === 301 || codigo === 302 || codigo === 0;
+  const caido = codigo >= 500;
+  aviso(cerrado, caido
+    ? `cotizador-t101-old contestó ${comoEsta}: NO se pudo saber si sigue abierto. ` +
+      'Un sitio caído no es un sitio cerrado; cuando vuelva, vuelve el cotizador. Se cierra borrando el proyecto.'
+    : cerrado
+      ? `cotizador-t101-old ya no sirve el cotizador (${comoEsta})`
+      : `cotizador-t101-old sigue sirviendo el cotizador SIN puerta (${comoEsta}). ` +
+        'Se cierra borrando el proyecto en Netlify; no lo puede hacer un commit.');
 }
 
 console.log();
