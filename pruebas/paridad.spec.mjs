@@ -326,10 +326,21 @@ test('el navegador ve la misma empresa que la sesión con la que se armó', asyn
     return { estado: r.status, orgs: (j?.data?.orgs || []).map((o) => o.id), superadmin: !!j?.data?.superadmin };
   });
   await ctx.close();
+
+  // Y lo mismo desde node, EN ESTE MISMO MOMENTO y con la misma galleta. Si las
+  // dos difieren, el problema es el transporte; si las dos dicen lo mismo, es la
+  // membresía. Sin las dos cifras juntas no se puede saber cuál de las dos es.
+  const enNode = await conSesion('/s101/yo', {}, galleta);
+  const orgsNode = (enNode.data?.orgs || []).map((o) => o.id);
   console.log(`    el navegador ve: ${visto.estado} · orgs ${JSON.stringify(visto.orgs)} · superadmin ${visto.superadmin}`);
+  console.log(`    node ve:         ${enNode.estado} · orgs ${JSON.stringify(orgsNode)} · superadmin ${!!enNode.data?.superadmin}`);
+  console.log(`    galleta: nombre=${galleta.slice(0, corte)} · ${galleta.length - corte - 1} caracteres de valor`);
+
   assert.equal(visto.estado, 200, 'la página tiene que poder preguntar quién es');
+  assert.deepEqual(visto.orgs, orgsNode,
+    'el navegador y node, con la MISMA galleta, tienen que ver lo mismo: si no, es el transporte');
   assert.deepEqual(visto.orgs, [EMPRESA],
-    'el navegador tiene que ver la misma empresa que node con esta sesión');
+    'y esa empresa tiene que ser la que esta prueba armó');
 });
 
 test('la app ya NO le habla a Firebase: ni una petición', async () => {
