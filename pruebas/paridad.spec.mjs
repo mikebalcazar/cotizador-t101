@@ -176,7 +176,12 @@ const soloHost = (u) => { try { return new URL(u).host; } catch { return '(url r
 async function mirar(viewport) {
   // Con la sesión de la suite puesta: sin ella, el Worker manda a la pantalla
   // de entrada y la app no se carga nunca.
-  const [nombre, valor] = galleta.split('=');
+  // El valor de la galleta puede traer `=` adentro (es una firma). Con
+  // `split('=')` a secas se partía en el primero y el valor llegaba cortado al
+  // navegador.
+  const corte = galleta.indexOf('=');
+  const nombre = galleta.slice(0, corte);
+  const valor = galleta.slice(corte + 1);
   const ctx = await nav.newContext({ viewport, locale: 'es-MX' });
   await ctx.addCookies([{ name: nombre, value: valor, url: NUEVO }]);
   const pag = await ctx.newPage();
@@ -300,6 +305,32 @@ for (const t of TAMANOS) {
  *
  * Lo que sí importa medir es a qué HOST sale, nunca la URL completa: la de
  * Firestore llevaba la llave. */
+
+test('el navegador ve la misma empresa que la sesión con la que se armó', async () => {
+  /* Esta prueba existe porque sin ella la falla se ve dos pantallas después y
+   * no dice nada: la app se queda en blanco y el error que sale es «esta cuenta
+   * no es miembro de ninguna empresa», que manda a revisar membresías cuando lo
+   * que estaba mal era la galleta que el navegador llevaba.
+   *
+   * Se pregunta desde DENTRO de la página, por el mismo `/s101/*` que usa la
+   * app, y se compara contra lo que ve node con la misma sesión. Si las dos no
+   * coinciden, el problema es el transporte, no los datos. */
+  const [corte] = [galleta.indexOf('=')];
+  const ctx = await nav.newContext({ viewport: { width: 1440, height: 900 }, locale: 'es-MX' });
+  await ctx.addCookies([{ name: galleta.slice(0, corte), value: galleta.slice(corte + 1), url: NUEVO }]);
+  const pag = await ctx.newPage();
+  await pag.goto(NUEVO, { waitUntil: 'domcontentloaded' });
+  const visto = await pag.evaluate(async () => {
+    const r = await fetch('/s101/yo', { credentials: 'same-origin' });
+    const j = await r.json().catch(() => ({}));
+    return { estado: r.status, orgs: (j?.data?.orgs || []).map((o) => o.id), superadmin: !!j?.data?.superadmin };
+  });
+  await ctx.close();
+  console.log(`    el navegador ve: ${visto.estado} · orgs ${JSON.stringify(visto.orgs)} · superadmin ${visto.superadmin}`);
+  assert.equal(visto.estado, 200, 'la página tiene que poder preguntar quién es');
+  assert.deepEqual(visto.orgs, [EMPRESA],
+    'el navegador tiene que ver la misma empresa que node con esta sesión');
+});
 
 test('la app ya NO le habla a Firebase: ni una petición', async () => {
   // Es la prueba de esta entrega. Mientras salga una sola petición a Firebase,
