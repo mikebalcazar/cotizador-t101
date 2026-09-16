@@ -840,311 +840,435 @@ function(a,b,c){if(!Vd(b))throw Error(m(200));return Wd(null,a,b,!1,c)};Q.unmoun
 </script>
 
 <script>
-// Firestore REST API — no requiere SDK, funciona desde file://
-const FS_PROJECT = "cotizador-t101";
-const FS_KEY = "AIzaSyAlYppIutsXpe-lc2WTqbFQ_dz8rOrUxKM";
-const FS_DOC = `https://firestore.googleapis.com/v1/projects/${FS_PROJECT}/databases/(default)/documents/app/datos?key=${FS_KEY}`;
+/* quote101 guarda en la suite 101. Ya no en Firebase.
+ *
+ * Aquí vivía `window.firebaseDB`, que le hablaba a Firestore con la llave
+ * pública metida en esta misma página: quien la leyera podía leer y escribir
+ * los doce clientes sin pasar por ninguna puerta. La pantalla de entrada del
+ * 16-sep tapó el camino de la aplicación, no ése. Esto es lo que lo cierra.
+ *
+ * Lo que la app ve NO cambia: las mismas seis funciones, los mismos datos de
+ * entrada y salida. Por eso React no se tocó. Lo que cambió es a quién le
+ * hablan, y que ahora hablan por `/s101/*` —el mismo origen, con la galleta de
+ * sesión de la suite— en vez de a `firestore.googleapis.com` con una llave a
+ * la vista.
+ *
+ * Se llama `suiteDB` y no `firebaseDB`. El nombre viejo apuntando a la suite
+ * habría sido una trampa para el siguiente que lo lea.
+ *
+ * CÓMO SE REPARTE EL ÁRBOL
+ *
+ * La app trabaja con un árbol en memoria: clientes → proyectos → cotizaciones
+ * → versiones → muebles. La suite tiene una tabla por nivel hasta la
+ * cotización; las versiones van enteras en su campo `datos`, que es el cajón de
+ * quote101 y nadie más lo lee.
+ *
+ * LOS IDS LOS PONE LA SUITE
+ *
+ * La app inventaba ids con `uid()`. Ahora, cuando algo se crea, el id lo
+ * devuelve la suite y **se le escribe encima al objeto del árbol**. No es un
+ * capricho: la suite no deja que una app elija el id de un cliente o de un
+ * proyecto (`permisos.ts`), y tener dos identidades para la misma cosa —una en
+ * la pantalla y otra en la base— es la clase de cosa que se descubre el día que
+ * algo no se borra.
+ *
+ * EL ESPEJO
+ *
+ * `guardar` recibe el árbol COMPLETO cada vez: la app no sabe qué cambió. Para
+ * no reescribir las trescientas cosas en cada tecleo, se guarda una huella de
+ * lo que la suite tenía la última vez que se leyó o se escribió, y sólo se
+ * manda lo que difiere. Lo que ya no está en el árbol se borra, de abajo hacia
+ * arriba: cotización, proyecto, cliente. Al revés la suite contesta 409, y con
+ * razón.
+ *
+ * EL DINERO
+ *
+ * La columna `total` de la cotización es centavos ENTEROS. Los montos de la app
+ * son pesos con decimales. Se convierte con texto y no con `Math.round(v*100)`,
+ * y se multiplica por la cantidad DESPUÉS de convertir: `10.005 × 4` en
+ * flotantes da 40.02 → 4002 centavos, y convertir primero da 1001 × 4 = 4004.
+ * Los dos centavos de diferencia no están en ningún renglón.
+ *
+ * LAS FOTOS
+ *
+ * Las que se capturan nuevas llegan como base64. Se suben a la suite
+ * (`POST /orgs/:o/archivos`, que las guarda en R2) y en el árbol se deja la
+ * dirección. Antes iban a Firebase Storage con URL pública; ahora la dirección
+ * pide sesión.
+ *
+ * Y ya no hay que recomprimir en cascada: eso existía porque Firestore no deja
+ * pasar un documento de más de 1 MB y el árbol entero iba en UN documento. Aquí
+ * cada cotización es su propio renglón y las fotos no van dentro. Se fueron
+ * cuatro niveles de recompresión que degradaban las fotos para que el documento
+ * cupiera.
+ */
 
-// Firebase Storage (para imágenes de muebles)
-const FS_BUCKET = "cotizador-t101.firebasestorage.app";
+const API = '/s101';
 
-// Sube base64 a Storage, devuelve URL pública. Si falla, lanza error con detalles.
-async function uploadToStorage(b64) {
-  if (typeof b64 !== "string" || !b64.startsWith("data:image")) return b64;
-  const m = b64.match(/^data:(image\/\w+);base64,(.+)$/);
-  if (!m) throw new Error("Formato base64 inválido");
-  const mimeType = m[1];
-  const ext = mimeType.split("/")[1].replace("jpeg","jpg");
-
-  // base64 → Blob
-  const binary = atob(m[2]);
-  const bytes = new Uint8Array(binary.length);
-  for (let i=0;i<binary.length;i++) bytes[i] = binary.charCodeAt(i);
-  const blob = new Blob([bytes], {type: mimeType});
-
-  const path = `muebles/${Date.now()}-${Math.random().toString(36).slice(2,10)}.${ext}`;
-  const upUrl = `https://firebasestorage.googleapis.com/v0/b/${FS_BUCKET}/o?uploadType=media&name=${encodeURIComponent(path)}`;
-  let r;
-  try {
-    r = await fetch(upUrl, {method:"POST", headers:{"Content-Type": mimeType}, body: blob});
-  } catch(e) {
-    throw new Error("Red/CORS: " + e.message);
+/** Una petición a la suite. Devuelve `{estado, data, error}`; no tira salvo que
+ *  la red se caiga. Un 401 quiere decir que la sesión se venció mientras la
+ *  pestaña estaba abierta: se manda a la puerta, porque insistir con una sesión
+ *  muerta sólo produce errores que no dicen nada. */
+async function pedir(ruta, opciones = {}) {
+  const r = await fetch(API + ruta, {
+    method: opciones.method || 'GET',
+    headers: opciones.cuerpo ? { 'Content-Type': 'application/json' } : undefined,
+    body: opciones.cuerpo ? JSON.stringify(opciones.cuerpo) : opciones.forma,
+    credentials: 'same-origin',
+  });
+  if (r.status === 401) {
+    location.href = '/entrar.html';
+    throw new Error('sesión vencida');
   }
-  if (!r.ok) {
-    let detalle = "HTTP " + r.status;
+  const cuerpo = await r.json().catch(() => ({}));
+  return { estado: r.status, ...cuerpo };
+}
+
+/* ─────────────── quién soy y en qué empresa ─────────────── */
+
+let ORG = null;
+let NEGOCIO = null;
+
+async function identidad() {
+  if (ORG && NEGOCIO) return true;
+  const yo = await pedir('/yo');
+  ORG = yo.data?.orgs?.[0]?.id || null;
+  if (!ORG) throw new Error('tu cuenta no está en ninguna empresa de la suite');
+
+  const negs = await pedir(`/orgs/${ORG}/negocios`);
+  NEGOCIO = negs.data?.filas?.[0]?.id || null;
+  if (!NEGOCIO) {
+    // La suite guarda clientes y cotizaciones por negocio, y una empresa recién
+    // hecha no tiene ninguno. El cotizador puede crear el suyo —sólo el nombre
+    // y la moneda— justo para no quedarse trabado esperando a otra app.
+    const nuevo = await pedir(`/orgs/${ORG}/negocios`, {
+      method: 'POST', cuerpo: { nombre: yo.data?.orgs?.[0]?.nombre || 'Taller 101', moneda: 'MXN' },
+    });
+    NEGOCIO = nuevo.data?.id || null;
+    if (!NEGOCIO) throw new Error('no se pudo crear el negocio: ' + (nuevo.error || nuevo.estado));
+  }
+  return true;
+}
+
+/* ─────────────── el dinero ─────────────── */
+
+/** Pesos con decimales → centavos enteros, sin flotantes.
+ *
+ *  `Math.round(v * 100)` parece lo mismo y no lo es: 20000.005 * 100 da
+ *  2000000.4999999998 y redondea para abajo, o sea se pierde medio centavo. Con
+ *  texto no hay nada que perder. Es la misma regla que aplica la API
+ *  (`aCentavosExacto`), a propósito: si las dos no coincidieran, el total que
+ *  la app enseña y el que la suite guarda se separarían. */
+function aCentavos(valor) {
+  if (valor === null || valor === undefined || valor === '') return 0;
+  const texto = typeof valor === 'number'
+    ? (Number.isFinite(valor) ? valor.toFixed(10) : 'no-es-numero')
+    : String(valor).replace(/[\s $,]/g, '');
+  // Un monto que NO se puede leer truena, no vale cero. Devolver cero dejaría
+  // que un renglón con basura se guardara como gratis sin que nadie viera un
+  // error: el total sólo saldría más bajo. Así truena, `guardar` devuelve false
+  // y la app avisa. Vacío sí es cero, arriba: un campo que nadie llenó no vale.
+  if (!/^[+-]?\d*(\.\d*)?$/.test(texto) || !/\d/.test(texto)) {
+    throw new Error('monto que no se puede leer: ' + String(valor));
+  }
+  const negativo = texto.startsWith('-');
+  const [entero = '0', decimales = ''] = texto.replace(/^[+-]/, '').split('.');
+  const cent = (decimales + '00').slice(0, 2);
+  const tercero = Number(decimales[2] || 0);
+  let n = Number(entero || 0) * 100 + Number(cent || 0);
+  if (tercero >= 5) n += 1;               // se redondea al centavo de arriba
+  return negativo ? -n : n;
+}
+
+/** El total de una cotización, en centavos: la versión vigente (la 0), precio
+ *  por pieza convertido y multiplicado después por la cantidad. */
+function totalDe(cot) {
+  const vigente = (cot.versiones || [])[0] || {};
+  return (vigente.muebles || []).reduce((suma, m) => {
+    const qty = Number.isInteger(Number(m.qty)) ? Number(m.qty) : 1;
+    return suma + aCentavos(m.total) * (qty >= 0 ? qty : 0);
+  }, 0);
+}
+
+/* ─────────────── las fotos ─────────────── */
+
+/** Sube una foto nueva y devuelve su dirección en la suite. Las que ya son
+ *  dirección se dejan como están: subirlas otra vez dejaría copias y haría
+ *  cada guardado más lento que el anterior. */
+async function subirFoto(b64, cotizacion_id) {
+  const m = /^data:(image\/[\w+.-]+);base64,(.+)$/.exec(b64 || '');
+  if (!m) return b64;
+  const binario = atob(m[2]);
+  const bytes = new Uint8Array(binario.length);
+  for (let i = 0; i < binario.length; i++) bytes[i] = binario.charCodeAt(i);
+  const ext = (m[1].split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+  const forma = new FormData();
+  forma.append('archivo', new File([bytes], `mueble-${Date.now()}.${ext}`, { type: m[1] }));
+  forma.append('de_tabla', 'cotizaciones');
+  forma.append('de_id', cotizacion_id || 'sin-cotizacion');
+  const r = await pedir(`/orgs/${ORG}/archivos`, { method: 'POST', forma });
+  if (r.estado !== 201 || !r.data?.id) throw new Error('no se pudo guardar una foto: ' + (r.error || r.estado));
+  return `${API}/orgs/${ORG}/archivos/${r.data.id}`;
+}
+
+/* ─────────────── el espejo ─────────────── */
+
+/* Huella de lo que la suite tenía la última vez. Si la huella no cambió, no se
+ * manda nada: `guardar` recibe el árbol completo en cada tecleo. */
+const espejo = { clientes: new Map(), proyectos: new Map(), cotizaciones: new Map() };
+
+const huellaCliente = (c) => JSON.stringify({ nombre: c.nombre || '' });
+const huellaProyecto = (p, cliente_id) => JSON.stringify({ nombre: p.nombre || '', cliente_id });
+const huellaCotizacion = (q, cliente_id, proyecto_id) => JSON.stringify({
+  cliente_id, proyecto_id, total: totalDe(q),
+  datos: { nombre: q.nombre || null, proyecto_id, versiones: q.versiones || [] },
+});
+
+/* ─────────────── la interfaz que la app conoce ─────────────── */
+
+window.suiteDB = {
+  /** El árbol, armado de las tres tablas. */
+  async cargar() {
     try {
-      const errBody = await r.text();
-      detalle += " — " + errBody.slice(0, 300);
-    } catch(e){}
-    throw new Error(detalle);
-  }
-  const data = await r.json();
-  const token = data.downloadTokens;
-  if (!token) throw new Error("Sin downloadToken en respuesta de Storage");
-  return `https://firebasestorage.googleapis.com/v0/b/${FS_BUCKET}/o/${encodeURIComponent(path)}?alt=media&token=${token}`;
-}
+      await identidad();
+      const [cls, prs, cots, ajs] = await Promise.all([
+        pedir(`/orgs/${ORG}/clientes?negocio_id=${encodeURIComponent(NEGOCIO)}`),
+        pedir(`/orgs/${ORG}/proyectos?negocio_id=${encodeURIComponent(NEGOCIO)}`),
+        pedir(`/orgs/${ORG}/cotizaciones?negocio_id=${encodeURIComponent(NEGOCIO)}`),
+        pedir(`/orgs/${ORG}/ajustes`),
+      ]);
 
-// Sube objeto JSON a Storage como archivo .json, devuelve URL pública
-async function uploadJSONToStorage(obj) {
-  const json = JSON.stringify(obj);
-  const blob = new Blob([json], {type: "application/json"});
-  const path = `versiones/${Date.now()}-${Math.random().toString(36).slice(2,10)}.json`;
-  const upUrl = `https://firebasestorage.googleapis.com/v0/b/${FS_BUCKET}/o?uploadType=media&name=${encodeURIComponent(path)}`;
-  let r;
-  try {
-    r = await fetch(upUrl, {method:"POST", headers:{"Content-Type":"application/json"}, body: blob});
-  } catch(e) { throw new Error("Red/CORS: "+e.message); }
-  if (!r.ok) {
-    let detalle = "HTTP "+r.status;
-    try { detalle += " — " + (await r.text()).slice(0,300); } catch(e){}
-    throw new Error(detalle);
-  }
-  const data = await r.json();
-  const token = data.downloadTokens;
-  if (!token) throw new Error("Sin downloadToken en JSON upload");
-  return `https://firebasestorage.googleapis.com/v0/b/${FS_BUCKET}/o/${encodeURIComponent(path)}?alt=media&token=${token}`;
-}
+      const porProyecto = new Map();
+      for (const q of (cots.data?.filas || [])) {
+        const datos = q.datos || {};
+        const cot = { id: q.id, nombre: datos.nombre || 'Cotización', folio: q.folio, versiones: datos.versiones || [] };
+        const pid = datos.proyecto_id || '';
+        if (!porProyecto.has(pid)) porProyecto.set(pid, []);
+        porProyecto.get(pid).push(cot);
+      }
 
-// Descarga JSON desde una URL de Storage
+      const porCliente = new Map();
+      for (const p of (prs.data?.filas || [])) {
+        const proy = { id: p.id, nombre: p.nombre, cotizaciones: porProyecto.get(p.id) || [] };
+        if (!porCliente.has(p.cliente_id)) porCliente.set(p.cliente_id, []);
+        porCliente.get(p.cliente_id).push(proy);
+      }
+
+      const clientes = (cls.data?.filas || [])
+        .map((c) => ({ id: c.id, nombre: c.nombre, proyectos: porCliente.get(c.id) || [] }));
+
+      /* El espejo se llena RECORRIENDO EL ÁRBOL QUE SE ENTREGA, no las listas
+       * que llegaron. La diferencia no es de estilo: `guardar` borra lo que
+       * está en el espejo y no está en el árbol. Si el espejo llevara una fila
+       * que el árbol no incluyó —una cotización cuyo `proyecto_id` apunta a un
+       * proyecto que no existe, por ejemplo— el siguiente guardado la borraría
+       * sin que nadie la hubiera visto ni pedido.
+       *
+       * La regla queda así: **en el espejo sólo hay lo que se le enseñó a la
+       * pantalla.** Lo que no se enseñó, `guardar` no lo puede tocar. */
+      espejo.clientes.clear(); espejo.proyectos.clear(); espejo.cotizaciones.clear();
+      for (const c of clientes) {
+        espejo.clientes.set(c.id, huellaCliente(c));
+        for (const p of c.proyectos) {
+          espejo.proyectos.set(p.id, huellaProyecto(p, c.id));
+          for (const q of p.cotizaciones) espejo.cotizaciones.set(q.id, huellaCotizacion(q, c.id, p.id));
+        }
+      }
+
+      const porClave = {};
+      for (const a of (ajs.data?.filas || [])) porClave[a.clave] = a.valor;
+
+      return { clientes, config: porClave.config || null, prices: porClave.precios || null };
+    } catch (e) {
+      console.error('cargar:', e);
+      // Vacío y no a medias: enseñar la mitad del árbol y dejar que alguien
+      // guarde encima borraría lo que no se alcanzó a leer.
+      return { clientes: [], config: null, prices: null };
+    }
+  },
+
+  /** El árbol completo. Se manda sólo lo que cambió, y se borra lo que ya no
+   *  está. Devuelve `false` si algo falló: la app avisa y no marca guardado. */
+  async guardar(clientes) {
+    try {
+      await identidad();
+
+      const vistos = { clientes: new Set(), proyectos: new Set(), cotizaciones: new Set() };
+
+      for (const c of clientes) {
+        /* Cliente. Si es nuevo, el id lo pone la suite y se le escribe encima
+         * al objeto del árbol: la app vuelve a guardar ese mismo objeto y el id
+         * tiene que ser el de la base, no el inventado en memoria. */
+        if (!espejo.clientes.has(c.id)) {
+          const r = await pedir(`/orgs/${ORG}/clientes`, {
+            method: 'POST', cuerpo: { nombre: c.nombre || 'Cliente', negocio_id: NEGOCIO },
+          });
+          if (r.estado !== 201) throw new Error('cliente: ' + (r.error || r.estado));
+          c.id = r.data.id;
+        } else if (espejo.clientes.get(c.id) !== huellaCliente(c)) {
+          const r = await pedir(`/orgs/${ORG}/clientes/${c.id}`, { method: 'PATCH', cuerpo: { nombre: c.nombre || 'Cliente' } });
+          if (r.estado !== 200) throw new Error('cliente: ' + (r.error || r.estado));
+        }
+        espejo.clientes.set(c.id, huellaCliente(c));
+        vistos.clientes.add(c.id);
+
+        for (const p of (c.proyectos || [])) {
+          if (!espejo.proyectos.has(p.id)) {
+            const r = await pedir(`/orgs/${ORG}/proyectos`, {
+              method: 'POST', cuerpo: { nombre: p.nombre || 'Proyecto', cliente_id: c.id, negocio_id: NEGOCIO },
+            });
+            if (r.estado !== 201) throw new Error('proyecto: ' + (r.error || r.estado));
+            p.id = r.data.id;
+          } else if (espejo.proyectos.get(p.id) !== huellaProyecto(p, c.id)) {
+            const r = await pedir(`/orgs/${ORG}/proyectos/${p.id}`, {
+              method: 'PATCH', cuerpo: { nombre: p.nombre || 'Proyecto', cliente_id: c.id },
+            });
+            if (r.estado !== 200) throw new Error('proyecto: ' + (r.error || r.estado));
+          }
+          espejo.proyectos.set(p.id, huellaProyecto(p, c.id));
+          vistos.proyectos.add(p.id);
+
+          for (const q of (p.cotizaciones || [])) {
+            // Las fotos nuevas se suben ANTES de comparar la huella: si se
+            // comparara primero, una cotización a la que sólo se le agregó una
+            // foto se vería igual y la foto no subiría nunca.
+            for (const v of (q.versiones || [])) {
+              for (const m of (v.muebles || [])) {
+                if (!Array.isArray(m.imagenes)) continue;
+                for (let i = 0; i < m.imagenes.length; i++) {
+                  if (typeof m.imagenes[i] === 'string' && m.imagenes[i].startsWith('data:image')) {
+                    // Se escribe en el arreglo del árbol, no en una copia: así
+                    // la app se queda con la dirección y no vuelve a subir la
+                    // misma foto en el siguiente guardado.
+                    m.imagenes[i] = await subirFoto(m.imagenes[i], q.id);
+                  }
+                }
+              }
+            }
+
+            const nueva = !espejo.cotizaciones.has(q.id);
+            const huella = huellaCotizacion(q, c.id, p.id);
+            if (nueva) {
+              const r = await pedir(`/orgs/${ORG}/cotizaciones`, {
+                method: 'POST',
+                cuerpo: {
+                  negocio_id: NEGOCIO, cliente_id: c.id, total: totalDe(q), moneda: 'MXN',
+                  datos: { nombre: q.nombre || null, proyecto_id: p.id, versiones: q.versiones || [] },
+                },
+              });
+              if (r.estado !== 201) throw new Error('cotización: ' + (r.error || r.estado));
+              q.id = r.data.id;
+              // El folio lo asigna la suite, no el navegador. Se guarda en el
+              // árbol para poder enseñarlo sin volver a preguntar.
+              q.folio = r.data.folio;
+            } else if (espejo.cotizaciones.get(q.id) !== huella) {
+              const r = await pedir(`/orgs/${ORG}/cotizaciones/${q.id}`, {
+                method: 'PATCH',
+                cuerpo: {
+                  cliente_id: c.id, total: totalDe(q),
+                  datos: { nombre: q.nombre || null, proyecto_id: p.id, versiones: q.versiones || [] },
+                },
+              });
+              if (r.estado !== 200) throw new Error('cotización: ' + (r.error || r.estado));
+            }
+            espejo.cotizaciones.set(q.id, huellaCotizacion(q, c.id, p.id));
+            vistos.cotizaciones.add(q.id);
+          }
+        }
+      }
+
+      /* Lo que ya no está en el árbol se borró en la pantalla. Se va de abajo
+       * hacia arriba —cotización, proyecto, cliente—: al revés la suite
+       * contesta 409 porque quedan filas apuntando, y con razón. */
+      for (const id of [...espejo.cotizaciones.keys()]) {
+        if (vistos.cotizaciones.has(id)) continue;
+        const r = await pedir(`/orgs/${ORG}/cotizaciones/${id}`, { method: 'DELETE' });
+        if (r.estado === 200 || r.estado === 404) espejo.cotizaciones.delete(id);
+        else throw new Error('borrar cotización: ' + (r.error || r.estado));
+      }
+      for (const id of [...espejo.proyectos.keys()]) {
+        if (vistos.proyectos.has(id)) continue;
+        const r = await pedir(`/orgs/${ORG}/proyectos/${id}`, { method: 'DELETE' });
+        if (r.estado === 200 || r.estado === 404) espejo.proyectos.delete(id);
+        else throw new Error('borrar proyecto: ' + (r.error || r.estado));
+      }
+      for (const id of [...espejo.clientes.keys()]) {
+        if (vistos.clientes.has(id)) continue;
+        const r = await pedir(`/orgs/${ORG}/clientes/${id}`, { method: 'DELETE' });
+        if (r.estado === 200 || r.estado === 404) espejo.clientes.delete(id);
+        else throw new Error('borrar cliente: ' + (r.error || r.estado));
+      }
+
+      return true;
+    } catch (e) {
+      console.error('guardar:', e);
+      return false;
+    }
+  },
+
+  async guardarConfig(config) {
+    return guardarAjuste('config', config);
+  },
+
+  async guardarPrices(prices) {
+    return guardarAjuste('precios', prices);
+  },
+
+  /** El siguiente número de recibo, sin apartarlo: la pantalla lo enseña antes
+   *  de que alguien confirme. Si se apartara al abrir, cada vez que alguien se
+   *  asomara y cerrara se iría un número. */
+  async leerFolioActual() {
+    try {
+      await identidad();
+      const r = await pedir(`/orgs/${ORG}/folios/REC`);
+      return String(r.data?.siguiente ?? 1).padStart(4, '0');
+    } catch (e) {
+      console.error('leerFolioActual:', e);
+      return '0001';
+    }
+  },
+
+  /** Aparta el número del recibo. Lo da la suite, uno por uno: antes lo
+   *  calculaba este navegador —leer, sumar uno, guardar— y dos personas
+   *  haciendo un recibo a la vez se llevaban el mismo. */
+  async obtenerProximoFolio() {
+    await identidad();
+    const r = await pedir(`/orgs/${ORG}/folios/REC`, { method: 'POST' });
+    if (r.estado !== 201 || !r.data?.numero) throw new Error('no se pudo apartar el folio del recibo');
+    return String(r.data.numero).padStart(4, '0');
+  },
+};
+
+/** Baja el detalle de una versión que vive en un archivo aparte.
+ *
+ *  HOY NO SE USA, y conviene decirlo en vez de dejarlo pareciendo vivo: desde
+ *  esta versión las versiones van completas dentro de la cotización, así que
+ *  ninguna trae `historicoURL`. Existía porque Firestore no deja pasar un
+ *  documento de más de 1 MB y las versiones viejas se mandaban a Firebase
+ *  Storage para que el árbol cupiera.
+ *
+ *  Se queda porque dos pantallas todavía preguntan por `historicoURL`, y
+ *  quitarles esa rama es cirugía en código ya compilado —más riesgo que
+ *  provecho—. Un `fetch` pelón sirve igual para una dirección de la suite que
+ *  para una vieja de Firebase, por si algún día se importa un árbol viejo. */
 async function downloadJSONFromStorage(url) {
-  const r = await fetch(url);
-  if (!r.ok) throw new Error("Download JSON HTTP "+r.status);
+  const r = await fetch(url, { credentials: 'same-origin' });
+  if (!r.ok) throw new Error('no se pudo bajar la versión: ' + r.status);
   return r.json();
 }
 
-// Convierte valor JS → Firestore Value
-function toFS(v) {
-  if (v === null || v === undefined) return {nullValue: null};
-  if (typeof v === "boolean") return {booleanValue: v};
-  if (typeof v === "number") return Number.isInteger(v) ? {integerValue: String(v)} : {doubleValue: v};
-  if (typeof v === "string") return {stringValue: v};
-  if (Array.isArray(v)) return {arrayValue: {values: v.map(toFS)}};
-  if (typeof v === "object") return {mapValue: {fields: Object.fromEntries(Object.entries(v).map(([k,val])=>[k,toFS(val)]))}};
-  return {stringValue: String(v)};
-}
-
-// Convierte Firestore Value → JS
-function fromFS(v) {
-  if (!v) return null;
-  if ("nullValue" in v) return null;
-  if ("booleanValue" in v) return v.booleanValue;
-  if ("integerValue" in v) return Number(v.integerValue);
-  if ("doubleValue" in v) return v.doubleValue;
-  if ("stringValue" in v) return v.stringValue;
-  if ("arrayValue" in v) return (v.arrayValue.values || []).map(fromFS);
-  if ("mapValue" in v) return Object.fromEntries(Object.entries(v.mapValue.fields || {}).map(([k,val])=>[k,fromFS(val)]));
-  return null;
-}
-
-window.firebaseDB = {
-  async cargar() {
-    try {
-      const r = await fetch(FS_DOC);
-      if (r.status === 404) return {clientes:[], config:null, prices:null};
-      const data = await r.json();
-      if (data.error) return {clientes:[], config:null, prices:null};
-      const fields = data.fields || {};
-      return {
-        clientes: fromFS(fields.clientes) || [],
-        config: fromFS(fields.config) || null,
-        prices: fromFS(fields.prices) || null
-      };
-    } catch(e) { console.error("Error cargando:", e); return {clientes:[], config:null, prices:null}; }
-  },
-  async guardarConfig(config) {
-    try {
-      const url = FS_DOC + "&updateMask.fieldPaths=config";
-      const body = {fields: {config: toFS(config)}};
-      const r = await fetch(url, {
-        method: "PATCH",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(body)
-      });
-      if(!r.ok) { console.error("guardarConfig:", r.status, await r.text()); }
-      return r.ok;
-    } catch(e) { console.error("Error guardando config:", e); return false; }
-  },
-  async guardarPrices(prices) {
-    try {
-      const url = FS_DOC + "&updateMask.fieldPaths=prices";
-      const body = {fields: {prices: toFS(prices)}};
-      const r = await fetch(url, {
-        method: "PATCH",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(body)
-      });
-      if(!r.ok) { console.error("guardarPrices:", r.status, await r.text()); }
-      return r.ok;
-    } catch(e) { console.error("Error guardando prices:", e); return false; }
-  },
-  async obtenerProximoFolio() {
-    // Lee folio actual de Firestore, incrementa y persiste atómicamente
-    try {
-      const r = await fetch(FS_DOC);
-      const data = r.ok ? await r.json() : {};
-      const fields = data.fields || {};
-      const actual = parseInt(fromFS(fields.reciboCounter)||0, 10);
-      const nuevo = actual + 1;
-      const url = FS_DOC + "&updateMask.fieldPaths=reciboCounter";
-      const body = {fields: {reciboCounter: toFS(nuevo)}};
-      await fetch(url, {method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
-      return String(nuevo).padStart(4,"0");
-    } catch(e) { console.error("obtenerProximoFolio:", e); return String(Date.now()).slice(-4); }
-  },
-  async leerFolioActual() {
-    try {
-      const r = await fetch(FS_DOC);
-      const data = r.ok ? await r.json() : {};
-      const actual = parseInt(fromFS(data.fields?.reciboCounter)||0, 10);
-      return String(actual+1).padStart(4,"0");
-    } catch(e) { return "0001"; }
-  },
-  async guardar(clientes) {
-    try {
-      let storageErr = null;
-      let stats = {b64:0, url:0, otra:0, fallos:0, exitos:0};
-
-      // Migra imágenes legacy (base64) a Storage. URLs ya subidas se dejan tal cual.
-      const migrarImg = async (img) => {
-        if (typeof img !== "string") { stats.otra++; return img; }
-        if (img.startsWith("https://")) { stats.url++; return img; }
-        if (img.startsWith("data:image")) {
-          stats.b64++;
-          try {
-            const r = await uploadToStorage(img);
-            stats.exitos++;
-            return r;
-          } catch(e) {
-            stats.fallos++;
-            if (!storageErr) storageErr = e.message || String(e);
-            console.warn("No se pudo migrar legacy base64 a Storage:", e);
-            return img;
-          }
-        }
-        stats.otra++;
-        return img;
-      };
-
-      // Recompresión de emergencia para base64 que no se pudo migrar
-      const recompImgLevel = (b64, maxPx, q) => new Promise(res => {
-        if (!b64 || !b64.startsWith("data:image")) return res(b64);
-        const img = new Image();
-        img.onload = () => {
-          const cv = document.createElement("canvas");
-          let w = img.width, h = img.height;
-          if(w > maxPx){h = Math.round(h*maxPx/w); w = maxPx;}
-          if(h > maxPx){w = Math.round(w*maxPx/h); h = maxPx;}
-          cv.width = w; cv.height = h;
-          cv.getContext("2d").drawImage(img, 0, 0, w, h);
-          res(cv.toDataURL("image/jpeg", q));
-        };
-        img.onerror = () => res(b64);
-        img.src = b64;
-      });
-
-      const procesarImg = async (img, lvlPx, lvlQ) => {
-        const migrada = await migrarImg(img);
-        if (migrada.startsWith("https://")) return migrada;  // ya es URL, no recomprimir
-        // Si quedó como base64 (Storage falló), recomprimir
-        return recompImgLevel(migrada, lvlPx, lvlQ);
-      };
-
-      const procesarTree = async (lvlPx, lvlQ) => Promise.all(clientes.map(async c => ({
-        ...c,
-        proyectos: await Promise.all((c.proyectos||[]).map(async p => ({
-          ...p,
-          cotizaciones: await Promise.all((p.cotizaciones||[]).map(async cot => ({
-            ...cot,
-            versiones: await Promise.all((cot.versiones||[]).map(async (v,vi) => {
-              if (vi === 0) {
-                // Versión actual: estructura completa, imágenes migradas
-                return {
-                  ...v,
-                  muebles: await Promise.all((v.muebles||[]).map(async m => ({
-                    ...m,
-                    imagenes: await Promise.all((m.imagenes||[]).map(b=>procesarImg(b,lvlPx,lvlQ)))
-                  })))
-                };
-              }
-              // Versión histórica
-              if (v.historicoURL) {
-                // Ya está en Storage como JSON, dejar tal cual
-                return v;
-              }
-              // Subir versión completa a Storage como JSON
-              try {
-                // Migrar imágenes de la versión histórica también
-                const versionMigrada = {
-                  ...v,
-                  muebles: await Promise.all((v.muebles||[]).map(async m => ({
-                    ...m,
-                    imagenes: await Promise.all((m.imagenes||[]).map(b=>migrarImg(b)))
-                  })))
-                };
-                const url = await uploadJSONToStorage(versionMigrada);
-                const total = (v.muebles||[]).reduce((s,m) => s + (m.total||0)*(m.qty||1), 0);
-                return {
-                  fecha: v.fecha,
-                  folio: v.folio,
-                  archivada: v.archivada,
-                  historicoURL: url,
-                  resumen: { muebles: v.muebles?.length || 0, total }
-                };
-              } catch(e) {
-                console.warn("No se subió versión histórica a Storage:", e);
-                if (!storageErr) storageErr = e.message || String(e);
-                // Fallback: resumen reducido (sin detalle)
-                return {
-                  fecha: v.fecha,
-                  folio: v.folio,
-                  archivada: v.archivada,
-                  muebles: (v.muebles||[]).map(m => ({nombre: m.nombre, total: m.total||0, qty: m.qty||1}))
-                };
-              }
-            }))
-          })))
-        })))
-      })));
-
-      // Con Storage, la primera pasada ya deja todo como URLs. Las legacy se migran.
-      // Si Storage está caído, el fallback recomprime escalonadamente.
-      const niveles = [
-        {px:200, q:0.35},
-        {px:150, q:0.30},
-        {px:120, q:0.25},
-        {px:90,  q:0.22}
-      ];
-      let compressed=null, bodyStr=null, sizeKB=0;
-      for(let idx=0; idx<niveles.length; idx++){
-        const n = niveles[idx];
-        // Stats solo en la primera pasada (sino contaríamos 4x)
-        if(idx>0) stats = {b64:0,url:0,otra:0,fallos:0,exitos:0};
-        compressed = await procesarTree(n.px, n.q);
-        const body = {fields:{clientes:toFS(compressed), updatedAt:toFS(new Date().toISOString())}};
-        bodyStr = JSON.stringify(body);
-        sizeKB = Math.round(bodyStr.length / 1024);
-        if(bodyStr.length <= 1000000) break;
-      }
-
-      const statsStr = `\n\n📊 Imágenes:\n  Base64 (legacy): ${stats.b64}\n  URLs (Storage): ${stats.url}\n  Subidas OK: ${stats.exitos}\n  Subidas fallidas: ${stats.fallos}\n  Otras: ${stats.otra}`;
-      console.log("Stats guardado:", stats, "sizeKB:", sizeKB);
-
-      if(bodyStr.length > 1000000) {
-        const errInfo = storageErr ? ("\n\n🔍 Error de Storage:\n" + storageErr) : "";
-        alert("❌ Los datos pesan "+sizeKB+"KB, sobre el límite de 1MB."+errInfo+statsStr+"\n\nBucket: "+FS_BUCKET);
-        return false;
-      }
-      // updateMask para PATCH parcial: solo toca clientes y updatedAt (preserva config)
-      const r = await fetch(FS_DOC+"&updateMask.fieldPaths=clientes&updateMask.fieldPaths=updatedAt", {
-        method: "PATCH",
-        headers: {"Content-Type": "application/json"},
-        body: bodyStr
-      });
-      if(!r.ok) { const err=await r.text(); console.error("Firestore error:",r.status,err); }
-      return r.ok;
-    } catch(e) { console.error("Error guardando:", e); return false; }
+async function guardarAjuste(clave, valor) {
+  try {
+    await identidad();
+    // Un solo POST: el id del ajuste lo arma la suite con la app y la clave, y
+    // vuelve a guardar la misma gaveta. No hay que preguntar si ya existía.
+    const r = await pedir(`/orgs/${ORG}/ajustes`, { method: 'POST', cuerpo: { clave, valor } });
+    return r.estado === 201;
+  } catch (e) {
+    console.error('guardarAjuste ' + clave + ':', e);
+    return false;
   }
-};
+}
 </script>
 
 <script>
@@ -1177,7 +1301,7 @@ const CONFIG_DEFAULT = {
   fleteIncremento: 300,
   fleteEscalon: 10000
 };
-// Variable global mutable que las funciones de cálculo consultan. Se hidrata desde Firestore al cargar.
+// Variable global mutable que las funciones de cálculo consultan. Se hidrata desde la suite al cargar.
 let appConfig = {
   ...CONFIG_DEFAULT
 };
@@ -6687,13 +6811,12 @@ ${rowHTML}
           cv.height = h;
           cv.getContext("2d").drawImage(i, 0, 0, w, h);
           const b64 = cv.toDataURL("image/jpeg", 0.5);
-          try {
-            const url = await uploadToStorage(b64);
-            setImgs(p => [...p, url]);
-          } catch (err) {
-            console.error("Storage falló, usando base64:", err);
-            setImgs(p => [...p, b64]);
-          }
+          // La foto se queda en memoria y se sube cuando se guarda la
+          // cotización. Antes se subía aquí mismo a Firebase Storage, y eso ya
+          // no se puede: el archivo se guarda colgado de su cotización, y al
+          // capturar la foto la cotización puede no existir todavía. Subirla
+          // aquí dejaría el archivo apuntando a una cotización que no hay.
+          setImgs(p => [...p, b64]);
         };
         i.src = ev.target.result;
       };
@@ -8538,7 +8661,7 @@ function PantallaRecibo({
   const [generando, setGenerando] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
-    window.firebaseDB.leerFolioActual().then(f => setFolio(f));
+    window.suiteDB.leerFolioActual().then(f => setFolio(f));
   }, []);
   const fechaHoy = fechaHoyLarga();
   const montoNum = Number(monto) || 0;
@@ -8555,7 +8678,7 @@ function PantallaRecibo({
     setError("");
     setGenerando(true);
     try {
-      const folioAsignado = await window.firebaseDB.obtenerProximoFolio();
+      const folioAsignado = await window.suiteDB.obtenerProximoFolio();
       setFolio(folioAsignado);
       const proy = proyecto.trim();
       const montoStr = fmtMontoRec(montoNum, moneda);
@@ -9783,7 +9906,7 @@ function App() {
   const [mostrarRecibo, setMostrarRecibo] = useState(false);
   useEffect(() => {
     if (window.splash101) window.splash101.estado("Trayendo tus cotizaciones");
-    window.firebaseDB.cargar().then(data => {
+    window.suiteDB.cargar().then(data => {
       setClientes(data.clientes || []);
       if (data.config) {
         const merged = {
@@ -9810,19 +9933,19 @@ function App() {
     appConfig = {
       ...newCfg
     };
-    const ok = await window.firebaseDB.guardarConfig(newCfg);
+    const ok = await window.suiteDB.guardarConfig(newCfg);
     if (!ok) alert("❌ Error guardando configuración.");
     return ok;
   };
   const savePrices = async newPrices => {
     hydratePrices(newPrices);
-    const ok = await window.firebaseDB.guardarPrices(snapshotPrices());
+    const ok = await window.suiteDB.guardarPrices(snapshotPrices());
     if (!ok) alert("❌ Error guardando precios.");
     return ok;
   };
   const save = async data => {
     setGuardando(true);
-    const ok = await window.firebaseDB.guardar(data);
+    const ok = await window.suiteDB.guardar(data);
     setGuardando(false);
     if (!ok) alert("❌ Error al guardar. Verifica tu conexión e intenta de nuevo.");else setClientes(data);
     return ok;
