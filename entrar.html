@@ -57,22 +57,54 @@ button:disabled{opacity:.55;cursor:default}
     <input type="email" id="correo" autocomplete="username" inputmode="email" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="tu@correo.com">
     <div class="err" id="err-correo"></div>
     <button id="b-correo">Continuar</button>
-    <p class="nota">Te mandamos un código de 6 dígitos. Si ya tienes PIN, en la siguiente pantalla puedes entrar con él.</p>
+    <p class="nota">Con tu correo y tu contraseña.</p>
     <button class="suave" id="b-google">Entrar con Google</button>
   </section>
 
-  <!-- Código o PIN -->
+  <!-- La contraseña.
+       Desde el 16-sep-2026 se entra con Google o con correo y contraseña, igual
+       que en las demás apps de la suite (encargo de Mike). El código de 6
+       dígitos sigue existiendo pero cambió de papel: es cómo se recupera una
+       contraseña olvidada o se pone la primera. El PIN se fue de aquí. -->
   <section id="v-clave" hidden>
-    <h1 id="t-clave">Tu código</h1>
+    <h1>Tu contraseña</h1>
     <p class="sub" id="p-clave"></p>
-    <label for="clave" id="l-clave">Código de 6 dígitos</label>
-    <input type="text" id="clave" class="digitos" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="······">
+    <label for="clave">Contraseña</label>
+    <input type="password" id="clave" name="password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false">
     <div class="err" id="err-clave"></div>
     <button id="b-clave">Entrar</button>
     <div class="opciones">
-      <button class="enlace" id="b-modo"></button>
+      <button class="enlace" id="b-olvide">Olvidé mi contraseña</button>
       <button class="enlace" id="b-otro">Usar otro correo</button>
     </div>
+    <p class="nota">Si es tu primera vez y todavía no tienes una, pícale ahí mismo: te mandamos un código al correo y la pones.</p>
+  </section>
+
+  <!-- Recuperar: el código al correo, que también sirve la primera vez -->
+  <section id="v-codigo" hidden>
+    <h1>Tu código</h1>
+    <p class="sub" id="p-codigo"></p>
+    <label for="codigo">Código de 6 dígitos</label>
+    <input type="text" id="codigo" class="digitos" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="······">
+    <div class="err" id="err-codigo"></div>
+    <button id="b-codigo">Continuar</button>
+    <div class="opciones">
+      <button class="enlace" id="b-reenviar">Mándame otro</button>
+      <button class="enlace" id="b-otro-3">Usar otro correo</button>
+    </div>
+  </section>
+
+  <!-- Poner la contraseña: dos veces, la segunda de memoria -->
+  <section id="v-nueva" hidden>
+    <h1>Ponle una contraseña</h1>
+    <p class="sub">Con ella entras de ahora en adelante, aquí y en las demás apps de la suite.</p>
+    <label for="nueva">Contraseña nueva</label>
+    <input type="password" id="nueva" name="new-password" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <label for="nueva2">Otra vez</label>
+    <input type="password" id="nueva2" name="new-password" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <div class="err" id="err-nueva"></div>
+    <button id="b-nueva">Guardar y entrar</button>
+    <p class="nota">Al menos diez caracteres. Que no lleve tu correo adentro ni sea de las que cualquiera prueba primero.</p>
   </section>
 
   <!-- Entró a la suite, pero no trae quote101 entre sus apps -->
