@@ -57,7 +57,9 @@ test('ya no ofrece PIN ni código como forma de entrar', () => {
 });
 
 test('a quien entró con código y no tiene contraseña se le pide ponerla; a quien entró con Google, no', () => {
-  assert.match(js, /!yo\.tiene_clave\s*&&\s*yo\.entro_con\s*===\s*'codigo'/);
+  // Con Google ligado no se le pide nada (contrato 0.17.2): Google ya es una
+  // forma de volver mañana, que es lo único que esta pantalla cuida.
+  assert.match(js, /!yo\.tiene_clave\s*&&\s*!yo\.tiene_google\s*&&\s*yo\.entro_con\s*===\s*'codigo'/);
   assert.doesNotMatch(js, /!yo\.tiene_clave\s*\)/, 'guarda: con Google no se pide nada');
 });
 
