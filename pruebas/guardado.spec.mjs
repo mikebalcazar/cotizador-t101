@@ -447,3 +447,36 @@ describe('una cuenta que no es miembro de ninguna empresa', () => {
     assert.match(avisos[0], /no está dada de alta en ninguna empresa/);
   });
 });
+
+/* ─────────────── «¿No te refieres a X?» (contrato 0.23.0) ───────────────
+ *
+ * Mike, 20-sep: «si se quiere crear un cliente con el nombre ya existente,
+ * preguntar si no te estás refiriendo a X cliente».
+ *
+ * Lo que de verdad aporta: que quote101 le PREGUNTE A LA API en vez de
+ * decidirlo con su propio árbol. Aquí sólo está lo de este negocio, y el
+ * cliente repetido casi siempre se capturó en dash101: una regla local no lo
+ * vería nunca. Y que un fallo de la API no impida dar de alta a nadie: el
+ * aviso es una ayuda, no una puerta.
+ */
+describe('¿no te refieres a X?', () => {
+  test('le pregunta a la API por la empresa, no a su propio árbol', async () => {
+    const { db, pedidas } = levantar(base({
+      'GET /s101/orgs/:o/clientes/parecidos': { data: { parecidos: [{ id: 'c1', nombre: 'Muebles Luna SA de CV' }] } },
+    }));
+    const r = await db.clientesParecidos('Muebles Luna');
+    assert.equal(r.length, 1);
+    assert.equal(r[0].nombre, 'Muebles Luna SA de CV');
+    const llamada = pedidas.find((p) => p.ruta.includes('/clientes/parecidos'));
+    assert.ok(llamada, 'no preguntó a la API');
+    assert.match(llamada.ruta, /nombre=Muebles(\+|%20)Luna/);
+    assert.match(llamada.ruta, /negocio_id=neg-1/);
+  });
+
+  test('si la API no contesta, se puede dar de alta igual (vacío, no error)', async () => {
+    const { db } = levantar(base({
+      'GET /s101/orgs/:o/clientes/parecidos': { estado: 500, cuerpo: { ok: false, error: 'tronó' } },
+    }));
+    assert.deepEqual(await db.clientesParecidos('Quien sea'), []);
+  });
+});

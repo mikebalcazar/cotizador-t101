@@ -1246,6 +1246,30 @@ window.suiteDB = {
     }
   },
 
+  /** «¿No te refieres a X?» — los clientes de la empresa que se parecen a ese
+   *  nombre (contrato 0.23.0 de la suite).
+   *
+   *  Mike, 20-sep: «si se quiere crear un cliente con el nombre ya existente,
+   *  preguntar si no te estás refiriendo a X cliente».
+   *
+   *  La regla NO se escribe aquí: la contesta la API. quote101, dash101 y
+   *  quell101 preguntan lo mismo, y tres copias de una regla son tres reglas
+   *  —la que falle va a ser la que nadie probó—. Además, aquí sólo está el
+   *  árbol de ESTE negocio, y la API mira a toda la empresa.
+   *
+   *  Si la API no contesta, se devuelve vacío a propósito: el aviso es una
+   *  ayuda, y una ayuda que no carga no puede impedir dar de alta un cliente. */
+  async clientesParecidos(nombre) {
+    try {
+      await identidad();
+      const r = await pedir(`/orgs/${ORG}/clientes/parecidos?nombre=${encodeURIComponent(nombre)}&negocio_id=${encodeURIComponent(NEGOCIO)}`);
+      return r.data?.parecidos || [];
+    } catch (e) {
+      console.error('clientesParecidos:', e);
+      return [];
+    }
+  },
+
   /** Aparta el número del recibo. Lo da la suite, uno por uno: antes lo
    *  calculaba este navegador —leer, sumar uno, guardar— y dos personas
    *  haciendo un recibo a la vez se llevaban el mismo. */
@@ -2287,10 +2311,31 @@ function PantallaInicio({
   const [mostrarArchivados, setMostrarArchivados] = useState(false);
   const [archivandoId, setArchivandoId] = useState(null); // cliente siendo archivado (para animación vacuum)
   const archivosBtnRef = useRef(null);
-  const save = () => {
-    if (!nom.trim()) return;
-    onNuevo(nom.trim());
+  /* «¿No te refieres a X?». Mike, 20-sep: «si se quiere crear un cliente con
+   * el nombre ya existente, preguntar si no te estás refiriendo a X cliente».
+   * El mismo cliente capturado dos veces con el nombre escrito distinto es el
+   * error que después nadie sabe deshacer.
+   *
+   * La lista la contesta la API, no este árbol: aquí sólo está lo de ESTE
+   * negocio, y el repetido casi siempre se capturó en dash101. Insistir es un
+   * clic, porque a veces de veras son dos. */
+  const [parecidos, setParecidos] = useState([]);
+  const [buscandoParecidos, setBuscandoParecidos] = useState(false);
+  const save = async (insistiendo = false) => {
+    const nombre = nom.trim();
+    if (!nombre) return;
+    if (!insistiendo) {
+      setBuscandoParecidos(true);
+      const iguales = await window.suiteDB.clientesParecidos(nombre);
+      setBuscandoParecidos(false);
+      if (iguales.length) {
+        setParecidos(iguales);
+        return;
+      }
+    }
+    onNuevo(nombre);
     setNom("");
+    setParecidos([]);
     setCr(false);
   };
   const saveProy = async c => {
@@ -2661,15 +2706,55 @@ function PantallaInicio({
       flex: 1
     },
     value: nom,
-    onChange: e => setNom(e.target.value),
+    onChange: e => {
+      setNom(e.target.value);
+      setParecidos([]);
+    },
     onKeyDown: e => e.key === "Enter" && save(),
     placeholder: "ej: Desarrolladora Norte S.A."
   }), /*#__PURE__*/React.createElement(Btn, {
     primary: true,
-    onClick: save
-  }, "Guardar"), /*#__PURE__*/React.createElement(Btn, {
-    onClick: () => setCr(false)
-  }, "Cancelar"))), clientes.length === 0 && !cr && !buscando && /*#__PURE__*/React.createElement("div", {
+    onClick: () => save()
+  }, buscandoParecidos ? "Revisando\u2026" : "Guardar"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => {
+      setParecidos([]);
+      setCr(false);
+    }
+  }, "Cancelar")), parecidos.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 10,
+      padding: "10px 12px",
+      background: "#EAF4FA",
+      border: "1px solid #BFDCEB",
+      borderRadius: 4,
+      fontSize: 12,
+      color: "#05506F",
+      lineHeight: 1.5
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      marginBottom: 4
+    }
+  }, parecidos.length === 1 ? "Ya hay un cliente con un nombre muy parecido." : "Ya hay clientes con un nombre muy parecido."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 8
+    }
+  }, "\xBFNo te refieres a ", parecidos.map(c => c.nombre).join(", "), "?"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => {
+      setParecidos([]);
+      setNom("");
+      setCr(false);
+    }
+  }, "S\xED, ya est\xE1"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => save(true)
+  }, "No, es otro: cr\xE9alo")))), clientes.length === 0 && !cr && !buscando && /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "center",
       padding: "3rem",
