@@ -5124,6 +5124,246 @@ const MODS = [{
 }];
 
 // ── COTIZADOR ──────────────────────────────────────────────────────────────
+/* ─────────────── las fotos del mueble: escoger, ARRASTRAR o PEGAR ───────────────
+ *
+ * Mike, 20-sep: «en la parte de agregar foto, que pueda arrastrar una, o
+ * pegar la que está en el portapapeles».
+ *
+ * Los tres caminos terminan en la misma función, que es lo importante: la
+ * foto se encoge a 300 px y se guarda como JPEG al 50 %, igual venga de donde
+ * venga. Si cada camino hiciera su propio encogido, el día que cambie el
+ * tamaño iban a quedar dos y nadie se daría cuenta hasta ver un PDF pesado.
+ *
+ * Pegar es lo que de verdad se usa: se recorta la pantalla con la tecla de
+ * captura y se pega aquí, sin pasar por guardar el archivo. El escucha de
+ * «pegar» vive DENTRO de este componente y se quita al desmontarlo, así que
+ * sólo está prendido mientras la sección de fotos está en pantalla: pegar
+ * texto en otro lado no acaba metiendo una imagen.
+ *
+ * La foto se queda en memoria y se sube cuando se guarda la cotización.
+ * Antes se subía al momento a Firebase Storage, y eso ya no se puede: el
+ * archivo se guarda colgado de su cotización, y al capturar la foto la
+ * cotización puede no existir todavía.
+ */
+
+const FOTOS_MAX = 5;
+
+/** Del archivo a la miniatura en base64. Rechaza lo que no sea imagen. */
+function fotoAMiniatura(archivo) {
+  return new Promise((resolve, reject) => {
+    if (!archivo || !/^image\//.test(archivo.type || "")) {
+      reject(new Error("no es una imagen"));
+      return;
+    }
+    const r = new FileReader();
+    r.onerror = () => reject(new Error("no se pudo leer el archivo"));
+    r.onload = ev => {
+      const i = new Image();
+      i.onerror = () => reject(new Error("no se pudo abrir la imagen"));
+      i.onload = () => {
+        const cv = document.createElement("canvas");
+        const M = 300;
+        let w = i.width,
+          h = i.height;
+        if (w > M) {
+          h = Math.round(h * M / w);
+          w = M;
+        }
+        if (h > M) {
+          w = Math.round(w * M / h);
+          h = M;
+        }
+        cv.width = w;
+        cv.height = h;
+        cv.getContext("2d").drawImage(i, 0, 0, w, h);
+        resolve(cv.toDataURL("image/jpeg", 0.5));
+      };
+      i.src = ev.target.result;
+    };
+    r.readAsDataURL(archivo);
+  });
+}
+
+function ZonaFotos({
+  imgs,
+  setImgs
+}) {
+  const [arrastrando, setArrastrando] = useState(false);
+  const [aviso, setAviso] = useState("");
+
+  /** Varias a la vez, en el orden en que vinieron. Una que no abra no tumba a
+   *  las demás; el tope de cinco se aplica al final, con la lista completa. */
+  const agregarFotos = async archivos => {
+    const lista = Array.from(archivos || []).filter(f => f && /^image\//.test(f.type || ""));
+    if (!lista.length) {
+      setAviso("Eso no es una imagen.");
+      return;
+    }
+    const nuevas = [];
+    for (const f of lista) {
+      try {
+        nuevas.push(await fotoAMiniatura(f));
+      } catch (e) {
+        /* una que no se pueda leer se salta, y se dice al final */
+      }
+    }
+    if (!nuevas.length) {
+      setAviso("No se pudo leer esa imagen.");
+      return;
+    }
+    setAviso(nuevas.length < lista.length ? "Alguna imagen no se pudo leer." : "");
+    setImgs(p => [...p, ...nuevas].slice(0, FOTOS_MAX));
+  };
+
+  // Pegar (Ctrl-V / Cmd-V), incluida una captura de pantalla.
+  useEffect(() => {
+    const alPegar = e => {
+      var _e$clipboardData;
+      const archivos = Array.from(((_e$clipboardData = e.clipboardData) === null || _e$clipboardData === void 0 ? void 0 : _e$clipboardData.items) || []).filter(it => it.kind === "file" && /^image\//.test(it.type)).map(it => it.getAsFile()).filter(Boolean);
+      if (!archivos.length) return; // pegaron texto: no es asunto nuestro
+      e.preventDefault();
+      agregarFotos(archivos);
+    };
+    window.addEventListener("paste", alPegar);
+    return () => window.removeEventListener("paste", alPegar);
+  }, []);
+
+  const lleno = imgs.length >= FOTOS_MAX;
+
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 14
+    },
+    onDragOver: e => {
+      e.preventDefault();
+      if (!lleno) setArrastrando(true);
+    },
+    onDragLeave: e => {
+      // `dragleave` también salta al pasar sobre un hijo: sólo cuenta si de
+      // veras se salió del recuadro.
+      if (!e.currentTarget.contains(e.relatedTarget)) setArrastrando(false);
+    },
+    onDrop: e => {
+      var _e$dataTransfer;
+      e.preventDefault();
+      setArrastrando(false);
+      if (lleno) return;
+      agregarFotos(((_e$dataTransfer = e.dataTransfer) === null || _e$dataTransfer === void 0 ? void 0 : _e$dataTransfer.files) || []);
+    }
+  }, /*#__PURE__*/React.createElement(Lbl, null, "Im\xE1genes de referencia ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: 400,
+      color: "#aaa"
+    }
+  }, "(hasta 5, opcional \xB7 arrastra o pega con Ctrl-V)")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      flexWrap: "wrap",
+      alignItems: "center",
+      padding: 8,
+      margin: -8,
+      borderRadius: 6,
+      border: arrastrando ? "2px dashed #0080C1" : "2px dashed transparent",
+      background: arrastrando ? "rgba(0,128,193,0.06)" : "transparent",
+      transition: "background 120ms"
+    }
+  }, imgs.map((src, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    style: {
+      position: "relative",
+      flexShrink: 0
+    }
+  }, /*#__PURE__*/React.createElement("img", {
+    src: src,
+    onClick: () => window.open(src, "_blank"),
+    style: {
+      width: 64,
+      height: 64,
+      objectFit: "cover",
+      borderRadius: 4,
+      border: i === 0 ? "2px solid #0080C1" : "1px solid #D8D4CD",
+      cursor: "pointer",
+      display: "block"
+    }
+  }), i === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "absolute",
+      bottom: 2,
+      left: 2,
+      background: "#0080C1",
+      color: "#fff",
+      fontSize: 8,
+      fontWeight: 700,
+      padding: "1px 4px",
+      borderRadius: 2
+    }
+  }, "PRINCIPAL"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setImgs(p => p.filter((_, j) => j !== i)),
+    style: {
+      position: "absolute",
+      top: -6,
+      right: -6,
+      width: 18,
+      height: 18,
+      borderRadius: "50%",
+      background: "#c0392b",
+      border: "none",
+      color: "#fff",
+      cursor: "pointer",
+      fontSize: 12,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      lineHeight: 1
+    }
+  }, "\xD7"))), !lleno && /*#__PURE__*/React.createElement("label", {
+    style: {
+      ...st.btn,
+      cursor: "pointer",
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 6,
+      flexShrink: 0
+    }
+  }, "📎 ", imgs.length === 0 ? "Agregar foto" : "+ Foto", /*#__PURE__*/React.createElement("input", {
+    type: "file",
+    accept: "image/*",
+    multiple: true,
+    style: {
+      display: "none"
+    },
+    onChange: e => {
+      agregarFotos(e.target.files);
+      e.target.value = "";
+    }
+  })), arrastrando && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      color: "#0080C1",
+      fontWeight: 700
+    }
+  }, "Su\xE9ltala aqu\xED")), imgs.length > 1 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "#888",
+      marginTop: 6
+    }
+  }, "La primera imagen aparece en el resumen"), lleno && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "#888",
+      marginTop: 6
+    }
+  }, "Ya van cinco: quita alguna para agregar otra"), aviso && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "#c0392b",
+      marginTop: 6
+    }
+  }, aviso));
+}
+
 function Cotizador({
   cotIni,
   onGuardar,
@@ -6810,129 +7050,10 @@ ${rowHTML}
     style: {
       color: "#0080C1"
     }
-  }, "\u270E"))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginBottom: 14
-    }
-  }, /*#__PURE__*/React.createElement(Lbl, null, "Im\xE1genes de referencia ", /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontWeight: 400,
-      color: "#aaa"
-    }
-  }, "(hasta 5, opcional)")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8,
-      flexWrap: "wrap",
-      alignItems: "center"
-    }
-  }, imgs.map((src, i) => /*#__PURE__*/React.createElement("div", {
-    key: i,
-    style: {
-      position: "relative",
-      flexShrink: 0
-    }
-  }, /*#__PURE__*/React.createElement("img", {
-    src: src,
-    onClick: () => window.open(src, "_blank"),
-    style: {
-      width: 64,
-      height: 64,
-      objectFit: "cover",
-      borderRadius: 4,
-      border: i === 0 ? "2px solid #0080C1" : "1px solid #D8D4CD",
-      cursor: "pointer",
-      display: "block"
-    }
-  }), i === 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "absolute",
-      bottom: 2,
-      left: 2,
-      background: "#0080C1",
-      color: "#fff",
-      fontSize: 8,
-      fontWeight: 700,
-      padding: "1px 4px",
-      borderRadius: 2
-    }
-  }, "PRINCIPAL"), /*#__PURE__*/React.createElement("button", {
-    onClick: () => setImgs(p => p.filter((_, j) => j !== i)),
-    style: {
-      position: "absolute",
-      top: -6,
-      right: -6,
-      width: 18,
-      height: 18,
-      borderRadius: "50%",
-      background: "#c0392b",
-      border: "none",
-      color: "#fff",
-      cursor: "pointer",
-      fontSize: 12,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      lineHeight: 1
-    }
-  }, "\xD7"))), imgs.length < 5 && /*#__PURE__*/React.createElement("label", {
-    style: {
-      ...st.btn,
-      cursor: "pointer",
-      display: "inline-flex",
-      alignItems: "center",
-      gap: 6,
-      flexShrink: 0
-    }
-  }, "\uD83D\uDCCE ", imgs.length === 0 ? "Agregar foto" : "+ Foto", /*#__PURE__*/React.createElement("input", {
-    type: "file",
-    accept: "image/*",
-    style: {
-      display: "none"
-    },
-    onChange: e => {
-      var _e$target$files;
-      const f = (_e$target$files = e.target.files) === null || _e$target$files === void 0 ? void 0 : _e$target$files[0];
-      if (!f) return;
-      const r = new FileReader();
-      r.onload = ev => {
-        const i = new Image();
-        i.onload = async () => {
-          const cv = document.createElement("canvas");
-          const M = 300;
-          let w = i.width,
-            h = i.height;
-          if (w > M) {
-            h = Math.round(h * M / w);
-            w = M;
-          }
-          if (h > M) {
-            w = Math.round(w * M / h);
-            h = M;
-          }
-          cv.width = w;
-          cv.height = h;
-          cv.getContext("2d").drawImage(i, 0, 0, w, h);
-          const b64 = cv.toDataURL("image/jpeg", 0.5);
-          // La foto se queda en memoria y se sube cuando se guarda la
-          // cotización. Antes se subía aquí mismo a Firebase Storage, y eso ya
-          // no se puede: el archivo se guarda colgado de su cotización, y al
-          // capturar la foto la cotización puede no existir todavía. Subirla
-          // aquí dejaría el archivo apuntando a una cotización que no hay.
-          setImgs(p => [...p, b64]);
-        };
-        i.src = ev.target.result;
-      };
-      r.readAsDataURL(f);
-      e.target.value = "";
-    }
-  }))), imgs.length > 1 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: "#888",
-      marginTop: 6
-    }
-  }, "La primera imagen aparece en el resumen")), /*#__PURE__*/React.createElement(HR, null), /*#__PURE__*/React.createElement("div", {
+  }, "\u270E"))), React.createElement(ZonaFotos, {
+    imgs: imgs,
+    setImgs: setImgs
+  }), /*#__PURE__*/React.createElement(HR, null), /*#__PURE__*/React.createElement("div", {
     style: {
       opacity: nomOk ? 1 : 0.35,
       pointerEvents: nomOk ? "auto" : "none"
