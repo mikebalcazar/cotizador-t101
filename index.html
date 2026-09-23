@@ -1402,6 +1402,7 @@ async function guardarAjuste(clave, valor) {
 const {
   useState,
   useEffect,
+  useLayoutEffect,
   useRef
 } = React;
 
@@ -4120,7 +4121,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G86";
+const APP_VERSION = "G87";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -5951,8 +5952,9 @@ function HojaCotizacion({
  * componentes sobre el plano/foto. Y a la derecha se va a desplegar el menú de
  * los diferentes componentes para poder configurarlo».
  *
- * Como en quell101: se toca el plano, ahí queda un punto, y el componente que
- * se configura a la derecha se queda en ese punto. La posición se guarda como
+ * Como en quell101: se toca el plano y ahí queda un marcador; el componente
+ * que se configura a la derecha se queda en su lugar. Se pueden poner todos
+ * los marcadores primero y configurarlos al final. La posición se guarda como
  * fracción del ancho y del alto (0 a 1), así que no depende del tamaño con que
  * se vea el plano.
  *
@@ -6034,7 +6036,14 @@ const PLANO_CSS = `
 .arm-lienzo img{display:block;width:100%;height:auto;user-select:none;-webkit-user-drag:none}
 .arm-pin{position:absolute;transform:translate(-50%,-50%);min-width:24px;height:24px;padding:0 5px;border-radius:12px;background:#0080C1;color:#fff;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);font:700 11px/20px Raleway,sans-serif;text-align:center;cursor:pointer}
 .arm-pin.sel{background:#C6FF3D;color:#1d1f20;transform:translate(-50%,-50%) scale(1.25)}
-.arm-pin.nuevo{background:transparent;border:3px solid #0080C1;box-shadow:0 0 0 4px rgba(0,128,193,.25);animation:arm-late 1s ease-in-out infinite}
+.arm-pin.marca{background:rgba(255,255,255,.85);color:#0080C1;border:2px dashed #0080C1;box-shadow:none}
+.arm-pin.marca.activa{background:#fff;border:3px solid #0080C1;box-shadow:0 0 0 4px rgba(0,128,193,.25);animation:arm-late 1s ease-in-out infinite}
+.arm-visor.paneando,.arm-visor.paneando .arm-lienzo{cursor:grabbing}
+.arm-marcas{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:10px 12px;margin-bottom:8px;border:1px dashed #0080C1;border-radius:6px;background:#fff;font:12px Raleway,sans-serif}
+.arm-marcas b{margin-right:4px}
+.arm-marcas span{display:inline-flex;align-items:center;gap:2px;border:1px solid #D8D4CD;border-radius:12px;padding:1px 3px 1px 8px;cursor:pointer;font-weight:700;color:#0080C1}
+.arm-marcas span.activa{background:#0080C1;color:#fff;border-color:#0080C1}
+.arm-marcas span button{border:0;background:none;color:inherit;cursor:pointer;font-size:12px;padding:0 4px}
 @keyframes arm-late{50%{box-shadow:0 0 0 9px rgba(0,128,193,.08)}}
 .arm-num{display:inline-block;min-width:18px;height:18px;border-radius:9px;background:#0080C1;color:#fff;font:700 10px/18px Raleway,sans-serif;text-align:center;margin-right:6px;padding:0 4px}
 .arm-sel{background:rgba(198,255,61,.25)}
@@ -6043,14 +6052,66 @@ const PLANO_CSS = `
   .arm-izq{position:static}
   .arm-visor{max-height:60vh}
 }`;
-/** El plano con sus puntos. Tocar pone el punto nuevo; tocar un punto lo
- *  escoge. El acercamiento es por pasos y el plano se recorre con el scroll
- *  del recuadro, que en el teléfono es el dedo. */
-function VisorPlano({ plano, pines, punto, sel, onTocar, onPin }) {
+/** El plano con sus componentes (numerados) y sus marcadores pendientes
+ *  (con letra). Tocar pone un marcador; tocar un número o una letra lo
+ *  escoge. */
+function VisorPlano({ plano, pines, marcas, activa, sel, onTocar, onPin, onMarca }) {
+  /* Mike, 23-sep: «en el plano, necesito poder hacer zoom con el scroll y
+   * panear con click central». La rueda acerca y aleja con el punto bajo el
+   * cursor quieto; el botón de en medio arrastra. El clic normal queda para
+   * poner marcadores, y en el teléfono el dedo recorre el plano como siempre. */
   const h = React.createElement;
   const [zoom, setZoom] = useState(1);
+  const [paneando, setPaneando] = useState(false);
   const imgRef = useRef(null);
+  const visorRef = useRef(null);
+  const anclaRef = useRef(null);
+  const ZOOM_MAX = 8;
+  const acercar = (factor, cx, cy) => {
+    const v = visorRef.current;
+    if (!v) return;
+    if (cx === undefined) { cx = v.clientWidth / 2; cy = v.clientHeight / 2; }
+    // Qué punto del plano está bajo el cursor, como fracción: después del
+    // cambio se vuelve a poner ahí mismo.
+    anclaRef.current = { fx: (v.scrollLeft + cx) / v.scrollWidth, fy: (v.scrollTop + cy) / v.scrollHeight, cx, cy };
+    setZoom(z => Math.min(ZOOM_MAX, Math.max(1, z * factor)));
+  };
+  useLayoutEffect(() => {
+    const a = anclaRef.current, v = visorRef.current;
+    if (!a || !v) return;
+    anclaRef.current = null;
+    v.scrollLeft = a.fx * v.scrollWidth - a.cx;
+    v.scrollTop = a.fy * v.scrollHeight - a.cy;
+  }, [zoom]);
+  useEffect(() => {
+    const v = visorRef.current;
+    if (!v) return;
+    // No pasivo: si no, el navegador desplaza la página en vez de acercar.
+    const rueda = e => {
+      e.preventDefault();
+      const r = v.getBoundingClientRect();
+      acercar(Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0015)), e.clientX - r.left, e.clientY - r.top);
+    };
+    v.addEventListener("wheel", rueda, { passive: false });
+    return () => v.removeEventListener("wheel", rueda);
+  }, []);
+  const botonCentral = e => {
+    if (e.button !== 1) return;
+    e.preventDefault(); // sin esto, Windows prende el auto-desplazamiento
+    const v = visorRef.current;
+    const ini = { x: e.clientX, y: e.clientY, sl: v.scrollLeft, st: v.scrollTop };
+    setPaneando(true);
+    const mover = ev => { v.scrollLeft = ini.sl - (ev.clientX - ini.x); v.scrollTop = ini.st - (ev.clientY - ini.y); };
+    const soltar = () => {
+      window.removeEventListener("mousemove", mover);
+      window.removeEventListener("mouseup", soltar);
+      setPaneando(false);
+    };
+    window.addEventListener("mousemove", mover);
+    window.addEventListener("mouseup", soltar);
+  };
   const tocar = e => {
+    if (e.button !== 0) return;
     if (e.target.closest && e.target.closest(".arm-pin")) return;
     const r = imgRef.current && imgRef.current.getBoundingClientRect();
     if (!r || !r.width) return;
@@ -6059,25 +6120,31 @@ function VisorPlano({ plano, pines, punto, sel, onTocar, onPin }) {
     onTocar({ x: Math.round(x * 10000) / 10000, y: Math.round(y * 10000) / 10000 });
   };
   return h("div", null,
-    h("div", { className: "arm-visor", "data-armador": "visor" },
-      h("div", { className: "arm-lienzo", style: { width: zoom * 100 + "%" }, onClick: tocar, "data-armador": "lienzo" },
+    h("div", { ref: visorRef, className: "arm-visor" + (paneando ? " paneando" : ""), "data-armador": "visor", onMouseDown: botonCentral, onAuxClick: e => e.button === 1 && e.preventDefault() },
+      h("div", { className: "arm-lienzo", style: { width: zoom * 100 + "%" }, onClick: tocar, "data-armador": "lienzo", "data-zoom": zoom.toFixed(3) },
         h("img", { ref: imgRef, src: plano.src, alt: plano.nombre || "Plano", draggable: false }),
         pines.map(p => h("div", {
-          key: p.i,
+          key: "c" + p.i,
           className: "arm-pin" + (sel === p.i ? " sel" : ""),
           "data-pin": p.n,
           title: p.titulo,
           style: { left: p.x * 100 + "%", top: p.y * 100 + "%" },
           onClick: e => { e.stopPropagation(); onPin(p.i); }
         }, p.n)),
-        punto && h("div", { className: "arm-pin nuevo", "data-pin": "nuevo", style: { left: punto.x * 100 + "%", top: punto.y * 100 + "%" } }))),
+        marcas.map(m => h("div", {
+          key: "m" + m.id,
+          className: "arm-pin marca" + (activa === m.id ? " activa" : ""),
+          "data-marca": m.letra,
+          title: "Marcador " + m.letra + ": falta configurarlo",
+          style: { left: m.x * 100 + "%", top: m.y * 100 + "%" },
+          onClick: e => { e.stopPropagation(); onMarca(m.id); }
+        }, m.letra)))),
     h("div", { className: "arm-cab", style: { marginTop: 8, marginBottom: 0 } },
-      h("span", { style: { fontSize: 11, color: "#888", marginRight: "auto" } }, pines.length + (pines.length === 1 ? " componente ubicado" : " componentes ubicados")),
-      h("button", { onClick: () => setZoom(z => Math.max(1, z / 1.5)), disabled: zoom <= 1, title: "Alejar" }, "−"),
-      h("button", { onClick: () => setZoom(z => Math.min(6, z * 1.5)), title: "Acercar" }, "+"),
+      h("span", { style: { fontSize: 11, color: "#888", marginRight: "auto" } }, "Rueda: acercar · botón central: mover"),
+      h("button", { onClick: () => acercar(1 / 1.5), disabled: zoom <= 1, title: "Alejar" }, "−"),
+      h("button", { onClick: () => acercar(1.5), disabled: zoom >= ZOOM_MAX, title: "Acercar" }, "+"),
       h("button", { onClick: () => setZoom(1), title: "Ver completo" }, "Completo")));
 }
-/** El botón de subir plano, para el paso nuevo y para «Cambiar plano». */
 function BotonPlano({ etiqueta, onPlano, estilo }) {
   const h = React.createElement;
   const [leyendo, setLeyendo] = useState(false);
@@ -6115,7 +6182,7 @@ function PasoPlano({ plano, setPlano, onSeguir, onCancelar }) {
 /** El paso de componentes con plano: el plano a la izquierda y, a la derecha,
  *  lo de siempre —el menú de componentes, lo que se va armando y los
  *  botones—. Sin plano, es exactamente la pantalla de antes. */
-function ArmadorSobrePlano({ plano, pines, punto, sel, onTocar, onPin, onPlano, onQuitarPlano, children }) {
+function ArmadorSobrePlano({ plano, pines, marcas, activa, sel, onTocar, onPin, onMarca, onQuitarMarca, onPlano, onQuitarPlano, children }) {
   const h = React.createElement;
   if (!plano) {
     return h("div", null,
@@ -6123,6 +6190,12 @@ function ArmadorSobrePlano({ plano, pines, punto, sel, onTocar, onPin, onPlano, 
         h(BotonPlano, { etiqueta: "📄 Subir plano o imagen", onPlano, estilo: { ...st.btn, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: "#0080C1", borderColor: "#0080C1" } })),
       children);
   }
+  const marcaActiva = marcas.find(m => m.id === activa);
+  /* Mike, 23-sep: «Quiero poder agregar todos los marcadores de los
+   * componentes sin necesidad de irlos configurando, y ya al final
+   * configurarlos». Cada toque deja un marcador con letra; lo que se configure
+   * a la derecha se queda en el marcador ACTIVO (el primero que falta, o el
+   * que se escoja), y el siguiente se activa solo. */
   return h("div", { className: "arm-plano", "data-armador": "con-plano" },
     h("style", null, PLANO_CSS),
     h("div", { className: "arm-grid" },
@@ -6131,12 +6204,21 @@ function ArmadorSobrePlano({ plano, pines, punto, sel, onTocar, onPin, onPlano, 
           h("b", { title: plano.nombre }, plano.nombre || "Plano"),
           h(BotonPlano, { etiqueta: "Cambiar", onPlano, estilo: { font: "inherit", fontSize: 12, fontWeight: 600, border: "1px solid #D8D4CD", background: "#fff", borderRadius: 3, padding: "4px 9px" } }),
           h("button", { onClick: onQuitarPlano, title: "Quitar el plano (los componentes se quedan)" }, "Quitar")),
-        h("div", { className: "arm-aviso" + (punto ? " listo" : ""), "data-armador": "aviso" },
-          punto ? "Punto marcado. Escoge a la derecha el componente que va ahí →" : "Toca el plano donde va el siguiente componente."),
-        h(VisorPlano, { plano, pines, punto, sel, onTocar, onPin })),
-      h("div", { className: "arm-der" }, children)));
+        h("div", { className: "arm-aviso" + (marcaActiva ? " listo" : ""), "data-armador": "aviso" },
+          marcaActiva
+            ? "Configurando el marcador " + marcaActiva.letra + ": escoge a la derecha el componente que va ahí →"
+            : "Toca el plano para poner un marcador. Puedes poner todos y configurarlos al final."),
+        h(VisorPlano, { plano, pines, marcas, activa, sel, onTocar, onPin, onMarca })),
+      h("div", { className: "arm-der" },
+        marcas.length > 0 && h("div", { className: "arm-marcas", "data-armador": "por-configurar" },
+          h("b", null, marcas.length === 1 ? "1 marcador por configurar:" : marcas.length + " marcadores por configurar:"),
+          marcas.map(m => h("span", { key: m.id, className: activa === m.id ? "activa" : "", "data-marca-lista": m.letra, onClick: () => onMarca(m.id), title: "Configurar el marcador " + m.letra },
+            m.letra,
+            h("button", { title: "Quitar el marcador " + m.letra, onClick: e => { e.stopPropagation(); onQuitarMarca(m.id); } }, "✕")))),
+        children)));
 }
-
+/** A, B, … Z, AA, AB… */
+const letraMarca = n => { let t = ""; n += 1; while (n > 0) { const r = (n - 1) % 26; t = String.fromCharCode(65 + r) + t; n = Math.floor((n - 1) / 26); } return t; };
 function Cotizador({
   cotIni,
   onGuardar,
@@ -6171,7 +6253,11 @@ function Cotizador({
   // El plano del mueble que se está armando, el punto recién tocado y el
   // componente escogido (por su lugar en `comps`). Ver ArmadorSobrePlano.
   const [plano, setPlano] = useState(null);
-  const [punto, setPunto] = useState(null);
+  // Marcadores puestos en el plano que todavía no son componente, y el que se
+  // escogió para configurar (si no se escogió ninguno, va el primero).
+  const [marcas, setMarcas] = useState([]);
+  const [marcaSel, setMarcaSel] = useState(null);
+  const letrasRef = useRef(0);
   const [selComp, setSelComp] = useState(null);
   const [nomMueble, setNomMueble] = useState("");
   const [nomOk, setNomOk] = useState(false);
@@ -6320,7 +6406,9 @@ function Cotizador({
     setEditIdx(null);
     setImgs([]);
     setPlano(null);
-    setPunto(null);
+    setMarcas([]);
+    setMarcaSel(null);
+    letrasRef.current = 0;
     setSelComp(null);
     setFase("plano");
   };
@@ -6379,7 +6467,9 @@ function Cotizador({
     // se pueden quitar, cambiar de cantidad y ver en su lugar del plano.
     setComps((m.componentes || []).map(c => ({ ...c })));
     setPlano(m.plano || null);
-    setPunto(null);
+    setMarcas([]);
+    setMarcaSel(null);
+    letrasRef.current = 0;
     setSelComp(null);
     setMod(null);
     setEditIdx(i);
@@ -6633,6 +6723,9 @@ function Cotizador({
   };
   const confirmar = () => {
     if (!comps.length) return;
+    if (marcas.length && !window.confirm("Quedan " + marcas.length + (marcas.length === 1 ? " marcador" : " marcadores") + " sin configurar (" + marcas.map(m => m.letra).join(", ") + "). Si sigues, se descartan. ¿Guardar el mueble así?")) return;
+    setMarcas([]);
+    setMarcaSel(null);
     const tot = comps.reduce((s, c) => s + c.subtotal, 0);
     if (editIdx !== null) {
       setMuebles(p => p.map((m, i) => i === editIdx ? {
@@ -7970,36 +8063,52 @@ ${rowHTML}
     onClick: () => setFase("componentes")
   }, "Continuar a componentes \u2192"))));
   const pinesArmador = comps.map((c, i) => c.pos ? { i, n: i + 1, x: c.pos.x, y: c.pos.y, titulo: (c.modulo || "") + " " + (c.desc || "") } : null).filter(Boolean);
-  // Lo que se agrega mientras hay un punto marcado se queda en ese punto.
+  // El marcador que se está configurando: el escogido o, si no, el primero.
+  const marcaActiva = marcas.find(m => m.id === marcaSel) || marcas[0] || null;
+  // Lo que se agrega mientras hay un marcador activo se queda en su lugar, y
+  // el marcador deja de estar pendiente.
   const agregarEnPunto = (tipo, data) => {
-    const antes = comps.length, pt = punto;
+    const antes = comps.length, m = marcaActiva;
     agregar(tipo, data);
-    if (pt) setComps(p => p.map((c, i) => i >= antes && !c.pos ? { ...c, pos: pt } : c));
-    setPunto(null);
+    if (!m) return;
+    setComps(p => p.map((c, i) => i >= antes && !c.pos ? { ...c, pos: { x: m.x, y: m.y } } : c));
+    setMarcas(p => p.filter(x => x.id !== m.id));
+    setMarcaSel(null);
   };
   if (fase === "componentes") return React.createElement(ArmadorSobrePlano, {
     plano,
     pines: pinesArmador,
-    punto,
+    marcas,
+    activa: marcaActiva ? marcaActiva.id : null,
     sel: selComp,
     onTocar: pt => {
-      setPunto(pt);
+      const id = "mk" + Date.now() + Math.random().toString(36).slice(2, 6);
+      setMarcas(p => [...p, { id, letra: letraMarca(letrasRef.current++), x: pt.x, y: pt.y }]);
+      setSelComp(null);
+    },
+    onMarca: id => {
+      setMarcaSel(id);
       setSelComp(null);
       // En el teléfono el menú queda abajo del plano: se lleva ahí la vista.
       if (window.innerWidth < 900) setTimeout(() => { const d = document.querySelector(".arm-der"); d && d.scrollIntoView({ behavior: "smooth", block: "start" }); }, 50);
     },
+    onQuitarMarca: id => {
+      setMarcas(p => p.filter(x => x.id !== id));
+      if (marcaSel === id) setMarcaSel(null);
+    },
     onPin: i => {
       setSelComp(i);
-      setPunto(null);
     },
     onPlano: pl => {
       setPlano(pl);
-      setPunto(null);
+      setMarcas([]);
+      setMarcaSel(null);
     },
     onQuitarPlano: () => {
       if (!window.confirm("¿Quitar el plano? Los componentes se quedan, sin su lugar en el plano.")) return;
       setPlano(null);
-      setPunto(null);
+      setMarcas([]);
+      setMarcaSel(null);
       setComps(p => p.map(c => { const { pos, ...resto } = c; return resto; }));
     }
   }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(BtnGuardarCambios, null), /*#__PURE__*/React.createElement(Card, {
