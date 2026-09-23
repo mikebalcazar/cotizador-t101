@@ -2110,42 +2110,50 @@ const flete = t => Math.max(cfg("fleteMin"), Math.floor(t / cfg("fleteEscalon"))
 const MOSTRAR_HISTORIAL = false;
 const esManual = m => !!(m && m.manual);
 const precioManual = m => Number(m.precio !== undefined ? m.precio : m.total) || 0;
+/* El precio al cliente se forma por componente (Mike, 23-sep): el precio
+ * del mueble —costo × cargos y comisiones, con el flete repartido— se reparte
+ * entre sus componentes según lo que cuesta cada uno, y el precio UNITARIO de
+ * cada componente se redondea de $50 en $50 hacia arriba. El mueble vale la
+ * suma de sus componentes. La hoja, el PDF cliente, el Excel y «Aprobar» leen
+ * todos de aquí: lo que se ve en pantalla es lo que firma el cliente. */
+const REDONDEO = 50;
+const redondear = x => Math.ceil(x / REDONDEO - 1e-9) * REDONDEO;
 function preciosHoja(muebles, { usaF, usaA, usaT }) {
   const factor = (1 + cfg("indirectos") + cfg("ingenieria") + cfg("embalaje")) * (usaA ? 1 + cfg("comisionArq") : 1) * (usaT ? 1 + cfg("comisionTDC") : 1);
-  const bases = muebles.map(m => esManual(m) ? null : Math.ceil((m.total || 0) * factor / 10) * 10);
-  const sinFlete = muebles.reduce((s, m, i) => bases[i] === null ? s : s + bases[i] * (m.qty || 1), 0);
-  const fleteNeto = usaF ? flete(sinFlete) : 0;
-  const factorFlete = usaF && sinFlete > 0 ? 1 + fleteNeto / sinFlete : 1;
-  const unitarios = muebles.map((m, i) => bases[i] === null ? precioManual(m) : Math.ceil(bases[i] * factorFlete / 10) * 10);
+  const exactos = muebles.map(m => esManual(m) ? null : (m.total || 0) * factor);
+  const sinFlete = muebles.reduce((s, m, i) => exactos[i] === null ? s : s + exactos[i] * (m.qty || 1), 0);
+  const fleteNeto = usaF && sinFlete > 0 ? flete(sinFlete) : 0;
+  const factorFlete = sinFlete > 0 ? 1 + fleteNeto / sinFlete : 1;
+  const componentes = muebles.map((m, i) => {
+    if (exactos[i] === null) return null;
+    const comps = m.componentes || [];
+    const pesos = comps.map(c => Math.max(0, Number(c.subtotal) || 0));
+    const suma = pesos.reduce((a, b) => a + b, 0);
+    if (!(suma > 0)) return null;
+    const precio = exactos[i] * factorFlete;
+    return comps.map((c, k) => {
+      const cant = Number(c.qty) > 0 ? Number(c.qty) : 1;
+      const unit = redondear(precio * pesos[k] / suma / cant);
+      return { unit, cant, subtotal: unit * cant };
+    });
+  });
+  const unitarios = muebles.map((m, i) => exactos[i] === null ? precioManual(m)
+    : componentes[i] ? componentes[i].reduce((a, c) => a + c.subtotal, 0)
+    : redondear(exactos[i] * factorFlete));
   const subtotal = muebles.reduce((s, m, i) => s + unitarios[i] * (m.qty || 1), 0);
   /* De qué se forma el precio de los armados (Mike, 23-sep: «necesito ese
    * monto»). Con los porcentajes de ⚙, en el orden en que se aplican: los
    * cargos sobre el costo, las comisiones encima, y el flete repartido. Lo
-   * que sobra es el redondeo a $10 de cada precio, para que la suma cuadre
-   * con lo que dice la hoja. Es para quien cotiza: no sale al cliente. */
-  const costo = muebles.reduce((s, m, i) => bases[i] === null ? s : s + (m.total || 0) * (m.qty || 1), 0);
+   * que sobra es el redondeo a $50 de cada componente, para que la suma
+   * cuadre con lo que dice la hoja. Es para quien cotiza: no sale al cliente. */
+  const costo = muebles.reduce((s, m, i) => exactos[i] === null ? s : s + (m.total || 0) * (m.qty || 1), 0);
   const ind = costo * cfg("indirectos"), ing = costo * cfg("ingenieria"), emb = costo * cfg("embalaje");
   const conCargos = costo + ind + ing + emb;
   const arq = usaA ? conCargos * cfg("comisionArq") : 0;
   const tdc = usaT ? (conCargos + arq) * cfg("comisionTDC") : 0;
-  const armados = muebles.reduce((s, m, i) => bases[i] === null ? s : s + unitarios[i] * (m.qty || 1), 0);
+  const armados = muebles.reduce((s, m, i) => exactos[i] === null ? s : s + unitarios[i] * (m.qty || 1), 0);
   const desglose = { costo, ind, ing, emb, arq, tdc, flete: fleteNeto, armados, redondeo: armados - (conCargos + arq + tdc + fleteNeto) };
-  return { unitarios, subtotal, desglose };
-}
-
-/** Reparte el precio de un mueble entre sus componentes, en proporción a lo
- *  que cuesta cada uno, en pesos enteros que suman exactamente el precio. Así
- *  el cliente ve lo que vale cada componente con los cargos, las comisiones y
- *  el flete ya incluidos. */
-function repartirPrecio(componentes, precio) {
-  const pesos = (componentes || []).map(c => Math.max(0, Number(c.subtotal) || 0));
-  const suma = pesos.reduce((a, b) => a + b, 0);
-  if (!(suma > 0) || !(precio > 0)) return pesos.map(() => null);
-  const exactos = pesos.map(w => precio * w / suma);
-  const enteros = exactos.map(Math.floor);
-  let falta = Math.round(precio) - enteros.reduce((a, b) => a + b, 0);
-  exactos.map((x, i) => [x - enteros[i], i]).sort((a, b) => b[0] - a[0]).forEach(([, i]) => { if (falta > 0) { enteros[i]++; falta--; } });
-  return enteros;
+  return { unitarios, subtotal, componentes, desglose };
 }
 
 // ─── HELPERS RECIBOS ──────────────────────────────────────────
@@ -4148,7 +4156,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G89";
+const APP_VERSION = "G90";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -5935,7 +5943,7 @@ function HojaCotizacion({
           cargo("flete", "Flete", d.flete, usaF, setUsaF),
           cargo("arq", "Comisión profesionista " + pct("comisionArq"), d.arq, usaA, setUsaA),
           cargo("tdc", "Comisión TDC " + pct("comisionTDC"), d.tdc, usaT, setUsaT),
-          cargo("redondeo", "Redondeo a $10", d.redondeo),
+          cargo("redondeo", "Redondeo a $" + REDONDEO, d.redondeo),
           cargo("armados", "Precio de los armados", d.armados)));
     })());
 
@@ -7332,27 +7340,12 @@ function Cotizador({
       row++;
 
       // ─── Muebles ─────────────────────────────────────
-      // Pass 1: precio base sin flete y total para distribución proporcional
-      let totalSinFlete = 0;
-      const muebleDataXL = muebles.map(m => {
-        const q = m.qty || 1;
-        const precioBase = esManual(m) ? null : Math.ceil(m.total * factor / 10) * 10;
-        if (precioBase !== null) totalSinFlete += precioBase * q;
-        return {
-          m,
-          q,
-          precioBase
-        };
-      });
-      const fleteNetoXL = usaF ? flete(totalSinFlete) : 0;
-      const factorFleteXL = usaF && totalSinFlete > 0 ? 1 + fleteNetoXL / totalSinFlete : 1;
+      // Los mismos precios que la hoja y el PDF cliente (ver `preciosHoja`).
+      const PHXL = preciosHoja(muebles, { usaF, usaA, usaT });
       let totalNeto = 0;
-      muebleDataXL.forEach(({
-        m,
-        q,
-        precioBase
-      }) => {
-        const precioNeto = precioBase === null ? precioManual(m) : Math.ceil(precioBase * factorFleteXL / 10) * 10;
+      muebles.forEach((m, i) => {
+        const q = m.qty || 1;
+        const precioNeto = PHXL.unitarios[i];
         const subtotalNeto = precioNeto * q;
         totalNeto += subtotalNeto;
         const desc = (m.componentes || []).map(cc => {
@@ -7590,58 +7583,41 @@ function Cotizador({
     const w = window.open("", "_blank");
     if (!w) return;
 
-    // Factor multiplicador para absorber cargos activados en precio unitario
-    const factorBase = 1 + cfg("indirectos") + cfg("ingenieria") + cfg("embalaje"); // indirectos+ingeniería+embalaje siempre
-    const factorArq = usaA ? 1 + cfg("comisionArq") : 1;
-    const factorTDC = usaT ? 1 + cfg("comisionTDC") : 1;
-    const factor = factorBase * factorArq * factorTDC; // descuento se muestra como línea (no distribuido)
-
-    // Pass 1: calcular precio neto base (sin flete) por mueble y total
-    let totalSinFlete = 0;
-    const muebleData = muebles.map(m => {
+    // Los mismos precios que la hoja (ver `preciosHoja`).
+    const PH = preciosHoja(muebles, { usaF, usaA, usaT });
+    const stripCosto = s => String(s).replace(/\s*\$\s*[\d,]+(?:\.\d+)?\s*(?:\/ml|\/m|\/u|\/pza)?/g, '').trim();
+    const numComp = (c, k) => c.marca || k + 1;
+    const circulo = n => '<span class="nc">' + n + '</span>';
+    const cant = n => Number.isInteger(n) ? String(n) : n.toLocaleString("es-MX", { maximumFractionDigits: 2 });
+    const rows = muebles.map((m, i) => {
       const q = m.qty || 1;
-      const precioBase = esManual(m) ? null : Math.ceil(m.total * factor / 10) * 10;
-      if (precioBase !== null) totalSinFlete += precioBase * q;
-      return {
-        m,
-        q,
-        precioBase
-      };
-    });
-
-    // Pass 2: distribuir flete proporcionalmente al subtotal de cada mueble
-    const fleteNeto = usaF ? flete(totalSinFlete) : 0;
-    const factorFlete = usaF && totalSinFlete > 0 ? 1 + fleteNeto / totalSinFlete : 1;
-    const rows = muebleData.map(({
-      m,
-      q,
-      precioBase
-    }) => {
-      const precioNeto = precioBase === null ? precioManual(m) : Math.ceil(precioBase * factorFlete / 10) * 10;
+      const precioNeto = PH.unitarios[i];
       const subtotalNeto = precioNeto * q;
       const imgTag = m.imagenes && m.imagenes[0] ? '<img src="' + m.imagenes[0] + '" style="width:36px;height:36px;object-fit:cover;border-radius:4px;margin-right:10px;flex-shrink:0;"/>' : "";
-      // PDF cliente: NO mostrar costos de componentes — strip "$X/ml" etc de extras
-      const stripCosto = s => String(s).replace(/\s*\$\s*[\d,]+(?:\.\d+)?\s*(?:\/ml|\/m|\/u|\/pza)?/g, '').trim();
-      // Lo que vale cada componente para el cliente: el precio del mueble
-      // (cargos, comisiones y flete ya dentro) repartido según su costo.
-      const precioComp = repartirPrecio(m.componentes, precioBase === null ? 0 : precioNeto);
-      const compRows = (m.componentes || []).map((c, ci) => {
+      const precios = PH.componentes[i];
+      // Cada componente con su número (el del plano), su precio unitario
+      // al cliente, la cantidad y el subtotal. El costo nunca sale.
+      const compRows = (m.componentes || []).map((c, k) => {
         const extrasLimpios = (c.extras || []).map(stripCosto).filter(Boolean);
         const spec = [...(c.tags || []), ...extrasLimpios].join(" · ");
-        return '<tr><td><div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#0080C1">' + c.modulo + '</div><div style="font-weight:600;font-size:12px">' + c.desc + '</div></td>' + '<td style="color:#666;font-size:11px">' + spec + '</td>' + '<td class="num" data-precio-comp style="text-align:right;font-weight:600;white-space:nowrap">' + (precioComp[ci] === null ? "" : $(precioComp[ci])) + '</td></tr>';
+        const p = precios && precios[k];
+        return '<tr data-comp>' + '<td style="text-align:center" data-comp-num>' + circulo(numComp(c, k)) + '</td>' + '<td><div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#0080C1">' + c.modulo + '</div><div style="font-weight:600;font-size:12px">' + c.desc + '</div></td>' + '<td style="color:#666;font-size:11px">' + spec + '</td>' + '<td class="num" data-comp-unit style="text-align:right;white-space:nowrap">' + (p ? $(p.unit) : "") + '</td>' + '<td class="num" data-comp-cant style="text-align:center">' + (p ? cant(p.cant) : "") + '</td>' + '<td class="num" data-comp-sub style="text-align:right;font-weight:700;white-space:nowrap">' + (p ? $(p.subtotal) : "") + '</td></tr>';
       }).join("");
-      return '<div class="mb">' + '<div class="mbh">' + '<div style="display:flex;align-items:center;flex:1;min-width:0">' + imgTag + '<div style="font-size:14px;font-weight:700;flex:1;min-width:0">' + m.nombre + '</div>' + '</div>' + '<div style="display:flex;align-items:center;gap:14px;font-size:11px;color:#888;flex-shrink:0">' + '<span class="num">' + $(precioNeto) + '/u</span>' + '<span class="num">× ' + q + '</span>' + '<span class="num" style="font-size:14px;font-weight:700;color:#0080C1">' + $(subtotalNeto) + '</span>' + '</div>' + '</div>' + '<table><thead><tr><th style="width:36%">Componente</th><th style="width:48%">Descripción</th><th style="width:16%;text-align:right">Precio</th></tr></thead>' + '<tbody>' + compRows + '</tbody></table></div>';
+      const tabla = compRows ? '<table><thead><tr><th style="width:6%;text-align:center">#</th><th style="width:26%">Componente</th><th style="width:32%">Descripción</th><th style="width:13%;text-align:right">P. unitario</th><th style="width:8%;text-align:center">Cant.</th><th style="width:15%;text-align:right">Subtotal</th></tr></thead>' + '<tbody>' + compRows + '</tbody></table>' : (m.descripcion ? '<div style="font-size:11px;color:#666">' + m.descripcion + '</div>' : "");
+      return '<div class="mb">' + '<div class="mbh">' + '<div style="display:flex;align-items:center;flex:1;min-width:0">' + imgTag + '<div style="font-size:14px;font-weight:700;flex:1;min-width:0">' + m.nombre + '</div>' + '</div>' + '<div style="display:flex;align-items:center;gap:14px;font-size:11px;color:#888;flex-shrink:0">' + '<span class="num">' + $(precioNeto) + '/u</span>' + '<span class="num">× ' + q + '</span>' + '<span class="num" style="font-size:14px;font-weight:700;color:#0080C1">' + $(subtotalNeto) + '</span>' + '</div>' + '</div>' + tabla + '</div>';
     }).join("");
+    const baseConFlete = PH.subtotal;
 
-    // Total con flete ya distribuido en precios unitarios
-    const baseConFlete = muebleData.reduce((s, {
-      m,
-      precioBase,
-      q
-    }) => {
-      const precioNeto = precioBase === null ? precioManual(m) : Math.ceil(precioBase * factorFlete / 10) * 10;
-      return s + precioNeto * q;
-    }, 0);
+    /* Al final de la propuesta, el plano de cada mueble con sus círculos
+     * numerados (Mike, 23-sep): el número es el mismo de la tabla, para que
+     * el cliente relacione lo que se cobra con su lugar. */
+    const planos = muebles.map((m, i) => {
+      if (esManual(m) || !m.plano || !m.plano.src) return "";
+      const comps = m.componentes || [];
+      const pines = comps.map((c, k) => c.pos ? '<span class="nc pin" style="left:' + (c.pos.x * 100).toFixed(3) + '%;top:' + (c.pos.y * 100).toFixed(3) + '%">' + numComp(c, k) + '</span>' : "").join("");
+      const lista = comps.map((c, k) => '<div style="display:flex;gap:8px;align-items:center;font-size:11px;padding:3px 0">' + circulo(numComp(c, k)) + '<span><b>' + c.modulo + '</b> ' + c.desc + '</span></div>').join("");
+      return '<div class="plano-pag" data-plano-cliente="' + i + '"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:#0080C1;margin-bottom:4px">Ubicación de los componentes</div><div style="font-size:15px;font-weight:700;margin-bottom:10px">' + m.nombre + '</div>' + '<div class="plano-cli"><img src="' + m.plano.src + '"/>' + pines + '</div>' + '<div style="columns:2;column-gap:24px;margin-top:10px">' + lista + '</div></div>';
+    }).join("");
     const descMontoPDF = descuento > 0 ? baseConFlete * (descuento / 100) : 0;
     const subtotalConDesc = baseConFlete - descMontoPDF;
     const iva = subtotalConDesc * cfg("iva");
@@ -7651,13 +7627,13 @@ function Cotizador({
     const fleteRow = "";
     // Descuento sí como línea visible (a petición del usuario)
     const descRow = descuento > 0 ? '<div class="rr" style="color:#c0392b"><span>Descuento (' + descuento + '%)</span><span class="num">− ' + $(descMontoPDF) + '</span></div>' : "";
-    const html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Cotizacion Taller 101</title>' + TIPO101() + '<style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:"Cifras","Raleway",Arial,sans-serif;padding:24px;max-width:800px;margin:0 auto;color:#2C2C2C;}' + '.num,.num *{font-family:"Cifras","Raleway",sans-serif;font-variant-numeric:tabular-nums;}' + '.hdr{background:#0080C1;color:#fff;padding:16px 20px;border-radius:6px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;}' + '.hdr h1{font-size:20px;font-weight:700;}' + '.mb{border:1px solid #D8D4CD;border-left:3px solid #0080C1;border-radius:4px;padding:14px;margin-bottom:12px;}' + '.mbh{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}' + 'table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px;}' + 'th{text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:#888;border-bottom:1px solid #EAE7E1;}' + 'td{padding:5px 6px;border-bottom:1px solid #F4F2EE;vertical-align:top;}' + '.res{margin-top:20px;border:1px solid #D8D4CD;border-radius:4px;padding:14px;}' + '.rr{display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid #EAE7E1;color:#555;}' + '.rs{display:flex;justify-content:space-between;font-weight:700;background:#F4F2EE;padding:8px 10px;border-radius:3px;border-left:2px solid #0080C1;margin:8px 0;font-size:14px;}' + '.rt{display:flex;justify-content:space-between;font-size:18px;font-weight:700;padding-top:12px;border-top:2px solid #2C2C2C;margin-top:6px;}' + '.footer{margin-top:28px;padding-top:16px;border-top:1px solid #EAE7E1;text-align:center;color:#888;font-size:12px;line-height:1.8;}' + '@media print{body{padding:0;}.no-print{display:none!important;}}</style></head><body>' + '<div class="hdr"><div style="display:flex;align-items:center;gap:14px"><img src="' + LOGO_SRC + '" style="width:44px;height:44px;object-fit:cover;border-radius:4px;flex-shrink:0;"/><div><div style="font-size:11px;opacity:0.75;margin-bottom:2px;text-transform:uppercase;letter-spacing:0.08em">Cotización</div><h1>' + titulo + '</h1></div></div>' + '<div style="text-align:right;font-size:12px"><div class="num">' + fd + '</div><div class="num" style="font-weight:700;font-size:14px">COT-' + serie + '</div><div class="num" style="font-size:10px;opacity:0.6;margin-top:2px">' + APP_VERSION + '</div></div></div>' + (function(){
+    const html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Cotizacion Taller 101</title>' + TIPO101() + '<style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:"Cifras","Raleway",Arial,sans-serif;padding:24px;max-width:800px;margin:0 auto;color:#2C2C2C;}' + '.num,.num *{font-family:"Cifras","Raleway",sans-serif;font-variant-numeric:tabular-nums;}' + '.hdr{background:#0080C1;color:#fff;padding:16px 20px;border-radius:6px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;}' + '.hdr h1{font-size:20px;font-weight:700;}' + '.mb{border:1px solid #D8D4CD;border-left:3px solid #0080C1;border-radius:4px;padding:14px;margin-bottom:12px;}' + '.mbh{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}' + '.nc{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 4px;border-radius:10px;background:#0080C1;color:#fff;font-size:10.5px;font-weight:700;line-height:1;-webkit-print-color-adjust:exact;print-color-adjust:exact;}' + '.plano-pag{page-break-before:always;padding-top:8px;}' + '.plano-cli{position:relative;width:fit-content;max-width:100%;margin:0 auto;border:1px solid #D8D4CD;}' + '.plano-cli img{display:block;max-width:100%;max-height:215mm;width:auto;height:auto;}' + '.plano-cli .pin{position:absolute;transform:translate(-50%,-50%);box-shadow:0 0 0 2px #fff;}' + 'table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px;}' + 'th{text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:#888;border-bottom:1px solid #EAE7E1;}' + 'td{padding:5px 6px;border-bottom:1px solid #F4F2EE;vertical-align:top;}' + '.res{margin-top:20px;border:1px solid #D8D4CD;border-radius:4px;padding:14px;}' + '.rr{display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid #EAE7E1;color:#555;}' + '.rs{display:flex;justify-content:space-between;font-weight:700;background:#F4F2EE;padding:8px 10px;border-radius:3px;border-left:2px solid #0080C1;margin:8px 0;font-size:14px;}' + '.rt{display:flex;justify-content:space-between;font-size:18px;font-weight:700;padding-top:12px;border-top:2px solid #2C2C2C;margin-top:6px;}' + '.footer{margin-top:28px;padding-top:16px;border-top:1px solid #EAE7E1;text-align:center;color:#888;font-size:12px;line-height:1.8;}' + '@media print{body{padding:0;}.no-print{display:none!important;}}</style></head><body>' + '<div class="hdr"><div style="display:flex;align-items:center;gap:14px"><img src="' + LOGO_SRC + '" style="width:44px;height:44px;object-fit:cover;border-radius:4px;flex-shrink:0;"/><div><div style="font-size:11px;opacity:0.75;margin-bottom:2px;text-transform:uppercase;letter-spacing:0.08em">Cotización</div><h1>' + titulo + '</h1></div></div>' + '<div style="text-align:right;font-size:12px"><div class="num">' + fd + '</div><div class="num" style="font-weight:700;font-size:14px">COT-' + serie + '</div><div class="num" style="font-size:10px;opacity:0.6;margin-top:2px">' + APP_VERSION + '</div></div></div>' + (function(){
       var mLbl = {formaica:"Formaica",supSolida:"Superficie sólida",chapaPino:"Chapa pino",chapaEncino:"Chapa encino",chapaPremium:"Chapa premium",laca:"Laca / acabado",traceless:"Traceless"};
       var ks = Object.keys(mLbl);
       var entries = ks.filter(function(k){ return (materiales[k] || "").trim(); }).map(function(k){ return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #EAE7E1;font-size:11px"><span style="color:#666;font-weight:500;text-transform:uppercase;letter-spacing:0.06em;font-size:10px">' + mLbl[k] + '</span><span style="font-weight:600;color:#2C2C2C">' + (materiales[k] || "") + '</span></div>'; }).join("");
       if (!entries) return "";
       return '<div style="border:1px solid #D8D4CD;border-left:3px solid #C6FF3D;border-radius:4px;padding:14px;margin-bottom:16px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:#0080C1;margin-bottom:8px">Especificación de materiales</div>' + entries + '</div>';
-    })() + rows + '<div class="res"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#0080C1;margin-bottom:10px">Resumen</div>' + fleteRow + '<div class="rr"><span>Subtotal</span><span class="num">' + $(baseConFlete) + '</span></div>' + descRow + '<div class="rr"><span>IVA (' + (cfg("iva") * 100).toFixed(0) + '%)</span><span class="num">' + $(iva) + '</span></div>' + '<div class="rt"><span>Total</span><span class="num">' + $(totalConIva) + '</span></div></div>' + '<div style="page-break-before:always;padding-top:8px"><div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.14em;color:#0080C1;margin-bottom:4px">Anexo de T\u00e9rminos y Condiciones Comerciales</div>'
+    })() + rows + '<div class="res"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#0080C1;margin-bottom:10px">Resumen</div>' + fleteRow + '<div class="rr"><span>Subtotal</span><span class="num">' + $(baseConFlete) + '</span></div>' + descRow + '<div class="rr"><span>IVA (' + (cfg("iva") * 100).toFixed(0) + '%)</span><span class="num">' + $(iva) + '</span></div>' + '<div class="rt"><span>Total</span><span class="num">' + $(totalConIva) + '</span></div></div>' + planos + '<div style="page-break-before:always;padding-top:8px"><div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.14em;color:#0080C1;margin-bottom:4px">Anexo de T\u00e9rminos y Condiciones Comerciales</div>'
       + '<div style="font-size:10px;font-weight:600;color:#666;margin-bottom:12px;padding-bottom:10px;border-bottom:2px solid #0080C1">Condiciones de Contrataci\u00f3n, Fabricaci\u00f3n, Entrega y Garant\u00eda de Mobiliario</div>'
       + '<div style="font-size:10px;line-height:1.55;color:#2C2C2C;font-family:Cifras,Raleway,sans-serif;margin-bottom:14px;text-align:justify">Las presentes condiciones regulan de forma integral el proceso de dise\u00f1o, fabricaci\u00f3n, venta, entrega e instalaci\u00f3n del mobiliario objeto de la cotizaci\u00f3n adjunta. Al firmar la cotizaci\u00f3n o emitir la orden de compra correspondiente, el Cliente acepta de conformidad los t\u00e9rminos que se detallan a continuaci\u00f3n.</div>'
       + '<div style="font-size:10.5px;line-height:1.55;color:#2C2C2C;font-family:Cifras,Raleway,sans-serif">'
