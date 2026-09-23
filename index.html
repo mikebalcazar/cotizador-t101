@@ -9779,7 +9779,13 @@ function App() {
    * desde antes de publicarlo, y le funcionaba como la versión anterior: el
    * cotizador es una sola página y no se recarga solo. Se compara la huella
    * del index publicado (`/huella.txt`, pública y sin datos) con la que había
-   * al abrir; si cambió, se avisa y la persona decide cuándo recargar. */
+   * al abrir; si cambió, se avisa y la persona decide cuándo recargar.
+   *
+   * Se revisa cada 2 minutos y cuando la pestaña vuelve a verse. NO con el
+   * `focus` de la ventana: con ese escucha, 1 de cada 12 corridas de la
+   * prueba de «Nueva cotización» perdía el primer clic en «+ A mano» (en la
+   * publicación y aquí; sin él, 0 de 36). No quedó explicado por qué; quedó
+   * medido que sin él no pasa. */
   const [hayVersionNueva, setHayVersionNueva] = useState(false);
   useEffect(() => {
     let base = null;
@@ -9795,11 +9801,9 @@ function App() {
     revisar();
     const cada = setInterval(revisar, 120000);
     const alVolver = () => document.visibilityState === "visible" && revisar();
-    window.addEventListener("focus", revisar);
     document.addEventListener("visibilitychange", alVolver);
     return () => {
       clearInterval(cada);
-      window.removeEventListener("focus", revisar);
       document.removeEventListener("visibilitychange", alVolver);
     };
   }, []);
