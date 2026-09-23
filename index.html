@@ -2118,7 +2118,34 @@ function preciosHoja(muebles, { usaF, usaA, usaT }) {
   const factorFlete = usaF && sinFlete > 0 ? 1 + fleteNeto / sinFlete : 1;
   const unitarios = muebles.map((m, i) => bases[i] === null ? precioManual(m) : Math.ceil(bases[i] * factorFlete / 10) * 10);
   const subtotal = muebles.reduce((s, m, i) => s + unitarios[i] * (m.qty || 1), 0);
-  return { unitarios, subtotal };
+  /* De qué se forma el precio de los armados (Mike, 23-sep: «necesito ese
+   * monto»). Con los porcentajes de ⚙, en el orden en que se aplican: los
+   * cargos sobre el costo, las comisiones encima, y el flete repartido. Lo
+   * que sobra es el redondeo a $10 de cada precio, para que la suma cuadre
+   * con lo que dice la hoja. Es para quien cotiza: no sale al cliente. */
+  const costo = muebles.reduce((s, m, i) => bases[i] === null ? s : s + (m.total || 0) * (m.qty || 1), 0);
+  const ind = costo * cfg("indirectos"), ing = costo * cfg("ingenieria"), emb = costo * cfg("embalaje");
+  const conCargos = costo + ind + ing + emb;
+  const arq = usaA ? conCargos * cfg("comisionArq") : 0;
+  const tdc = usaT ? (conCargos + arq) * cfg("comisionTDC") : 0;
+  const armados = muebles.reduce((s, m, i) => bases[i] === null ? s : s + unitarios[i] * (m.qty || 1), 0);
+  const desglose = { costo, ind, ing, emb, arq, tdc, flete: fleteNeto, armados, redondeo: armados - (conCargos + arq + tdc + fleteNeto) };
+  return { unitarios, subtotal, desglose };
+}
+
+/** Reparte el precio de un mueble entre sus componentes, en proporción a lo
+ *  que cuesta cada uno, en pesos enteros que suman exactamente el precio. Así
+ *  el cliente ve lo que vale cada componente con los cargos, las comisiones y
+ *  el flete ya incluidos. */
+function repartirPrecio(componentes, precio) {
+  const pesos = (componentes || []).map(c => Math.max(0, Number(c.subtotal) || 0));
+  const suma = pesos.reduce((a, b) => a + b, 0);
+  if (!(suma > 0) || !(precio > 0)) return pesos.map(() => null);
+  const exactos = pesos.map(w => precio * w / suma);
+  const enteros = exactos.map(Math.floor);
+  let falta = Math.round(precio) - enteros.reduce((a, b) => a + b, 0);
+  exactos.map((x, i) => [x - enteros[i], i]).sort((a, b) => b[0] - a[0]).forEach(([, i]) => { if (falta > 0) { enteros[i]++; falta--; } });
+  return enteros;
 }
 
 // ─── HELPERS RECIBOS ──────────────────────────────────────────
@@ -4121,7 +4148,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G88";
+const APP_VERSION = "G89";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -5611,8 +5638,14 @@ const HOJA_CSS = `
 .hoja .h-gran{display:flex;justify-content:space-between;align-items:baseline;padding-top:6.8px;border-top:1px solid var(--h-divider)}
 .hoja .h-gran b{font-weight:500;font-size:20px;letter-spacing:.02em}
 .hoja .h-gran span{font-weight:500;font-size:28px;color:var(--h-accent-800);font-variant-numeric:tabular-nums}
-.hoja .h-cargos{display:flex;flex-wrap:wrap;gap:13.6px;align-items:center;font-size:12.5px;color:var(--h-muted);padding:6.8px 0 0}
-.hoja .h-cargos label{display:inline-flex;gap:5px;align-items:center;cursor:pointer}
+.hoja .h-cargos{font-size:12.5px;color:var(--h-muted);padding:13.6px 0 0}
+.hoja .h-cargos-tit{font-weight:500;color:var(--h-text);margin-bottom:6.8px}
+.hoja .h-cargos-tit span{font-weight:400;color:var(--h-muted);font-size:11.5px}
+.hoja .h-cargos-fila{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6.8px 13.6px}
+.hoja .h-cargo{display:flex;flex-direction:column;gap:2px;padding:6.8px 8.5px;border:1px solid var(--h-soft)}
+.hoja .h-cargo label{display:inline-flex;gap:5px;align-items:center;cursor:pointer}
+.hoja .h-cargo b{font-weight:500;color:var(--h-text);font-size:13.5px}
+.hoja .h-cargo.apagado b{color:var(--h-muted)}
 .hoja .h-aviso{font-size:12px;color:var(--h-muted);margin-top:6.8px}
 .hoja .h-aprobada{font-size:13px;padding:6px 10px;border:1px solid var(--h-accent);color:var(--h-accent-800);background:color-mix(in srgb,var(--h-accent) 10%,transparent)}
 .hoja-velo{position:fixed;inset:0;display:grid;place-items:center;padding:13.6px;background:color-mix(in srgb,#2b2b2d 50%,transparent);z-index:3000}
@@ -5885,10 +5918,26 @@ function HojaCotizacion({
       h("button", { className: "btn", onClick: nuevoMueble }, "+ Agregar mueble"),
       h("button", { className: "btn", onClick: () => renglonAMano() }, "+ Escribir a mano"),
       h("button", { className: "btn", onClick: abrirCatalogo }, "Buscar en catálogo")),
-    hayArmados && h("div", { className: "h-cargos no-print" },
-      h("span", null, "Precio de los muebles armados:"),
-      [["Flete", usaF, setUsaF], ["Comisión profesionista", usaA, setUsaA], ["Comisión TDC", usaT, setUsaT]].map(([l, v, set]) => h("label", { key: l },
-        h("input", { type: "checkbox", checked: !!v, disabled: soloVer, onChange: e => set(e.target.checked) }), l))));
+    hayArmados && (() => {
+      const d = precios.desglose || {};
+      const pct = k => (cfg(k) * 100).toLocaleString("es-MX", { maximumFractionDigits: 2 }) + "%";
+      const cargo = (clave, etiqueta, monto, prendido, set) => h("div", { key: clave, className: "h-cargo" + (set && !prendido ? " apagado" : "") },
+        set ? h("label", null, h("input", { type: "checkbox", checked: !!prendido, disabled: soloVer, onChange: e => set(e.target.checked) }), etiqueta) : h("span", null, etiqueta),
+        h("b", { className: "num", "data-cargo": clave }, set && !prendido ? "—" : hojaDinero(monto)));
+      return h("div", { className: "h-cargos no-print", "data-hoja": "cargos" },
+        h("div", { className: "h-cargos-tit" }, "Cómo se forma el precio de los muebles armados",
+          h("span", null, " · los porcentajes se cambian en ⚙ Configuración · no sale en el PDF del cliente")),
+        h("div", { className: "h-cargos-fila" },
+          cargo("costo", "Costo de los muebles", d.costo),
+          cargo("indirectos", "Indirectos " + pct("indirectos"), d.ind),
+          cargo("ingenieria", "Ingeniería " + pct("ingenieria"), d.ing),
+          cargo("embalaje", "Embalaje " + pct("embalaje"), d.emb),
+          cargo("flete", "Flete", d.flete, usaF, setUsaF),
+          cargo("arq", "Comisión profesionista " + pct("comisionArq"), d.arq, usaA, setUsaA),
+          cargo("tdc", "Comisión TDC " + pct("comisionTDC"), d.tdc, usaT, setUsaT),
+          cargo("redondeo", "Redondeo a $10", d.redondeo),
+          cargo("armados", "Precio de los armados", d.armados)));
+    })());
 
   const pie = h("div", { className: "h-pie" },
     h("div", null,
@@ -7573,16 +7622,20 @@ function Cotizador({
       const imgTag = m.imagenes && m.imagenes[0] ? '<img src="' + m.imagenes[0] + '" style="width:36px;height:36px;object-fit:cover;border-radius:4px;margin-right:10px;flex-shrink:0;"/>' : "";
       // PDF cliente: NO mostrar costos de componentes — strip "$X/ml" etc de extras
       const stripCosto = s => String(s).replace(/\s*\$\s*[\d,]+(?:\.\d+)?\s*(?:\/ml|\/m|\/u|\/pza)?/g, '').trim();
-      const compRows = m.componentes.map(c => {
+      // Lo que vale cada componente para el cliente: el precio del mueble
+      // (cargos, comisiones y flete ya dentro) repartido según su costo.
+      const precioComp = repartirPrecio(m.componentes, precioBase === null ? 0 : precioNeto);
+      const compRows = (m.componentes || []).map((c, ci) => {
         const extrasLimpios = (c.extras || []).map(stripCosto).filter(Boolean);
         const spec = [...(c.tags || []), ...extrasLimpios].join(" · ");
-        return '<tr><td><div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#0080C1">' + c.modulo + '</div><div style="font-weight:600;font-size:12px">' + c.desc + '</div></td>' + '<td style="color:#666;font-size:11px">' + spec + '</td></tr>';
+        return '<tr><td><div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#0080C1">' + c.modulo + '</div><div style="font-weight:600;font-size:12px">' + c.desc + '</div></td>' + '<td style="color:#666;font-size:11px">' + spec + '</td>' + '<td class="num" data-precio-comp style="text-align:right;font-weight:600;white-space:nowrap">' + (precioComp[ci] === null ? "" : $(precioComp[ci])) + '</td></tr>';
       }).join("");
-      return '<div class="mb">' + '<div class="mbh">' + '<div style="display:flex;align-items:center;flex:1;min-width:0">' + imgTag + '<div style="font-size:14px;font-weight:700;flex:1;min-width:0">' + m.nombre + '</div>' + '</div>' + '<div style="display:flex;align-items:center;gap:14px;font-size:11px;color:#888;flex-shrink:0">' + '<span class="num">' + $(precioNeto) + '/u</span>' + '<span class="num">× ' + q + '</span>' + '<span class="num" style="font-size:14px;font-weight:700;color:#0080C1">' + $(subtotalNeto) + '</span>' + '</div>' + '</div>' + '<table><thead><tr><th style="width:40%">Componente</th><th style="width:60%">Descripción</th></tr></thead>' + '<tbody>' + compRows + '</tbody></table></div>';
+      return '<div class="mb">' + '<div class="mbh">' + '<div style="display:flex;align-items:center;flex:1;min-width:0">' + imgTag + '<div style="font-size:14px;font-weight:700;flex:1;min-width:0">' + m.nombre + '</div>' + '</div>' + '<div style="display:flex;align-items:center;gap:14px;font-size:11px;color:#888;flex-shrink:0">' + '<span class="num">' + $(precioNeto) + '/u</span>' + '<span class="num">× ' + q + '</span>' + '<span class="num" style="font-size:14px;font-weight:700;color:#0080C1">' + $(subtotalNeto) + '</span>' + '</div>' + '</div>' + '<table><thead><tr><th style="width:36%">Componente</th><th style="width:48%">Descripción</th><th style="width:16%;text-align:right">Precio</th></tr></thead>' + '<tbody>' + compRows + '</tbody></table></div>';
     }).join("");
 
     // Total con flete ya distribuido en precios unitarios
     const baseConFlete = muebleData.reduce((s, {
+      m,
       precioBase,
       q
     }) => {

@@ -338,4 +338,68 @@ test('una cotización aprobada se ve aprobada, en el menú y en la hoja, y no se
   } finally { await ctx.close(); }
 });
 
+test('debajo de cada cargo, su monto: los indirectos y los demás suman el precio de los armados', async () => {
+  /* Mike, 23-sep: «Quitaste el monto de los indirectos de la suma al final
+   * […] necesito ese monto. Y en el flete, la comisión profesionista y la
+   * comisión TDC me pongas abajo qué monto representa». Los porcentajes son
+   * los de ⚙ (aquí, los de fábrica: 7.5, 3.5, 2, 10 y 4.5). */
+  const { ctx, p, errores } = await abrirApp();
+  try {
+    await abrirCotizacion(p);
+    await p.getByRole('button', { name: /Editar cotización/ }).click();
+    const cargo = (k) => leer(p, `[data-cargo="${k}"]`);
+    await p.locator('[data-cargo="indirectos"]').waitFor({ timeout: 10000 }).catch(() => {});
+    assert.equal(await p.locator('[data-cargo="indirectos"]').count(), 1, 'el monto de los indirectos se ve en la hoja');
+    // Costo: $10,000 × 2 piezas.
+    assert.equal(await cargo('costo'), 20000);
+    assert.equal(await cargo('indirectos'), 1500, 'indirectos 7.5% del costo');
+    assert.equal(await cargo('ingenieria'), 700);
+    assert.equal(await cargo('embalaje'), 400);
+    assert.equal(await cargo('arq'), 2260, 'comisión profesionista 10% sobre costo con cargos');
+    assert.equal(await cargo('tdc'), 1118.7, 'comisión TDC 4.5% sobre lo anterior');
+    assert.equal(await cargo('flete'), 1500, 'el flete mínimo');
+    const partes = ['costo', 'indirectos', 'ingenieria', 'embalaje', 'arq', 'tdc', 'flete', 'redondeo'];
+    const suma = async () => { let t = 0; for (const k of partes) t += (await p.locator(`[data-cargo="${k}"]`).innerText()) === '—' ? 0 : await cargo(k); return Math.round(t * 100) / 100; };
+    assert.equal(await suma(), await cargo('armados'), 'las partes suman el precio de los armados');
+    assert.equal(await cargo('armados'), await leer(p, '[data-hoja="subtotal"]'), 'que es lo que dice la hoja');
+    assert.ok(Math.abs(await cargo('redondeo')) < 10 * 2, 'el redondeo son centavos o pesos, no cientos');
+
+    // Apagar el flete: su monto se va y el resto sigue cuadrando.
+    await p.locator('[data-hoja="cargos"] label', { hasText: 'Flete' }).locator('input').uncheck();
+    await p.waitForFunction(() => document.querySelector('[data-cargo="flete"]').innerText === '—', null, { timeout: 5000 });
+    assert.equal(await suma(), await cargo('armados'));
+    assert.equal(await cargo('armados'), await leer(p, '[data-hoja="subtotal"]'));
+    assert.equal(await p.locator('[data-hoja="cargos"]').evaluate((e) => e.classList.contains('no-print')), true, 'no sale impreso');
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
+test('el PDF cliente da el precio final de cada componente, y aguanta un renglón a mano', async () => {
+  /* Mike, 23-sep: «en el desglose del mueble para el cliente el costo final
+   * por componente (ya incluidos los costos de flete y comisiones prorrateados
+   * en todos los componentes proporcionalmente)». */
+  const mueble = { ...MUEBLE, componentes: [
+    { id: 'c-1', modulo: 'Gabinete', desc: 'Base 60', tags: [], extras: [], unitario: 7000, qty: 1, subtotal: 7000 },
+    { id: 'c-2', modulo: 'Cubierta', desc: 'Cuarzo', tags: [], extras: [], unitario: 3000, qty: 1, subtotal: 3000 },
+  ] };
+  const aMano = { id: 'm-2', manual: true, nombre: 'Instalación', qty: 1, precio: 1000, total: 1000, componentes: [], imagenes: [] };
+  const cot = { ...COTIZACION, datos: { ...COTIZACION.datos, versiones: [{ ...VERSION, muebles: [mueble, aMano] }] } };
+  const { ctx, p, errores } = await abrirApp({ cotizacion: cot });
+  try {
+    await abrirCotizacion(p);
+    const unit = await leer(p, '[data-precio="0"]');
+    const [pdf] = await Promise.all([ctx.waitForEvent('page'), p.getByRole('button', { name: 'PDF cliente con condiciones' }).click()]);
+    await pdf.waitForLoadState('domcontentloaded');
+    const celdas = await pdf.locator('[data-precio-comp]').allInnerTexts().catch(() => []);
+    const precios = celdas.map((t) => Number(t.replace(/[^0-9.]/g, '')));
+    assert.equal(precios.length, 2, 'un precio por componente');
+    assert.equal(precios[0] + precios[1], unit, `suman el unitario del mueble (${unit}), con flete y comisiones dentro`);
+    assert.ok(Math.abs(precios[0] - unit * 0.7) <= 1 && Math.abs(precios[1] - unit * 0.3) <= 1, 'en proporción a su costo (70/30)');
+    const texto = await pdf.locator('body').innerText();
+    assert.ok(!/\$7,000|\$3,000/.test(texto), 'el costo no se le enseña al cliente');
+    assert.ok(/Instalación/.test(texto), 'el renglón a mano también sale');
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
 test.after(async () => { await navegador.close(); servidor.close(); });
