@@ -156,8 +156,8 @@ test('agregar mueble: se sube el plano y cada componente queda donde se tocó', 
     const img = p.locator('[data-armador="lienzo"] img');
     const caja = await img.boundingBox();
     await img.click({ position: { x: caja.width * 0.3, y: caja.height * 0.4 } });
-    assert.ok(/Punto marcado/.test(await p.locator('[data-armador="aviso"]').innerText()), 'el plano dice que ahora toca escoger el componente');
-    assert.equal(await p.locator('[data-pin="nuevo"]').count(), 1);
+    assert.ok(/Configurando el marcador A/.test(await p.locator('[data-armador="aviso"]').innerText()), 'el plano dice que ahora toca escoger el componente');
+    assert.equal(await p.locator('[data-marca="A"]').count(), 1);
 
     await especial(p, 'Jaladera de piso', 500);
     const pin = p.locator('[data-pin="1"]');
@@ -165,7 +165,7 @@ test('agregar mueble: se sube el plano y cada componente queda donde se tocó', 
     const estilo = await pin.getAttribute('style');
     assert.ok(Math.abs(pct(/left:\s*([\d.]+%)/.exec(estilo)[1]) - 30) < 1.5, 'en el 30% del ancho: ' + estilo);
     assert.ok(Math.abs(pct(/top:\s*([\d.]+%)/.exec(estilo)[1]) - 40) < 1.5, 'y el 40% del alto');
-    assert.equal(await p.locator('[data-pin="nuevo"]').count(), 0, 'el punto marcado ya se usó');
+    assert.equal(await p.locator('[data-marca]').count(), 0, 'el marcador ya se volvió componente');
 
     await especial(p, 'Tornillería', 100);
     assert.equal(await p.locator('[data-pin="2"]').count(), 0, 'lo que se agrega sin tocar no inventa un lugar');
@@ -232,6 +232,101 @@ test('sin plano, el armador es el de siempre y el plano se puede subir después'
     await p.locator('[data-armador="subir-plano"]').setInputFiles({ name: 'foto.png', mimeType: 'image/png', buffer: PNG });
     await p.waitForSelector('[data-armador="con-plano"]');
     assert.equal(await p.locator('[data-componente]').count(), 1, 'lo ya agregado sigue ahí');
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
+test('se ponen todos los marcadores primero y se configuran al final', async () => {
+  /* Mike, 23-sep: «Quiero poder agregar todos los marcadores de los
+   * componentes sin necesidad de irlos configurando, y ya al final
+   * configurarlos». */
+  const { ctx, p, errores, escrituras } = await abrirApp();
+  const dialogos = [];
+  p.on('dialog', (d) => { dialogos.push(d.message()); d.accept(); });
+  try {
+    await abrirCotizacion(p);
+    await p.getByRole('button', { name: /Editar cotización/ }).click();
+    await p.getByRole('button', { name: '+ Agregar mueble' }).first().click();
+    await p.locator('[data-armador="subir-plano"]').setInputFiles({ name: 'cocina.png', mimeType: 'image/png', buffer: PNG });
+    await p.getByRole('button', { name: /Continuar con este plano/ }).click();
+    await perfilComun(p, 'Cocina');
+    const img = p.locator('[data-armador="lienzo"] img');
+    const caja = await img.boundingBox();
+    for (const [x, y] of [[0.2, 0.2], [0.5, 0.5], [0.8, 0.3], [0.9, 0.9]]) await img.click({ position: { x: caja.width * x, y: caja.height * y } });
+    assert.equal(await p.locator('[data-marca]').count(), 4, 'cuatro marcadores sin configurar nada');
+    assert.equal(await p.locator('[data-componente]').count(), 0, 'y ningún componente todavía');
+    assert.ok(/4 marcadores por configurar/.test(await p.locator('[data-armador="por-configurar"]').innerText()));
+
+    // Uno sobraba: se quita.
+    await p.locator('[data-marca-lista="D"]').getByRole('button').click();
+    assert.equal(await p.locator('[data-marca]').count(), 3);
+
+    // Se configuran en orden: A, luego B solo.
+    assert.ok(/marcador A/.test(await p.locator('[data-armador="aviso"]').innerText()), 'arranca por el primero');
+    await especial(p, 'Gabinete alto', 900);
+    assert.ok(/marcador B/.test(await p.locator('[data-armador="aviso"]').innerText()), 'y pasa solo al siguiente');
+    // Pero se puede escoger cualquiera: C antes que B.
+    await p.locator('[data-marca="C"]').click();
+    assert.ok(/marcador C/.test(await p.locator('[data-armador="aviso"]').innerText()));
+    await especial(p, 'Alacena', 700);
+    assert.equal(await p.locator('[data-marca]').count(), 1, 'queda B');
+    const estiloAlacena = await p.locator('[data-pin="2"]').getAttribute('style');
+    const lugar = (k) => Number(new RegExp(k + ':\\s*([\\d.]+)%').exec(estiloAlacena)[1]);
+    assert.ok(Math.abs(lugar('left') - 80) < 1.5 && Math.abs(lugar('top') - 30) < 1.5, 'la alacena quedó donde estaba C: ' + estiloAlacena);
+
+    // B se queda sin configurar: guardar lo avisa y lo descarta.
+    await p.getByRole('button', { name: /Agregar mueble →/ }).click();
+    await p.waitForSelector('[data-pantalla="hoja"]');
+    assert.ok(dialogos.some((d) => /Quedan 1 marcador sin configurar \(B\)/.test(d)), 'avisó del marcador que faltaba');
+    await p.waitForTimeout(1200);
+    const m = ultimaVersion(escrituras).muebles[1];
+    assert.deepEqual(m.componentes.map((c) => c.desc), ['Gabinete alto', 'Alacena']);
+    assert.ok(m.componentes.every((c) => c.pos), 'los dos con su lugar');
+    assert.ok(Math.abs(m.componentes[1].pos.x - 0.8) < 0.015 && Math.abs(m.componentes[1].pos.y - 0.3) < 0.015);
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
+test('la rueda acerca donde está el cursor, y el botón central mueve el plano', async () => {
+  /* Mike, 23-sep: «en el plano, necesito poder hacer zoom con el scroll y
+   * panear con click central». */
+  const { ctx, p, errores } = await abrirApp();
+  try {
+    await abrirCotizacion(p);
+    await p.getByRole('button', { name: /Editar cotización/ }).click();
+    await p.getByRole('button', { name: '+ Agregar mueble' }).first().click();
+    await p.locator('[data-armador="subir-plano"]').setInputFiles({ name: 'cocina.png', mimeType: 'image/png', buffer: PNG });
+    await p.getByRole('button', { name: /Continuar con este plano/ }).click();
+    await perfilComun(p, 'Cocina');
+    const visor = p.locator('[data-armador="visor"]');
+    const img = p.locator('[data-armador="lienzo"] img');
+    const v = await visor.boundingBox();
+    // Un punto del plano, a un cuarto del ancho y a un tercio del alto visible.
+    const cx = v.x + v.width * 0.25, cy = v.y + Math.min(v.height, (await img.boundingBox()).height) * 0.33;
+    const fraccion = async () => { const b = await img.boundingBox(); return [(cx - b.x) / b.width, (cy - b.y) / b.height]; };
+    const antes = await fraccion();
+    const yAntes = await p.evaluate(() => window.scrollY);
+    await p.mouse.move(cx, cy);
+    for (let k = 0; k < 4; k++) { await p.mouse.wheel(0, -300); await p.waitForTimeout(60); }
+    await p.waitForTimeout(200);
+    const zoom = Number(await p.locator('[data-armador="lienzo"]').getAttribute('data-zoom'));
+    assert.ok(zoom > 2, 'la rueda hacia arriba acerca (zoom ' + zoom + ')');
+    const despues = await fraccion();
+    assert.ok(Math.abs(despues[0] - antes[0]) < 0.02 && Math.abs(despues[1] - antes[1]) < 0.02, 'el punto bajo el cursor se queda quieto: ' + antes + ' → ' + despues);
+    assert.equal(await p.evaluate(() => window.scrollY), yAntes, 'y la página no se desplazó');
+
+    const scroll = () => visor.evaluate((e) => [e.scrollLeft, e.scrollTop]);
+    const s0 = await scroll();
+    await p.mouse.down({ button: 'middle' });
+    await p.mouse.move(cx - 120, cy - 60, { steps: 6 });
+    await p.mouse.up({ button: 'middle' });
+    const s1 = await scroll();
+    assert.ok(s1[0] - s0[0] > 100 && s1[1] - s0[1] > 40, 'arrastrar con el botón central mueve el plano: ' + s0 + ' → ' + s1);
+    assert.equal(await p.locator('[data-marca]').count(), 0, 'y no pone marcadores');
+
+    for (let k = 0; k < 10; k++) await p.mouse.wheel(0, 400);
+    await p.waitForTimeout(200);
+    assert.equal(await p.locator('[data-armador="lienzo"]').getAttribute('data-zoom'), '1.000', 'alejar no pasa de ver el plano completo');
     assert.deepEqual(errores, [], 'sin errores de JavaScript');
   } finally { await ctx.close(); }
 });
