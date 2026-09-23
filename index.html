@@ -1315,6 +1315,19 @@ window.suiteDB = {
     return true;
   },
 
+  /** El catálogo de productos del negocio, para «Buscar en catálogo» en la
+   *  hoja. Es la misma tabla `productos` que usa dash101 (contrato 0.35.0).
+   *  Aquí sólo se lee: guardar en el catálogo desde el cotizador llega con el
+   *  catálogo de conceptos. Un error NO se vuelve «catálogo vacío»: la hoja
+   *  lo dice, para que nadie crea que no hay productos cuando no se pudo
+   *  preguntar. */
+  async productos() {
+    await identidad();
+    const r = await pedir(`/orgs/${ORG}/productos?negocio_id=${encodeURIComponent(NEGOCIO)}&limite=5000`);
+    if (r.estado !== 200 || !Array.isArray(r.data?.filas)) throw new Error(r.error || String(r.estado));
+    return r.data.filas;
+  },
+
   async clientesParecidos(nombre) {
     try {
       await identidad();
@@ -1400,6 +1413,12 @@ const {
  * que el siguiente «atrás» sí cierre. Dos caminos distintos que hacen lo
  * mismo son dos comportamientos que se van a separar; uno solo, no. */
 const pilaEncima = [];
+/* Cuántos «atrás» pidió la propia app al cerrar algo con su botón. Ese
+ * `history.back()` también dispara `popstate`, y sin esta cuenta el listener
+ * lo leía como un «atrás» de la persona y cerraba lo que quedaba DEBAJO: cerrar
+ * el catálogo de la hoja cerraba también la cotización. No se notaba mientras
+ * sólo se abría algo encima del menú, donde abajo no hay nada que cerrar. */
+let atrasPropios = 0;
 
 function abrirEncima(cerrar) {
   const yo = { cerrar, vivo: true };
@@ -1410,11 +1429,13 @@ function abrirEncima(cerrar) {
     yo.vivo = false;
     const i = pilaEncima.indexOf(yo);
     if (i >= 0) pilaEncima.splice(i, 1);
+    atrasPropios++;
     history.back();
   };
 }
 
 window.addEventListener('popstate', () => {
+  if (atrasPropios > 0) { atrasPropios--; return; }
   const arriba = pilaEncima[pilaEncima.length - 1];
   if (!arriba || !arriba.vivo) return;
   /* Si al cerrar contesta `true`, no se cerró: nada más se hizo para atrás un
@@ -2054,6 +2075,34 @@ function getPC(a, c) {
 }
 const $ = n => "$" + Math.round(n).toLocaleString("es-MX");
 const flete = t => Math.max(cfg("fleteMin"), Math.floor(t / cfg("fleteEscalon")) * cfg("fleteIncremento"));
+
+/* ─── LA HOJA DE COTIZACIÓN (Mike, 23-sep-2026) ───────────────
+ * Cada renglón de la hoja es un producto: código, nombre, descripción,
+ * cantidad y precio unitario. Se agrega de dos formas, y las dos viven en
+ * el mismo arreglo `muebles` para que lo guardado, la suite y los exportes
+ * de siempre lo sigan leyendo igual:
+ *
+ *   · Del armador ("Agregar mueble"): `total` es su COSTO, armado por
+ *     componentes. Su precio al cliente sale como siempre salió en el PDF
+ *     cliente: costo × (indirectos + ingeniería + embalaje, y las comisiones
+ *     prendidas), redondeado a $10, con el flete repartido entre ellos.
+ *   · Escrito a mano (`manual: true`): `precio` YA ES el precio al cliente.
+ *     No lleva cargos ni flete encima; quien lo escribe ya puso lo que vale.
+ *     `total` guarda lo mismo para que lo de antes (la suma de la suite, el
+ *     PDF interno) no vea un renglón en cero. */
+const MOSTRAR_HISTORIAL = false;
+const esManual = m => !!(m && m.manual);
+const precioManual = m => Number(m.precio !== undefined ? m.precio : m.total) || 0;
+function preciosHoja(muebles, { usaF, usaA, usaT }) {
+  const factor = (1 + cfg("indirectos") + cfg("ingenieria") + cfg("embalaje")) * (usaA ? 1 + cfg("comisionArq") : 1) * (usaT ? 1 + cfg("comisionTDC") : 1);
+  const bases = muebles.map(m => esManual(m) ? null : Math.ceil((m.total || 0) * factor / 10) * 10);
+  const sinFlete = muebles.reduce((s, m, i) => bases[i] === null ? s : s + bases[i] * (m.qty || 1), 0);
+  const fleteNeto = usaF ? flete(sinFlete) : 0;
+  const factorFlete = usaF && sinFlete > 0 ? 1 + fleteNeto / sinFlete : 1;
+  const unitarios = muebles.map((m, i) => bases[i] === null ? precioManual(m) : Math.ceil(bases[i] * factorFlete / 10) * 10);
+  const subtotal = muebles.reduce((s, m, i) => s + unitarios[i] * (m.qty || 1), 0);
+  return { unitarios, subtotal };
+}
 
 // ─── HELPERS RECIBOS ──────────────────────────────────────────
 const MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
@@ -3256,7 +3305,10 @@ function PantallaInicio({
         const ver = (_cot$versiones3 = cot.versiones) === null || _cot$versiones3 === void 0 ? void 0 : _cot$versiones3[0];
         const total = (ver === null || ver === void 0 || (_ver$muebles = ver.muebles) === null || _ver$muebles === void 0 ? void 0 : _ver$muebles.reduce((s, m) => s + (m.total || 0) * (m.qty || 1), 0)) || 0;
         const cotActiva = cotAbierta === cot.id || autoExpand.cots.has(cot.id);
-        const tieneVersiones = (((_cot$versiones4 = cot.versiones) === null || _cot$versiones4 === void 0 ? void 0 : _cot$versiones4.length) || 0) > 1;
+        /* Mike, 23-sep: «ocultar el historial de versiones de cotizaciones».
+         * Se oculta, no se borra: las versiones siguen guardándose en
+         * `datos.versiones` y vuelven a verse con poner esto en true. */
+        const tieneVersiones = MOSTRAR_HISTORIAL && (((_cot$versiones4 = cot.versiones) === null || _cot$versiones4 === void 0 ? void 0 : _cot$versiones4.length) || 0) > 1;
         return /*#__PURE__*/React.createElement("div", {
           key: cot.id,
           className: "anim-fadeInUp",
@@ -3294,7 +3346,7 @@ function PantallaInicio({
           }
         }, /*#__PURE__*/React.createElement("span", {
           className: "num"
-        }, ((_cot$versiones5 = cot.versiones) === null || _cot$versiones5 === void 0 ? void 0 : _cot$versiones5.length) || 0), " versi\xF3n", ((_cot$versiones6 = cot.versiones) === null || _cot$versiones6 === void 0 ? void 0 : _cot$versiones6.length) !== 1 ? "es" : "", tieneVersiones && /*#__PURE__*/React.createElement("button", {
+        }, MOSTRAR_HISTORIAL ? ((_cot$versiones5 = cot.versiones) === null || _cot$versiones5 === void 0 ? void 0 : _cot$versiones5.length) || 0 : cot.folio ? "Folio " + cot.folio : "Sin folio"), MOSTRAR_HISTORIAL ? " versi\xF3n" + (((_cot$versiones6 = cot.versiones) === null || _cot$versiones6 === void 0 ? void 0 : _cot$versiones6.length) !== 1 ? "es" : "") : "", tieneVersiones && /*#__PURE__*/React.createElement("button", {
           onClick: e => {
             e.stopPropagation();
             toggleCot(cot.id);
@@ -4052,7 +4104,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G83";
+const APP_VERSION = "G84";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -5485,6 +5537,366 @@ function ZonaFotos({
   }, aviso));
 }
 
+// ─── HOJA DE COTIZACIÓN ────────────────────────────────────────────────────
+/* La pantalla que Mike diseñó en Claude Design el 23-sep-2026 («Cotizador»):
+ * una hoja con encabezado (logo, empresa, folio, fecha y vigencia), el
+ * cliente, el proyecto y la corrida, los renglones, las notas y los totales.
+ * Es a la vez la pantalla de trabajo y el documento que se imprime.
+ *
+ * Los estilos van todos bajo `.hoja` para no pisar los del resto de la app,
+ * que tiene su propia identidad; son los del sistema del diseño (tokens de
+ * «Industry», letra DM Sans, esquinas de plano). */
+const HOJA_CSS = `
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap');
+.hoja{--h-bg:#f2f2f3;--h-text:#1d1f20;--h-accent:#5980a6;--h-accent-600:#597ea3;--h-accent-800:#2c455d;--h-divider:color-mix(in srgb,#1d1f20 16%,transparent);--h-soft:color-mix(in srgb,#1d1f20 8%,transparent);--h-muted:color-mix(in srgb,#1d1f20 58%,transparent);--h-n700:#5d5d60;
+  font-family:"DM Sans",system-ui,sans-serif;color:var(--h-text);font-size:15px;line-height:1.55;position:relative;left:50%;transform:translateX(-50%);width:min(1000px,calc(100vw - 40px))}
+.hoja *,.hoja *::before,.hoja *::after{box-sizing:border-box}
+.hoja .h-bar{position:sticky;top:-20px;z-index:20;display:flex;flex-wrap:wrap;align-items:center;gap:6.8px;padding:10px 0;margin-bottom:14px;background:var(--h-bg);border-bottom:1px solid var(--h-divider)}
+.hoja .h-marca{font-weight:500;font-size:18px;letter-spacing:.02em;margin-right:auto}
+.hoja .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;font:inherit;font-weight:500;font-size:14px;line-height:1.2;color:var(--h-text);background:transparent;border:1px solid var(--h-divider);border-radius:0;padding:6.8px 12px}
+.hoja .btn:disabled{opacity:.45;cursor:not-allowed}
+.hoja .btn:hover:not(:disabled){background:color-mix(in srgb,var(--h-text) 7%,transparent)}
+.hoja .btn-primary{background:var(--h-accent);border-color:var(--h-accent);color:var(--h-bg)}
+.hoja .btn-primary:hover:not(:disabled){background:var(--h-accent-600)}
+.hoja .btn-ghost{border-color:transparent;color:var(--h-accent);padding:2px 4px;font-size:11px}
+.hoja .btn-ghost:hover:not(:disabled){background:color-mix(in srgb,var(--h-accent) 10%,transparent)}
+.hoja .input{width:100%;min-height:36px;padding:6px 10px;font:inherit;font-size:14px;color:var(--h-text);caret-color:var(--h-accent);background:#e9e9ea;border:1px solid var(--h-divider);border-radius:0}
+.hoja .input:hover{border-color:color-mix(in srgb,var(--h-text) 45%,transparent)}
+.hoja .input:focus{outline:none;border-color:var(--h-accent)}
+.hoja .input[readonly]{background:transparent;border-color:transparent}
+.hoja textarea.input{resize:vertical;min-height:34px}
+.hoja .h-etq{display:block;font-size:12px;margin-bottom:5px;color:color-mix(in srgb,var(--h-text) 70%,transparent)}
+.hoja .h-mini{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:color-mix(in srgb,var(--h-text) 60%,transparent)}
+.hoja .num{font-variant-numeric:tabular-nums;text-align:right}
+.hoja .sheet{position:relative;border:1px solid var(--h-divider);background:#fbfbfc;padding:27.2px}
+.hoja .corner{position:absolute;width:11px;height:11px;color:color-mix(in srgb,var(--h-text) 55%,transparent)}
+.hoja .corner::before,.hoja .corner::after{content:"";position:absolute;background:currentColor}
+.hoja .corner::before{left:5px;top:0;width:1px;height:100%}
+.hoja .corner::after{top:5px;left:0;width:100%;height:1px}
+.hoja .corner.tl{top:-6px;left:-6px}.hoja .corner.tr{top:-6px;right:-6px}.hoja .corner.bl{bottom:-6px;left:-6px}.hoja .corner.br{bottom:-6px;right:-6px}
+.hoja .h-enc{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:20.4px;align-items:start;padding-bottom:20.4px;border-bottom:1px solid var(--h-divider)}
+.hoja .h-logo{width:104px;height:104px;flex:none;border:1px solid var(--h-divider);display:grid;place-items:center;overflow:hidden;background:#fff}
+.hoja .h-logo img{max-width:100%;max-height:100%;object-fit:contain}
+.hoja .h-folio{display:grid;grid-template-columns:auto 150px;gap:6.8px 10.2px;align-items:center;justify-items:end}
+.hoja .h-titulo{grid-column:1/-1;margin:0 0 6.8px;font-weight:500;font-size:32px;letter-spacing:.04em;line-height:1.12}
+.hoja .h-datos{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:13.6px;padding:20.4px 0;border-bottom:1px solid var(--h-divider)}
+.hoja .h-cols{display:grid;grid-template-columns:76px minmax(0,1fr) 60px 110px 110px 44px;gap:10.2px}
+.hoja .h-cab{padding:0 0 6.8px;border-bottom:1px solid var(--h-divider)}
+.hoja .h-ren{align-items:start;padding:10.2px 0;border-bottom:1px solid var(--h-soft)}
+.hoja .h-arm{font-size:11.5px;color:var(--h-muted);margin-top:4px}
+.hoja .h-arm button{font:inherit;font-size:11.5px;color:var(--h-accent);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.hoja .h-acc{display:flex;flex-direction:column;gap:2px}
+.hoja .h-vacio{padding:27.2px 0;text-align:center;font-size:13px;color:var(--h-muted)}
+.hoja .h-pie{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,380px);gap:27.2px;padding-top:27.2px;align-items:start}
+.hoja .h-tot{display:grid;gap:6.8px;font-size:14px}
+.hoja .h-tot > div{display:grid;grid-template-columns:minmax(0,1fr) 64px 120px;gap:6.8px;align-items:center}
+.hoja .h-tot .input{min-height:30px;padding:2px 6px;font-size:13px;text-align:right}
+.hoja .h-gran{display:flex;justify-content:space-between;align-items:baseline;padding-top:6.8px;border-top:1px solid var(--h-divider)}
+.hoja .h-gran b{font-weight:500;font-size:20px;letter-spacing:.02em}
+.hoja .h-gran span{font-weight:500;font-size:28px;color:var(--h-accent-800);font-variant-numeric:tabular-nums}
+.hoja .h-cargos{display:flex;flex-wrap:wrap;gap:13.6px;align-items:center;font-size:12.5px;color:var(--h-muted);padding:6.8px 0 0}
+.hoja .h-cargos label{display:inline-flex;gap:5px;align-items:center;cursor:pointer}
+.hoja .h-aviso{font-size:12px;color:var(--h-muted);margin-top:6.8px}
+.hoja-velo{position:fixed;inset:0;display:grid;place-items:center;padding:13.6px;background:color-mix(in srgb,#2b2b2d 50%,transparent);z-index:3000}
+.hoja-velo .dialog{position:relative;width:min(760px,100%);max-height:84vh;display:flex;flex-direction:column;gap:10.2px;padding:13.6px;background:#fbfbfc;border:1px solid var(--h-divider);box-shadow:0 12px 32px color-mix(in srgb,#2b2b2d 22%,transparent);left:auto;transform:none}
+.hoja-velo .h-cat{overflow:auto}
+.hoja-velo .h-cat > div{display:grid;grid-template-columns:76px minmax(0,1fr) 110px auto;gap:10.2px;align-items:center;padding:6.8px 0;border-bottom:1px solid var(--h-soft);font-size:13px}
+@media (max-width:700px){
+  .hoja .h-marca,.hoja .h-volver{display:none}
+  .hoja .h-bar .btn{padding:6px 9px;font-size:13px}
+  .hoja .sheet{padding:13.6px}
+  .hoja .h-enc,.hoja .h-pie{grid-template-columns:1fr}
+  .hoja .h-folio{justify-items:start}
+  .hoja .h-cab{display:none}
+  .hoja .h-cols{grid-template-columns:1fr 1fr}
+  .hoja .h-cols > :nth-child(2){grid-column:1/-1;order:-1}
+}
+@media print{
+  .no-print{display:none!important}
+  .hoja{left:0;transform:none;width:auto}
+  .hoja .sheet{border:0;padding:0;background:#fff}
+  .hoja .corner{display:none}
+  .hoja .input{border:0!important;background:transparent!important;padding:0!important;min-height:0!important;resize:none}
+  .hoja .h-ren{break-inside:avoid}
+  @page{margin:14mm}
+}`;
+const hojaDinero = n => {
+  try {
+    return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 2 }).format(n || 0);
+  } catch (e) { return "$" + (n || 0).toFixed(2); }
+};
+const hojaISO = d => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+/** Lo que trae una hoja nueva. La vigencia es de 30 días, la misma que
+ *  promete hoy el PDF cliente. */
+function hojaInicial(prev) {
+  const hoy = new Date();
+  const mas = new Date(hoy.getTime() + 30 * 86400000);
+  return Object.assign({
+    empresa: cfg("emisorNombre") || "Taller 101",
+    empresaDatos: cfg("emisorDatos") || "info@taller101.com · +52 55-2951-7900 · www.taller101.com",
+    fecha: hojaISO(hoy),
+    vigencia: hojaISO(mas),
+    contacto: "",
+    ubicacion: "",
+    revision: "",
+    notas: cfg("condicionesHoja") || "Precios en pesos mexicanos. Tiempo de entrega a partir del anticipo y de la aprobación de planos.\nAplican las condiciones de contratación, fabricación, entrega y garantía de Taller 101.",
+    iva: Math.round(cfg("iva") * 1000) / 10
+  }, prev || {});
+}
+/** Resumen del armado de un mueble, para que el renglón diga qué lleva sin
+ *  tener que abrirlo. */
+const resumenArmado = m => (m.componentes || []).map(c => (c.modulo || "") + (c.desc ? " " + c.desc : "") + ((c.qty || 1) > 1 ? " ×" + c.qty : "")).join(" · ");
+
+/** Imprime la hoja tal como se ve, sin la barra ni los botones. Se abre en una
+ *  ventana aparte, igual que los demás PDF de la app, porque la hoja vive
+ *  dentro de un panel animado que la impresión del navegador no respeta. */
+function imprimirHoja(nodo, titulo) {
+  if (!nodo) return;
+  const copia = nodo.cloneNode(true);
+  copia.querySelectorAll(".no-print").forEach(e => e.remove());
+  copia.querySelectorAll("input,textarea,select").forEach(e => {
+    const vivo = nodo.querySelector('[data-campo="' + e.getAttribute("data-campo") + '"]');
+    const v = vivo ? vivo.value : e.value;
+    const s = document.createElement("div");
+    s.className = e.className.replace("input", "valor");
+    s.setAttribute("style", (e.getAttribute("style") || "") + ";white-space:pre-wrap;min-height:0");
+    s.textContent = e.type === "date" && v ? new Date(v + "T12:00:00").toLocaleDateString("es-MX", { day: "numeric", month: "long", year: "numeric" }) : v;
+    e.replaceWith(s);
+  });
+  const w = window.open("", "_blank");
+  if (!w) return;
+  w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>' + String(titulo || "Cotización").replace(/</g, "") + '</title><style>' + HOJA_CSS + ' body{margin:0;background:#fff} .hoja{left:0;transform:none;width:auto;max-width:1000px;margin:0 auto;padding:16px} .hoja .valor{font-size:14px} .hoja .sheet{border:0;background:#fff}</style></head><body><div class="hoja">' + copia.outerHTML + '</div><script>window.onload=function(){setTimeout(function(){window.print()},400)}<\/script></body></html>');
+  w.document.close();
+}
+function HojaCotizacion({
+  muebles,
+  setMuebles,
+  hoja,
+  setHoja,
+  precios,
+  descuento,
+  setDescuento,
+  usaF,
+  setUsaF,
+  usaA,
+  setUsaA,
+  usaT,
+  setUsaT,
+  cotNombre,
+  setCotNombre,
+  folio,
+  clienteNombre,
+  proyectoNombre,
+  modoVer,
+  readonly,
+  onBack,
+  onEditarCot,
+  onGuardar,
+  nuevoMueble,
+  editarMueble,
+  exportPDF,
+  exportClientePDF,
+  exportPresupuestoPDF,
+  exportClienteExcel
+}) {
+  const h = React.createElement;
+  const hojaRef = useRef(null);
+  const [catalogo, setCatalogo] = useState(null); // null = cerrado
+  const [busqueda, setBusqueda] = useState("");
+  const soloVer = !!(modoVer || readonly);
+  const campo = k => ({
+    "data-campo": k,
+    value: hoja[k] === undefined || hoja[k] === null ? "" : hoja[k],
+    readOnly: soloVer,
+    onChange: e => setHoja(p => ({ ...p, [k]: e.target.value }))
+  });
+  const ponRenglon = (i, cambio) => setMuebles(p => p.map((m, j) => j === i ? { ...m, ...cambio } : m));
+  const aNum = v => {
+    const n = parseFloat(String(v).replace(/[^0-9.\-]/g, ""));
+    return isNaN(n) ? 0 : n;
+  };
+  const renglonAMano = extra => setMuebles(p => [...p, {
+    id: uid(),
+    manual: true,
+    codigo: "",
+    nombre: "",
+    descripcion: "",
+    qty: 1,
+    precio: 0,
+    total: 0,
+    componentes: [],
+    imagenes: [],
+    ...(extra || {})
+  }]);
+  const duplicar = i => setMuebles(p => {
+    const copia = JSON.parse(JSON.stringify(p[i]));
+    copia.id = uid();
+    const arr = p.slice();
+    arr.splice(i + 1, 0, copia);
+    return arr;
+  });
+  const quitar = i => {
+    const m = muebles[i];
+    if (!window.confirm("¿Quitar «" + (m.nombre || "este renglón") + "» de la cotización?")) return;
+    setMuebles(p => p.filter((_, j) => j !== i));
+  };
+  const abrirCatalogo = async () => {
+    setBusqueda("");
+    setCatalogo({ cargando: true, filas: [] });
+    try {
+      const filas = window.suiteDB && window.suiteDB.productos ? await window.suiteDB.productos() : [];
+      setCatalogo({ cargando: false, filas });
+    } catch (e) {
+      setCatalogo({ cargando: false, filas: [], error: String(e && e.message || e) });
+    }
+  };
+  useEncima(!!catalogo, () => setCatalogo(null));
+  const desc = aNum(descuento);
+  const descMonto = precios.subtotal * desc / 100;
+  const base = precios.subtotal - descMonto;
+  const ivaTasa = aNum(hoja.iva);
+  const ivaMonto = base * ivaTasa / 100;
+  const total = base + ivaMonto;
+  const q = busqueda.trim().toLowerCase();
+  const filasCat = catalogo ? catalogo.filas.filter(c => !q || ((c.codigo || "") + " " + (c.nombre || "") + " " + (c.descripcion || "")).toLowerCase().includes(q)) : [];
+  const esquinas = () => ["tl", "tr", "bl", "br"].map(k => h("i", { key: k, className: "corner " + k }));
+  const hayArmados = muebles.some(m => !esManual(m));
+
+  const barra = h("div", { className: "h-bar no-print" },
+    h("div", { className: "h-marca" }, "COTIZADOR"),
+    // En el teléfono se esconde: el panel del cotizador ya trae su «Volver».
+    h("button", { className: "btn h-volver", onClick: onBack }, "← Volver"),
+    !soloVer && h("button", { className: "btn", onClick: nuevoMueble }, "+ Agregar mueble"),
+    !soloVer && h("button", { className: "btn", onClick: () => renglonAMano() }, "+ A mano"),
+    !soloVer && h("button", { className: "btn", onClick: abrirCatalogo }, "Buscar en catálogo"),
+    modoVer && !readonly && h("button", { className: "btn", onClick: () => onEditarCot && onEditarCot() }, "✎ Editar cotización"),
+    h("button", { className: "btn", onClick: () => imprimirHoja(hojaRef.current, (folio ? folio + " · " : "") + (cotNombre || "Cotización")) }, "Imprimir / PDF"),
+    !soloVer && h("button", { className: "btn btn-primary", onClick: onGuardar }, "Guardar"));
+
+  const encabezado = h("div", { className: "h-enc" },
+    h("div", { style: { display: "flex", gap: 13.6, alignItems: "center", minWidth: 0 } },
+      h("div", { className: "h-logo" }, h("img", { src: LOGO_SRC, alt: "Logo" })),
+      h("div", { style: { minWidth: 0, flex: 1 } },
+        h("input", { className: "input", placeholder: "Nombre de tu empresa", style: { fontWeight: 600, fontSize: 26, minHeight: 34 }, ...campo("empresa") }),
+        h("input", { className: "input", placeholder: "RFC · dirección · teléfono · correo", style: { fontSize: 12, marginTop: 6.8, minHeight: 28 }, ...campo("empresaDatos") }))),
+    h("div", { className: "h-folio" },
+      h("h2", { className: "h-titulo" }, "COTIZACIÓN"),
+      h("span", { className: "h-mini" }, "Folio"),
+      h("div", { className: "num", "data-hoja": "folio", style: { fontSize: 14, minHeight: 36, display: "flex", alignItems: "center", justifyContent: "flex-end", width: "100%" } }, folio || h("span", { style: { color: "var(--h-muted)", fontSize: 12 } }, "se asigna al guardar")),
+      h("span", { className: "h-mini" }, "Fecha"),
+      h("input", { className: "input", type: "date", style: { textAlign: "right" }, ...campo("fecha") }),
+      h("span", { className: "h-mini" }, "Vigencia"),
+      h("input", { className: "input", type: "date", style: { textAlign: "right" }, ...campo("vigencia") })));
+
+  const datos = h("div", { className: "h-datos" },
+    h("div", null,
+      h("label", { className: "h-etq" }, "Cliente"),
+      h("div", { className: "input", "data-hoja": "cliente", style: { background: "transparent", borderColor: "transparent", paddingLeft: 0, fontWeight: 500 } }, clienteNombre || "—"),
+      h("input", { className: "input", placeholder: "Contacto · correo · teléfono", style: { marginTop: 6.8, fontSize: 12 }, ...campo("contacto") })),
+    h("div", null,
+      h("label", { className: "h-etq" }, "Proyecto"),
+      h("div", { className: "input", "data-hoja": "proyecto", style: { background: "transparent", borderColor: "transparent", paddingLeft: 0, fontWeight: 500 } }, proyectoNombre || "—"),
+      h("input", { className: "input", placeholder: "Ubicación / obra", style: { marginTop: 6.8, fontSize: 12 }, ...campo("ubicacion") })),
+    h("div", null,
+      h("label", { className: "h-etq" }, "Título de la cotización / corrida"),
+      h("input", { className: "input", "data-campo": "titulo", placeholder: "p. ej. Corrida 1 — Mobiliario planta baja", value: cotNombre || "", readOnly: soloVer, onChange: e => setCotNombre(e.target.value) }),
+      h("input", { className: "input", placeholder: "Revisión / responsable", style: { marginTop: 6.8, fontSize: 12 }, ...campo("revision") })));
+
+  const renglones = h("div", { style: { paddingTop: 20.4 } },
+    h("div", { className: "h-cols h-cab h-mini" },
+      h("div", null, "Código"),
+      h("div", null, "Producto / descripción"),
+      h("div", { className: "num" }, "Cant."),
+      h("div", { className: "num" }, "P. unitario"),
+      h("div", { className: "num" }, "Total"),
+      h("div", null)),
+    muebles.map((m, i) => {
+      const manual = esManual(m);
+      const unit = precios.unitarios[i] || 0;
+      const qty = m.qty || 1;
+      const armado = manual ? "" : resumenArmado(m);
+      return h("div", { key: m.id || i, className: "h-cols h-ren", "data-renglon": i, "data-tipo": manual ? "manual" : "mueble" },
+        h("input", { className: "input", "data-campo": "codigo-" + i, placeholder: manual ? "COD-001" : "MW-01", value: m.codigo || "", readOnly: soloVer, style: { fontFamily: "ui-monospace,monospace", fontSize: 12 }, onChange: e => ponRenglon(i, { codigo: e.target.value }) }),
+        h("div", null,
+          h("input", { className: "input", "data-campo": "nombre-" + i, placeholder: "Nombre del producto o servicio", value: m.nombre || "", readOnly: soloVer, style: { fontWeight: 500 }, onChange: e => ponRenglon(i, { nombre: e.target.value }) }),
+          h("textarea", { className: "input", "data-campo": "descripcion-" + i, rows: 2, placeholder: "Descripción, acabado, medidas, marca…", value: m.descripcion || "", readOnly: soloVer, style: { marginTop: 6.8, fontSize: 12.5, color: "color-mix(in srgb,var(--h-text) 75%,transparent)" }, onChange: e => ponRenglon(i, { descripcion: e.target.value }) }),
+          !manual && h("div", { className: "h-arm" },
+            armado ? "Armado: " + armado : "Mueble sin componentes",
+            !soloVer && h("span", { className: "no-print" }, " · ", h("button", { onClick: () => editarMueble(i) }, "abrir el armador")))),
+        h("input", { className: "input num", "data-campo": "cantidad-" + i, type: "number", min: 1, step: 1, value: qty, readOnly: soloVer, onChange: e => ponRenglon(i, { qty: Math.max(1, Math.round(aNum(e.target.value)) || 1) }) }),
+        manual
+          ? h("input", { className: "input num", "data-campo": "precio-" + i, type: "number", min: 0, step: "any", value: m.precio === undefined ? m.total || 0 : m.precio, readOnly: soloVer, onChange: e => { const v = aNum(e.target.value); ponRenglon(i, { precio: v, total: v }); } })
+          : h("div", { className: "num", "data-precio": i, title: "Calculado por el armador con los cargos y el flete prendidos", style: { paddingTop: 8, fontSize: 14 } }, hojaDinero(unit)),
+        h("div", { className: "num", "data-total": i, style: { paddingTop: 8, fontSize: 14 } }, hojaDinero(unit * qty)),
+        !soloVer ? h("div", { className: "h-acc no-print" },
+          h("button", { className: "btn btn-ghost", title: "Duplicar", onClick: () => duplicar(i) }, "dup"),
+          h("button", { className: "btn btn-ghost", title: "Quitar", style: { color: "var(--h-n700)" }, onClick: () => quitar(i) }, "quitar")) : h("div", null));
+    }),
+    muebles.length === 0 && h("div", { className: "h-vacio" }, "Sin renglones todavía: agrega un mueble, escribe uno a mano o búscalo en el catálogo."),
+    !soloVer && h("div", { className: "no-print", style: { display: "flex", gap: 6.8, paddingTop: 13.6, flexWrap: "wrap" } },
+      h("button", { className: "btn", onClick: nuevoMueble }, "+ Agregar mueble"),
+      h("button", { className: "btn", onClick: () => renglonAMano() }, "+ Escribir a mano"),
+      h("button", { className: "btn", onClick: abrirCatalogo }, "Buscar en catálogo")),
+    hayArmados && h("div", { className: "h-cargos no-print" },
+      h("span", null, "Precio de los muebles armados:"),
+      [["Flete", usaF, setUsaF], ["Comisión profesionista", usaA, setUsaA], ["Comisión TDC", usaT, setUsaT]].map(([l, v, set]) => h("label", { key: l },
+        h("input", { type: "checkbox", checked: !!v, disabled: soloVer, onChange: e => set(e.target.checked) }), l))));
+
+  const pie = h("div", { className: "h-pie" },
+    h("div", null,
+      h("label", { className: "h-etq" }, "Notas y condiciones comerciales"),
+      h("textarea", { className: "input", rows: 6, style: { fontSize: 12.5, lineHeight: 1.6 }, ...campo("notas") })),
+    h("div", { className: "h-tot" },
+      h("div", null, h("span", null, "Subtotal"), h("span", null), h("span", { className: "num", "data-hoja": "subtotal" }, hojaDinero(precios.subtotal))),
+      h("div", null, h("span", null, "Descuento %"),
+        h("input", { className: "input", "data-campo": "descuento", type: "number", min: 0, max: 100, step: "any", value: descuento || 0, readOnly: soloVer, onChange: e => setDescuento(Math.min(100, Math.max(0, aNum(e.target.value)))) }),
+        h("span", { className: "num", "data-hoja": "descuento" }, "− " + hojaDinero(descMonto))),
+      h("div", null, h("span", null, "IVA %"),
+        h("input", { className: "input", type: "number", min: 0, max: 30, step: "any", ...campo("iva") }),
+        h("span", { className: "num", "data-hoja": "iva" }, hojaDinero(ivaMonto))),
+      h("div", { className: "h-gran" }, h("b", null, "GRAN TOTAL"), h("span", { "data-hoja": "total" }, hojaDinero(total))),
+      h("div", { className: "num", style: { fontSize: 11, color: "var(--h-muted)" } }, "Cifras en MXN · IVA " + ivaTasa + "%")));
+
+  const exportes = !soloVer || modoVer ? h("div", { className: "no-print", style: { display: "flex", gap: 6.8, flexWrap: "wrap", justifyContent: "flex-end", marginTop: 13.6 } },
+    h("span", { className: "h-aviso", style: { marginRight: "auto" } }, "Otros documentos:"),
+    h("button", { className: "btn", onClick: exportClientePDF, title: "El PDF de siempre, con las condiciones de contratación y la firma" }, "PDF cliente con condiciones"),
+    h("button", { className: "btn", onClick: exportPDF }, "PDF interno"),
+    h("button", { className: "btn", onClick: exportPresupuestoPDF }, "Presupuesto"),
+    h("button", { className: "btn", onClick: exportClienteExcel }, "Excel arq")) : null;
+
+  const velo = catalogo && h("div", { className: "hoja-velo no-print", onClick: () => setCatalogo(null) },
+    h("div", { className: "dialog hoja", style: { left: "auto", transform: "none" }, onClick: e => e.stopPropagation() },
+      esquinas(),
+      h("div", { style: { display: "flex", alignItems: "center", gap: 10.2 } },
+        h("div", { style: { fontWeight: 500, fontSize: 20, marginRight: "auto" } }, "Catálogo de productos"),
+        h("button", { className: "btn", onClick: () => setCatalogo(null) }, "Cerrar")),
+      h("input", { className: "input", autoFocus: true, placeholder: "Buscar por código, nombre o descripción…", value: busqueda, onChange: e => setBusqueda(e.target.value) }),
+      h("div", { className: "h-cat" },
+        catalogo.cargando ? h("div", { className: "h-vacio" }, "Cargando el catálogo…")
+          : catalogo.error ? h("div", { className: "h-vacio" }, "No se pudo leer el catálogo: " + catalogo.error)
+          : catalogo.filas.length === 0 ? h("div", { className: "h-vacio" }, "El catálogo todavía está vacío. Escribe el renglón a mano; el catálogo de conceptos se va a ir armando.")
+          : filasCat.length === 0 ? h("div", { className: "h-vacio" }, "Nada coincide con «" + busqueda + "».")
+          : filasCat.map(c => h("div", { key: c.id },
+            h("span", { style: { fontFamily: "ui-monospace,monospace", fontSize: 12 } }, c.codigo || "—"),
+            h("span", { style: { minWidth: 0 } },
+              h("span", { style: { display: "block", fontWeight: 500 } }, c.nombre),
+              c.descripcion && h("span", { style: { display: "block", fontSize: 11.5, color: "var(--h-muted)" } }, c.descripcion)),
+            h("span", { className: "num" }, hojaDinero((c.precio || 0) / 100)),
+            h("button", { className: "btn btn-primary", style: { fontSize: 12, padding: "4px 10px" }, onClick: () => {
+              renglonAMano({ producto_id: c.id, codigo: c.codigo || "", nombre: c.nombre || "", descripcion: c.descripcion || "", precio: (c.precio || 0) / 100, total: (c.precio || 0) / 100 });
+              setCatalogo(null);
+            } }, "Agregar"))))));
+
+  return h("div", { className: "hoja", "data-pantalla": "hoja" },
+    h("style", null, HOJA_CSS),
+    barra,
+    h("div", { ref: hojaRef, className: "sheet" }, esquinas(), encabezado, datos, renglones, pie),
+    exportes,
+    // Al <body>: la hoja lleva `transform` para centrarse, y dentro de un
+    // ancestro transformado un `position: fixed` deja de cubrir la pantalla.
+    velo && ReactDOM.createPortal(velo, document.body));
+}
+
 function Cotizador({
   cotIni,
   onGuardar,
@@ -5527,6 +5939,9 @@ function Cotizador({
   const [cotNombre, setCotNombre] = useState((cotIni === null || cotIni === void 0 ? void 0 : cotIni.nombre) || "Cotización");
   const [materiales, setMateriales] = useState((cotIni === null || cotIni === void 0 ? void 0 : cotIni.materiales) || {});
   const [materialesAbierto, setMaterialesAbierto] = useState(false);
+  // Lo de la hoja que no es renglón: fecha, vigencia, contacto, ubicación,
+  // revisión, notas e IVA. Viaja en la versión como `hoja`.
+  const [hoja, setHoja] = useState(() => hojaInicial(cotIni === null || cotIni === void 0 ? void 0 : cotIni.hoja));
   const cotFecha = cotIni !== null && cotIni !== void 0 && cotIni.fecha ? new Date(cotIni.fecha) : new Date();
   const piOpts = {
     fmt: [{
@@ -5688,6 +6103,8 @@ function Cotizador({
           usaTDC: usaT,
           descuento,
           nombre: cotNombre,
+          materiales,
+          hoja,
           fecha: new Date().toISOString(),
           silent: true
         });
@@ -5725,13 +6142,13 @@ function Cotizador({
         onGuardar({
           muebles, totalFinal: tF,
           usaFlete: usaF, usaArq: usaA, usaTDC: usaT,
-          descuento, nombre: cotNombre, materiales,
+          descuento, nombre: cotNombre, materiales, hoja,
           fecha: new Date().toISOString(), silent: true
         });
       } catch (e) { console.warn("Autosave error:", e); }
     }, 400);
     return () => clearTimeout(handle);
-  }, [muebles, materiales, descuento, usaF, usaA, usaT]);
+  }, [muebles, materiales, descuento, usaF, usaA, usaT, hoja, cotNombre]);
 
   const agregar = (tipo, data) => {
     try {
@@ -6251,14 +6668,20 @@ function Cotizador({
     }
   };
   const grand = muebles.reduce((s, m) => s + m.total * (m.qty || 1), 0);
-  const ind = grand * cfg("indirectos"),
-    ing = grand * cfg("ingenieria"),
-    emb = grand * cfg("embalaje");
-  const subC = grand + ind + ing + emb;
-  const fl = usaF ? flete(subC) : 0;
-  const tB = subC + fl;
-  const cP = usaA ? tB * cfg("comisionArq") : 0;
-  const cT = usaT ? (tB + cP) * cfg("comisionTDC") : 0;
+  // Los cargos y el flete son del armador: un renglón a mano ya trae su
+  // precio final y se suma aparte (ver `preciosHoja`).
+  const grandMan = muebles.reduce((s, m) => esManual(m) ? s + precioManual(m) * (m.qty || 1) : s, 0);
+  const grandM = grand - grandMan;
+  const ind = grandM * cfg("indirectos"),
+    ing = grandM * cfg("ingenieria"),
+    emb = grandM * cfg("embalaje");
+  const subCM = grandM + ind + ing + emb;
+  const fl = usaF && (grandM > 0 || grandMan === 0) ? flete(subCM) : 0;
+  const tBM = subCM + fl;
+  const cP = usaA ? tBM * cfg("comisionArq") : 0;
+  const cT = usaT ? (tBM + cP) * cfg("comisionTDC") : 0;
+  const subC = subCM + grandMan;
+  const tB = tBM + grandMan;
   const subtotalAntesDesc = tB + cP + cT;
   const descMonto = descuento > 0 ? subtotalAntesDesc * (descuento / 100) : 0;
   const tF = subtotalAntesDesc - descMonto;
@@ -6508,8 +6931,8 @@ function Cotizador({
       let totalSinFlete = 0;
       const muebleDataXL = muebles.map(m => {
         const q = m.qty || 1;
-        const precioBase = Math.ceil(m.total * factor / 10) * 10;
-        totalSinFlete += precioBase * q;
+        const precioBase = esManual(m) ? null : Math.ceil(m.total * factor / 10) * 10;
+        if (precioBase !== null) totalSinFlete += precioBase * q;
         return {
           m,
           q,
@@ -6524,13 +6947,13 @@ function Cotizador({
         q,
         precioBase
       }) => {
-        const precioNeto = Math.ceil(precioBase * factorFleteXL / 10) * 10;
+        const precioNeto = precioBase === null ? precioManual(m) : Math.ceil(precioBase * factorFleteXL / 10) * 10;
         const subtotalNeto = precioNeto * q;
         totalNeto += subtotalNeto;
         const desc = (m.componentes || []).map(cc => {
           const specs = [...(cc.tags || []), ...(cc.extras || [])].join(", ");
           return cc.modulo + " " + cc.desc + (specs ? " (" + specs + ")" : "");
-        }).join(" | ");
+        }).join(" | ") || (esManual(m) ? m.descripcion || "" : "");
         ws.getCell(row, 1).value = m.nombre;
         ws.getCell(row, 1).font = {
           name: "Arial",
@@ -6772,8 +7195,8 @@ function Cotizador({
     let totalSinFlete = 0;
     const muebleData = muebles.map(m => {
       const q = m.qty || 1;
-      const precioBase = Math.ceil(m.total * factor / 10) * 10;
-      totalSinFlete += precioBase * q;
+      const precioBase = esManual(m) ? null : Math.ceil(m.total * factor / 10) * 10;
+      if (precioBase !== null) totalSinFlete += precioBase * q;
       return {
         m,
         q,
@@ -6789,7 +7212,7 @@ function Cotizador({
       q,
       precioBase
     }) => {
-      const precioNeto = Math.ceil(precioBase * factorFlete / 10) * 10;
+      const precioNeto = precioBase === null ? precioManual(m) : Math.ceil(precioBase * factorFlete / 10) * 10;
       const subtotalNeto = precioNeto * q;
       const imgTag = m.imagenes && m.imagenes[0] ? '<img src="' + m.imagenes[0] + '" style="width:36px;height:36px;object-fit:cover;border-radius:4px;margin-right:10px;flex-shrink:0;"/>' : "";
       // PDF cliente: NO mostrar costos de componentes — strip "$X/ml" etc de extras
@@ -6807,7 +7230,7 @@ function Cotizador({
       precioBase,
       q
     }) => {
-      const precioNeto = Math.ceil(precioBase * factorFlete / 10) * 10;
+      const precioNeto = precioBase === null ? precioManual(m) : Math.ceil(precioBase * factorFlete / 10) * 10;
       return s + precioNeto * q;
     }, 0);
     const descMontoPDF = descuento > 0 ? baseConFlete * (descuento / 100) : 0;
@@ -7489,1309 +7912,33 @@ ${rowHTML}
     onClick: confirmar
   }, "Agregar mueble \u2192"))));
 
-  // NAV
-  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(BtnGuardarCambios, null), readonly && /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: "linear-gradient(135deg,rgba(255,193,7,0.15),rgba(255,152,0,0.08))",
-      border: "1px solid rgba(255,152,0,0.4)",
-      borderRadius: 8,
-      padding: "10px 14px",
-      marginBottom: 12,
-      fontFamily: "Raleway,sans-serif",
-      fontSize: 12,
-      color: "#7A4A00",
-      display: "flex",
-      alignItems: "center",
-      gap: 10,
-      backdropFilter: "blur(8px)"
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 18
-    }
-  }, "\uD83D\uDCDC"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 1
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 700
-    }
-  }, "Vista de versi\xF3n hist\xF3rica"), readonlyInfo && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      opacity: 0.8,
-      marginTop: 2
-    }
-  }, readonlyInfo))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginBottom: 14,
-      padding: "12px 14px",
-      background: "rgba(255,255,255,0.6)",
-      borderRadius: 8,
-      border: "1px solid rgba(0,128,193,0.15)",
-      backdropFilter: "blur(8px)",
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      gap: 12,
-      flexWrap: "wrap"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: "1 1 auto",
-      minWidth: 0
-    }
-  }, modoVer || readonly ? /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 17,
-      fontWeight: 700,
-      color: "#2C2C2C"
-    }
-  }, cotNombre) : /*#__PURE__*/React.createElement("input", {
-    type: "text",
-    value: cotNombre,
-    onChange: e => setCotNombre(e.target.value),
-    placeholder: "Nombre de cotizaci\xF3n",
-    style: {
-      border: "none",
-      borderBottom: "1px dashed #D8D4CD",
-      background: "transparent",
-      fontSize: 17,
-      fontWeight: 700,
-      color: "#2C2C2C",
-      fontFamily: "Raleway,sans-serif",
-      padding: "2px 0",
-      width: "100%",
-      outline: "none"
-    },
-    onFocus: e => e.currentTarget.style.borderBottomColor = "#0080C1",
-    onBlur: e => e.currentTarget.style.borderBottomColor = "#D8D4CD"
-  }), /*#__PURE__*/React.createElement("div", {
-    className: "num",
-    style: {
-      fontSize: 11,
-      color: "#888",
-      marginTop: 3
-    }
-  }, cotFecha.toLocaleDateString("es-MX", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric"
-  })))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginBottom: 12,
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center"
-    }
-  }, /*#__PURE__*/React.createElement(BtnD, {
-    onClick: onBack,
-    style: {
-      color: "#0080C1",
-      fontWeight: 600
-    }
-  }, "\u2190 Volver al proyecto"), modoVer && !readonly && /*#__PURE__*/React.createElement(Btn, {
-    primary: true,
-    onClick: () => onEditarCot && onEditarCot()
-  }, "\u270E Editar cotizaci\xF3n")), !modoVer && !readonly && /*#__PURE__*/React.createElement(Btn, {
-    primary: true,
-    style: {
-      width: "100%",
-      marginBottom: 12
-    },
-    onClick: nuevoMueble
-  }, "+ Agregar mueble"), muebles.length === 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      textAlign: "center",
-      padding: "2rem",
-      color: "#888",
-      fontFamily: "Raleway,sans-serif"
-    }
-  }, "Sin muebles a\xFAn."), /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginBottom: 8,
-      fontSize: 10,
-      fontWeight: 700,
-      letterSpacing: "0.12em",
-      textTransform: "uppercase",
-      color: "#888"
-    }
-  }, "Art\xEDculos cotizados"), muebles.map((m, mi) => {
-    const q = m.qty || 1;
-    const ab = !!open[mi];
-    return /*#__PURE__*/React.createElement(Card, {
-      key: m.id || mi,
-      style: {
-        borderLeft: "3px solid #0080C1"
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        flexWrap: "wrap",
-        rowGap: 10,
-        marginBottom: ab ? 10 : 0
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        flex: "1 1 200px",
-        minWidth: 0
-      }
-    }, /*#__PURE__*/React.createElement(BtnD, {
-      style: {
-        fontSize: 30,
-        lineHeight: 1,
-        padding: "0 6px",
-        color: "#0080C1",
-        flexShrink: 0,
-        fontWeight: 300,
-        fontFamily: "Raleway, sans-serif",
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        width: 28,
-        height: 28,
-        transition: "transform 0.32s cubic-bezier(0.4, 0.0, 0.2, 1), color 0.25s ease",
-        transform: ab ? "rotate(45deg)" : "rotate(0deg)"
-      },
-      title: ab ? "Cerrar" : "Ver detalle",
-      onClick: () => setOpen(p => ({
-        ...p,
-        [mi]: !p[mi]
-      }))
-    }, "+"), m.imagenes && m.imagenes[0] && /*#__PURE__*/React.createElement("img", {
-      src: m.imagenes[0],
-      onClick: () => window.open(m.imagenes[0], "_blank"),
-      style: {
-        width: 52,
-        height: 52,
-        objectFit: "cover",
-        borderRadius: 4,
-        border: "1px solid #D8D4CD",
-        flexShrink: 0,
-        cursor: "pointer"
-      }
-    }), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 15,
-        fontWeight: 700,
-        minWidth: 0,
-        flex: 1,
-        wordBreak: "break-word"
-      }
-    }, m.nombre)), /*#__PURE__*/React.createElement("div", {
-      style: {
-        flex: "1 1 80px",
-        textAlign: "center",
-        minWidth: 80
-      }
-    }, /*#__PURE__*/React.createElement("span", {
-      className: "num",
-      style: {
-        fontSize: 18,
-        fontWeight: 700,
-        color: "#0080C1"
-      }
-    }, $(m.total)), /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontSize: 11,
-        color: "#aaa"
-      }
-    }, "/u")), !modoVer && /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        alignItems: "center",
-        gap: 6,
-        flexShrink: 0,
-        flexWrap: "wrap",
-        rowGap: 4
-      }
-    }, /*#__PURE__*/React.createElement(BtnD, {
-      style: {
-        fontSize: 18,
-        padding: "0 3px",
-        color: "#0080C1"
-      },
-      onClick: () => setMuebles(p => p.map((x, i) => i === mi ? {
-        ...x,
-        qty: Math.max(1, (x.qty || 1) - 1)
-      } : x))
-    }, "\u2212"), /*#__PURE__*/React.createElement("input", {
-      className: "num",
-      type: "number",
-      min: "1",
-      step: "1",
-      value: q,
-      onChange: e => {
-        const v = parseInt(e.target.value);
-        if (!isNaN(v) && v >= 1) setMuebles(p => p.map((x, i) => i === mi ? {
-          ...x,
-          qty: v
-        } : x));
-      },
-      style: {
-        width: 38,
-        textAlign: "center",
-        border: "1px solid #D8D4CD",
-        borderRadius: 3,
-        padding: "2px 4px",
-        fontSize: 13,
-        fontWeight: 700
-      }
-    }), /*#__PURE__*/React.createElement(BtnD, {
-      style: {
-        fontSize: 18,
-        padding: "0 3px",
-        color: "#0080C1"
-      },
-      onClick: () => setMuebles(p => p.map((x, i) => i === mi ? {
-        ...x,
-        qty: (x.qty || 1) + 1
-      } : x))
-    }, "+"), /*#__PURE__*/React.createElement("span", {
-      className: "num",
-      style: {
-        fontSize: 11,
-        color: "#888"
-      }
-    }, "pza", q !== 1 ? "s" : ""), !modoVer && !readonly && mi > 0 && /*#__PURE__*/React.createElement(BtnD, {
-      style: { fontSize: 14, padding: "0 4px", color: "#0080C1" },
-      title: "Subir",
-      onClick: function() { setMuebles(function(p){ var a = p.slice(); var t = a[mi-1]; a[mi-1] = a[mi]; a[mi] = t; return a; }); }
-    }, "\u25B2"), !modoVer && !readonly && mi < muebles.length - 1 && /*#__PURE__*/React.createElement(BtnD, {
-      style: { fontSize: 14, padding: "0 4px", color: "#0080C1" },
-      title: "Bajar",
-      onClick: function() { setMuebles(function(p){ var a = p.slice(); var t = a[mi+1]; a[mi+1] = a[mi]; a[mi] = t; return a; }); }
-    }, "\u25BC"), /*#__PURE__*/React.createElement(BtnD, {
-      style: {
-        color: "#0080C1",
-        fontSize: 11,
-        fontWeight: 600
-      },
-      onClick: () => editarMueble(mi)
-    }, "\u270E Editar"), /*#__PURE__*/React.createElement(BtnD, {
-      onClick: () => {
-        if (window.confirm("¿Eliminar el mueble \"" + m.nombre + "\"?\n\nEsta acción no se puede deshacer.")) setMuebles(p => p.filter((_, i) => i !== mi));
-      }
-    }, "\u2715")), modoVer && /*#__PURE__*/React.createElement("span", {
-      className: "num",
-      style: {
-        fontSize: 11,
-        color: "#888",
-        flexShrink: 0
-      }
-    }, q, " pza", q !== 1 ? "s" : ""), /*#__PURE__*/React.createElement("span", {
-      className: "num",
-      style: {
-        fontSize: 16,
-        fontWeight: 700,
-        color: "#2C2C2C",
-        flexShrink: 0,
-        marginLeft: "auto"
-      }
-    }, $(m.total * q))), /*#__PURE__*/React.createElement("div", {
-      style: {
-        maxHeight: ab ? "3000px" : "0",
-        overflow: "hidden",
-        transition: "max-height 0.575s cubic-bezier(0.4, 0.0, 0.2, 1)",
-        marginTop: ab ? 4 : 0
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      className: ab ? "anim-fadeInUp" : "",
-      style: {
-        borderTop: "1px solid #EAE7E1",
-        paddingTop: 8,
-        animationDuration: "0.46s"
-      }
-    }, /*#__PURE__*/React.createElement("table", {
-      style: {
-        width: "100%",
-        borderCollapse: "collapse",
-        fontSize: 12,
-        fontFamily: "Raleway,sans-serif"
-      }
-    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
-      style: {
-        borderBottom: "1px solid #EAE7E1"
-      }
-    }, /*#__PURE__*/React.createElement("th", {
-      style: {
-        textAlign: "left",
-        padding: "3px 6px 3px 0",
-        fontSize: 10,
-        fontWeight: 700,
-        textTransform: "uppercase",
-        color: "#888",
-        width: "32%"
-      }
-    }, "Componente"), /*#__PURE__*/React.createElement("th", {
-      style: {
-        textAlign: "left",
-        padding: "3px 6px",
-        fontSize: 10,
-        fontWeight: 700,
-        textTransform: "uppercase",
-        color: "#888",
-        width: "28%"
-      }
-    }, "Especificaci\xF3n"), /*#__PURE__*/React.createElement("th", {
-      style: {
-        textAlign: "center",
-        padding: "3px 6px",
-        fontSize: 10,
-        fontWeight: 700,
-        textTransform: "uppercase",
-        color: "#888",
-        width: "18%"
-      }
-    }, "Cantidad"), /*#__PURE__*/React.createElement("th", {
-      style: {
-        textAlign: "right",
-        padding: "3px 0 3px 6px",
-        fontSize: 10,
-        fontWeight: 700,
-        textTransform: "uppercase",
-        color: "#888",
-        width: "12%"
-      }
-    }, "Total"), !modoVer && /*#__PURE__*/React.createElement("th", {
-      style: {
-        width: 24
-      }
-    }))), /*#__PURE__*/React.createElement("tbody", null, m.componentes.map((c, ci) => {
-      const isEditDesc = editSpec && editSpec.mi === mi && editSpec.ci === ci && editSpec.zone === "desc" && editSpec.pf;
-      const isEditTags = editSpec && editSpec.mi === mi && editSpec.ci === ci && editSpec.zone === "tags" && editSpec.pf;
-      const isEditing = isEditDesc || isEditTags;
-      const hasDims = !modoVer && ["Entrepaño", "Poste"].includes(c.modulo);
-      const hasMat = !modoVer && ["Gabinete", "Cajones", "Entrepaño", "Poste", "Puerta closet", "Puerta gabinete", "Cubierta"].includes(c.modulo);
-      const OBS = ({
-        opts,
-        val,
-        onChange
-      }) => /*#__PURE__*/React.createElement("div", {
-        style: {
-          display: "flex",
-          gap: 4,
-          flexWrap: "wrap"
-        }
-      }, opts.map(o => /*#__PURE__*/React.createElement("button", {
-        key: o.v,
-        type: "button",
-        onClick: () => onChange(o.v),
-        style: {
-          padding: "2px 8px",
-          fontSize: 11,
-          border: "1px solid",
-          borderColor: val === o.v ? "#0080C1" : "#D8D4CD",
-          borderRadius: 3,
-          background: val === o.v ? "#0080C1" : "#fff",
-          color: val === o.v ? "#fff" : "#555",
-          cursor: "pointer",
-          fontFamily: "Raleway,sans-serif"
-        }
-      }, o.l)));
-      return /*#__PURE__*/React.createElement(React.Fragment, {
-        key: c.id || ci
-      }, /*#__PURE__*/React.createElement("tr", {
-        style: {
-          borderBottom: isEditing ? "none" : "1px solid #F4F2EE"
-        }
-      }, /*#__PURE__*/React.createElement("td", {
-        style: {
-          padding: "5px 6px 5px 0",
-          verticalAlign: "top"
-        }
-      }, /*#__PURE__*/React.createElement("div", {
-        style: {
-          fontSize: 9,
-          fontWeight: 700,
-          textTransform: "uppercase",
-          color: "#0080C1",
-          marginBottom: 1
-        }
-      }, c.modulo), /*#__PURE__*/React.createElement("div", {
-        style: {
-          fontWeight: 600,
-          color: "#2C2C2C",
-          cursor: hasDims ? "pointer" : "default",
-          background: isEditDesc ? "#FFD6E0" : "transparent",
-          borderRadius: 2,
-          padding: isEditDesc ? "1px 3px" : "0",
-          display: "inline"
-        },
-        onClick: hasDims ? () => isEditDesc ? setEditSpec(null) : openEditSpec(mi, ci, m, "desc") : undefined
-      }, c.desc)), /*#__PURE__*/React.createElement("td", {
-        style: {
-          padding: "5px 6px",
-          verticalAlign: "top",
-          fontSize: 11
-        }
-      }, /*#__PURE__*/React.createElement("span", {
-        style: {
-          color: "#888",
-          cursor: hasMat ? "pointer" : "default",
-          background: isEditTags ? "#FFF3A3" : "transparent",
-          borderRadius: 2,
-          padding: isEditTags ? "1px 3px" : "0"
-        },
-        onClick: hasMat ? () => isEditTags ? setEditSpec(null) : openEditSpec(mi, ci, m, "tags") : undefined
-      }, (c.tags || []).join(" · "), (c.extras || []).length ? " · " + c.extras.join(" · ") : "")), /*#__PURE__*/React.createElement("td", {
-        style: {
-          padding: "5px 6px",
-          textAlign: "center",
-          verticalAlign: "middle"
-        }
-      }, !modoVer ? /*#__PURE__*/React.createElement("div", {
-        style: {
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 2
-        }
-      }, /*#__PURE__*/React.createElement(BtnD, {
-        style: {
-          fontSize: 15,
-          padding: "0 4px",
-          color: "#0080C1"
-        },
-        onClick: () => qtyComp(mi, ci, -1)
-      }, "\u2212"), /*#__PURE__*/React.createElement("input", {
-        type: "number",
-        min: "0.5",
-        step: "0.5",
-        value: c.qty,
-        onChange: e => {
-          const v = parseFloat(e.target.value);
-          if (!isNaN(v) && v >= 0.5) {
-            setMuebles(p => p.map((m, i) => {
-              if (i !== mi) return m;
-              const cs = m.componentes.map((x, j) => {
-                if (j !== ci) return x;
-                const ledS = (x.ledUnitario || 0) * v;
-                return {
-                  ...x,
-                  qty: v,
-                  ledSubtotal: ledS,
-                  subtotal: x.unitario * v + ledS
-                };
-              });
-              return {
-                ...m,
-                componentes: cs,
-                total: cs.reduce((s, c) => s + c.subtotal, 0)
-              };
-            }));
-            setTimeout(() => setOpen(p => ({
-              ...p,
-              [mi]: true
-            })), 0);
-          }
-        },
-        style: {
-          width: 46,
-          textAlign: "center",
-          border: "1px solid #D8D4CD",
-          borderRadius: 3,
-          padding: "2px 4px",
-          fontSize: 12,
-          fontFamily: "Raleway,sans-serif"
-        }
-      }), /*#__PURE__*/React.createElement(BtnD, {
-        style: {
-          fontSize: 15,
-          padding: "0 4px",
-          color: "#0080C1"
-        },
-        onClick: () => qtyComp(mi, ci, 1)
-      }, "+")) : /*#__PURE__*/React.createElement("span", {
-        style: {
-          fontSize: 12,
-          fontWeight: 700
-        }
-      }, "\xD7", c.qty)), /*#__PURE__*/React.createElement("td", {
-        style: {
-          padding: "5px 0 5px 6px",
-          textAlign: "right",
-          verticalAlign: "middle",
-          fontWeight: 700,
-          color: "#2C2C2C"
-        }
-      }, $(c.subtotal)), !modoVer && /*#__PURE__*/React.createElement("td", {
-        style: {
-          textAlign: "right",
-          verticalAlign: "middle"
-        }
-      }, /*#__PURE__*/React.createElement(BtnD, {
-        style: {
-          padding: "0 3px",
-          fontSize: 11
-        },
-        onClick: () => {
-          if (window.confirm("¿Eliminar componente \"" + c.modulo + " " + c.desc + "\"?")) setMuebles(p => p.map((mm, i) => {
-            if (i !== mi) return mm;
-            const cs = mm.componentes.filter((_, j) => j !== ci);
-            return {
-              ...mm,
-              componentes: cs,
-              total: cs.reduce((s, c) => s + c.subtotal, 0)
-            };
-          }).filter(mm => mm.componentes.length > 0));
-        }
-      }, "\u2715"))), isEditing && /*#__PURE__*/React.createElement("tr", {
-        style: {
-          borderBottom: "1px solid #EAE7E1"
-        }
-      }, /*#__PURE__*/React.createElement("td", {
-        colSpan: !modoVer ? 5 : 4,
-        style: {
-          padding: "6px 6px 8px",
-          background: isEditDesc ? "#FFF0F3" : "#FFFDE8"
-        }
-      }, isEditDesc && (c.modulo === "Entrepaño" || c.modulo === "Poste") && /*#__PURE__*/React.createElement("div", {
-        style: {
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          flexWrap: "wrap"
-        }
-      }, /*#__PURE__*/React.createElement("span", {
-        style: {
-          fontSize: 11,
-          color: "#888",
-          minWidth: 40
-        }
-      }, "Formato:"), /*#__PURE__*/React.createElement(OBS, {
-        opts: [{
-          v: "18mm",
-          l: "18mm"
-        }, {
-          v: "tambor4",
-          l: "Tambor 4cm"
-        }, {
-          v: "tambor6",
-          l: "Tambor 6cm"
-        }],
-        val: editSpec.fmt,
-        onChange: v => setEditSpec(p => ({
-          ...p,
-          fmt: v
-        }))
-      }), /*#__PURE__*/React.createElement("span", {
-        style: {
-          fontSize: 11,
-          color: "#888",
-          marginLeft: 8
-        }
-      }, "ml:"), /*#__PURE__*/React.createElement("input", {
-        type: "number",
-        min: "0.1",
-        step: "0.1",
-        value: editSpec.ml,
-        onChange: e => setEditSpec(p => ({
-          ...p,
-          ml: parseFloat(e.target.value) || 0.1
-        })),
-        style: {
-          width: 54,
-          textAlign: "center",
-          border: "1px solid #D8D4CD",
-          borderRadius: 3,
-          padding: "2px 4px",
-          fontSize: 12,
-          fontFamily: "Raleway,sans-serif"
-        }
-      }), /*#__PURE__*/React.createElement("span", {
-        style: {
-          fontSize: 11,
-          color: "#888"
-        }
-      }, "\xD7"), /*#__PURE__*/React.createElement(BtnD, {
-        style: {
-          fontSize: 15,
-          padding: "0 3px",
-          color: "#0080C1"
-        },
-        onClick: () => setEditSpec(p => ({
-          ...p,
-          cant: Math.max(1, p.cant - 1)
-        }))
-      }, "\u2212"), /*#__PURE__*/React.createElement("span", {
-        style: {
-          fontSize: 13,
-          fontWeight: 700,
-          minWidth: 16,
-          textAlign: "center"
-        }
-      }, editSpec.cant), /*#__PURE__*/React.createElement(BtnD, {
-        style: {
-          fontSize: 15,
-          padding: "0 3px",
-          color: "#0080C1"
-        },
-        onClick: () => setEditSpec(p => ({
-          ...p,
-          cant: p.cant + 1
-        }))
-      }, "+"), /*#__PURE__*/React.createElement(Btn, {
-        primary: true,
-        style: {
-          padding: "3px 10px",
-          fontSize: 11
-        },
-        onClick: applyEditSpec
-      }, "\u2713"), /*#__PURE__*/React.createElement(BtnD, {
-        onClick: () => setEditSpec(null),
-        style: {
-          fontSize: 11
-        }
-      }, "\u2715")), isEditTags && /*#__PURE__*/React.createElement("div", {
-        style: {
-          display: "flex",
-          alignItems: "flex-start",
-          gap: 12,
-          flexWrap: "wrap"
-        }
-      }, (c.modulo === "Entrepaño" || c.modulo === "Poste") && /*#__PURE__*/React.createElement("div", {
-        style: {
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          flexWrap: "wrap"
-        }
-      }, /*#__PURE__*/React.createElement("span", {
-        style: {
-          fontSize: 11,
-          color: "#888",
-          minWidth: 52
-        }
-      }, "Material:"), /*#__PURE__*/React.createElement(OBS, {
-        opts: [{
-          v: "laminado",
-          l: "Prelaminado"
-        }, {
-          v: "formaica",
-          l: "Formaica"
-        }, {
-          v: "chapa",
-          l: "Chapa nat."
-        }, {
-          v: "traceless",
-          l: "Traceless"
-        }, {
-          v: "laca2k",
-          l: "Laca 2K"
-        }],
-        val: editSpec.pf.acabado,
-        onChange: v => setEditSpec(p => ({
-          ...p,
-          pf: {
-            ...p.pf,
-            acabado: v,
-            chapa: v === "chapa" ? p.pf.chapa : null
-          }
-        }))
-      }), editSpec.pf.acabado === "chapa" && /*#__PURE__*/React.createElement(OBS, {
-        opts: [{
-          v: "pino",
-          l: "Pino"
-        }, {
-          v: "encino",
-          l: "Comercial"
-        }, {
-          v: "premium",
-          l: "Premium"
-        }],
-        val: editSpec.pf.chapa,
-        onChange: v => setEditSpec(p => ({
-          ...p,
-          pf: {
-            ...p.pf,
-            chapa: v
-          }
-        }))
-      }), /*#__PURE__*/React.createElement("label", {
-        style: {
-          display: "flex",
-          alignItems: "center",
-          gap: 4,
-          fontSize: 11,
-          cursor: "pointer",
-          marginLeft: 4
-        }
-      }, /*#__PURE__*/React.createElement("input", {
-        type: "checkbox",
-        checked: !!editSpec.led,
-        onChange: e => setEditSpec(p => ({
-          ...p,
-          led: e.target.checked
-        })),
-        style: {
-          accentColor: "#0080C1"
-        }
-      }), /*#__PURE__*/React.createElement("span", {
-        style: {
-          color: "#0080C1",
-          fontWeight: 600
-        }
-      }, "\uD83D\uDCA1 LED"))), c.modulo === "Cajones" && /*#__PURE__*/React.createElement("div", {
-        style: {
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          flexWrap: "wrap"
-        }
-      }, /*#__PURE__*/React.createElement("span", {
-        style: {
-          fontSize: 11,
-          color: "#888",
-          minWidth: 52
-        }
-      }, "Material:"), /*#__PURE__*/React.createElement(OBS, {
-        opts: [{
-          v: "laminado",
-          l: "Prelaminado"
-        }, {
-          v: "formaica",
-          l: "Formaica"
-        }, {
-          v: "chapa",
-          l: "Chapa nat."
-        }, {
-          v: "traceless",
-          l: "Traceless"
-        }, {
-          v: "laca2k",
-          l: "Laca 2K"
-        }],
-        val: editSpec.pf.acabado,
-        onChange: v => setEditSpec(p => ({
-          ...p,
-          pf: {
-            ...p.pf,
-            acabado: v,
-            chapa: v === "chapa" ? p.pf.chapa : null
-          }
-        }))
-      }), editSpec.pf.acabado === "chapa" && /*#__PURE__*/React.createElement(OBS, {
-        opts: [{
-          v: "pino",
-          l: "Pino"
-        }, {
-          v: "encino",
-          l: "Comercial"
-        }, {
-          v: "premium",
-          l: "Premium"
-        }],
-        val: editSpec.pf.chapa,
-        onChange: v => setEditSpec(p => ({
-          ...p,
-          pf: {
-            ...p.pf,
-            chapa: v
-          }
-        }))
-      })), c.modulo === "Puerta closet" && /*#__PURE__*/React.createElement("div", {
-        style: {
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          flexWrap: "wrap"
-        }
-      }, /*#__PURE__*/React.createElement("span", {
-        style: {
-          fontSize: 11,
-          color: "#888",
-          minWidth: 52
-        }
-      }, "Material:"), /*#__PURE__*/React.createElement(OBS, {
-        opts: [{
-          v: "laminado",
-          l: "Prelaminado"
-        }, {
-          v: "formaica",
-          l: "Formaica"
-        }, {
-          v: "chapa",
-          l: "Chapa nat."
-        }, {
-          v: "traceless",
-          l: "Traceless"
-        }, {
-          v: "laca2k",
-          l: "Laca 2K"
-        }],
-        val: editSpec.pf.acabado,
-        onChange: v => setEditSpec(p => ({
-          ...p,
-          pf: {
-            ...p.pf,
-            acabado: v,
-            chapa: v === "chapa" ? p.pf.chapa : null
-          }
-        }))
-      }), editSpec.pf.acabado === "chapa" && /*#__PURE__*/React.createElement(OBS, {
-        opts: [{
-          v: "pino",
-          l: "Pino"
-        }, {
-          v: "encino",
-          l: "Comercial"
-        }, {
-          v: "premium",
-          l: "Premium"
-        }],
-        val: editSpec.pf.chapa,
-        onChange: v => setEditSpec(p => ({
-          ...p,
-          pf: {
-            ...p.pf,
-            chapa: v
-          }
-        }))
-      })), c.modulo === "Gabinete" && /*#__PURE__*/React.createElement("div", {
-        style: {
-          display: "flex",
-          gap: 12,
-          flexWrap: "wrap"
-        }
-      }, /*#__PURE__*/React.createElement("div", {
-        style: {
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          flexWrap: "wrap"
-        }
-      }, /*#__PURE__*/React.createElement("span", {
-        style: {
-          fontSize: 11,
-          color: "#888",
-          minWidth: 40
-        }
-      }, "Int:"), /*#__PURE__*/React.createElement(OBS, {
-        opts: [{
-          v: "18mm",
-          l: "18mm"
-        }, {
-          v: "15mm",
-          l: "15mm"
-        }],
-        val: editSpec.pi.formato,
-        onChange: v => setEditSpec(p => ({
-          ...p,
-          pi: {
-            ...p.pi,
-            formato: v
-          }
-        }))
-      }), /*#__PURE__*/React.createElement(OBS, {
-        opts: [{
-          v: "laminado",
-          l: "Prelam."
-        }, {
-          v: "formaica",
-          l: "Formaica"
-        }, {
-          v: "chapa",
-          l: "Chapa"
-        }],
-        val: editSpec.pi.acabado,
-        onChange: v => setEditSpec(p => ({
-          ...p,
-          pi: {
-            ...p.pi,
-            acabado: v,
-            chapa: v === "chapa" ? p.pi.chapa : null
-          }
-        }))
-      }), editSpec.pi.acabado === "chapa" && /*#__PURE__*/React.createElement(OBS, {
-        opts: [{
-          v: "pino",
-          l: "Pino"
-        }, {
-          v: "encino",
-          l: "Comercial"
-        }, {
-          v: "premium",
-          l: "Premium"
-        }],
-        val: editSpec.pi.chapa,
-        onChange: v => setEditSpec(p => ({
-          ...p,
-          pi: {
-            ...p.pi,
-            chapa: v
-          }
-        }))
-      })), /*#__PURE__*/React.createElement("div", {
-        style: {
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          flexWrap: "wrap"
-        }
-      }, /*#__PURE__*/React.createElement("span", {
-        style: {
-          fontSize: 11,
-          color: "#888",
-          minWidth: 40
-        }
-      }, "Fre:"), /*#__PURE__*/React.createElement(OBS, {
-        opts: [{
-          v: "laminado",
-          l: "Prelam."
-        }, {
-          v: "formaica",
-          l: "Formaica"
-        }, {
-          v: "chapa",
-          l: "Chapa"
-        }, {
-          v: "traceless",
-          l: "Traceless"
-        }, {
-          v: "laca2k",
-          l: "Laca 2K"
-        }],
-        val: editSpec.pf.acabado,
-        onChange: v => setEditSpec(p => ({
-          ...p,
-          pf: {
-            ...p.pf,
-            acabado: v,
-            chapa: v === "chapa" ? p.pf.chapa : null
-          }
-        }))
-      }), editSpec.pf.acabado === "chapa" && /*#__PURE__*/React.createElement(OBS, {
-        opts: [{
-          v: "pino",
-          l: "Pino"
-        }, {
-          v: "encino",
-          l: "Comercial"
-        }, {
-          v: "premium",
-          l: "Premium"
-        }],
-        val: editSpec.pf.chapa,
-        onChange: v => setEditSpec(p => ({
-          ...p,
-          pf: {
-            ...p.pf,
-            chapa: v
-          }
-        }))
-      }))), c.modulo === "Cubierta" && /*#__PURE__*/React.createElement("div", {
-        style: {
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          flexWrap: "wrap"
-        }
-      }, /*#__PURE__*/React.createElement("span", {
-        style: {
-          fontSize: 11,
-          color: "#888"
-        }
-      }, "Material:"), /*#__PURE__*/React.createElement(OBS, {
-        opts: [{
-          v: "laminado",
-          l: "Laminado"
-        }, {
-          v: "solida",
-          l: "Sup. sólida"
-        }, {
-          v: "piedra",
-          l: "Piedra"
-        }],
-        val: editSpec.cubMat,
-        onChange: v => setEditSpec(p => ({
-          ...p,
-          cubMat: v,
-          cubTipo: Object.keys(PCUB[v] || {})[0] || ""
-        }))
-      }), /*#__PURE__*/React.createElement("span", {
-        style: {
-          fontSize: 11,
-          color: "#888",
-          marginLeft: 4
-        }
-      }, "Tipo:"), /*#__PURE__*/React.createElement(OBS, {
-        opts: CUB_OPCIONES[editSpec.cubMat] || [],
-        val: editSpec.cubTipo,
-        onChange: v => setEditSpec(p => ({
-          ...p,
-          cubTipo: v
-        }))
-      }), /*#__PURE__*/React.createElement("label", {
-        style: {
-          display: "flex",
-          alignItems: "center",
-          gap: 4,
-          fontSize: 11,
-          cursor: "pointer",
-          marginLeft: 4
-        }
-      }, /*#__PURE__*/React.createElement("input", {
-        type: "checkbox",
-        checked: !!editSpec.cubNariz,
-        onChange: e => setEditSpec(p => ({
-          ...p,
-          cubNariz: e.target.checked
-        })),
-        style: {
-          accentColor: "#0080C1"
-        }
-      }), /*#__PURE__*/React.createElement("span", {
-        style: {
-          color: "#555"
-        }
-      }, "Nariz"))), /*#__PURE__*/React.createElement(Btn, {
-        primary: true,
-        style: {
-          padding: "3px 10px",
-          fontSize: 11,
-          alignSelf: "center"
-        },
-        onClick: applyEditSpec
-      }, "\u2713"), /*#__PURE__*/React.createElement(BtnD, {
-        onClick: () => setEditSpec(null),
-        style: {
-          fontSize: 11,
-          alignSelf: "center"
-        }
-      }, "\u2715")))), c.ledSubtotal > 0 && /*#__PURE__*/React.createElement("tr", {
-        style: {
-          borderBottom: "1px solid #F4F2EE",
-          background: "#f0faff"
-        }
-      }, /*#__PURE__*/React.createElement("td", {
-        style: {
-          padding: "3px 6px 3px 16px",
-          verticalAlign: "middle"
-        }
-      }, /*#__PURE__*/React.createElement("div", {
-        style: {
-          fontSize: 9,
-          fontWeight: 700,
-          textTransform: "uppercase",
-          color: "#0080C1"
-        }
-      }, "\uD83D\uDCA1 LED")), /*#__PURE__*/React.createElement("td", {
-        className: "num",
-        style: {
-          padding: "3px 6px",
-          fontSize: 11,
-          color: "#0080C1"
-        }
-      }, "$1,800/ml"), /*#__PURE__*/React.createElement("td", {
-        className: "num",
-        style: {
-          padding: "3px 6px",
-          textAlign: "center",
-          fontSize: 11,
-          color: "#0080C1"
-        }
-      }, "\xD7", c.qty), /*#__PURE__*/React.createElement("td", {
-        className: "num",
-        style: {
-          padding: "3px 6px",
-          textAlign: "right",
-          fontWeight: 700,
-          color: "#0080C1"
-        }
-      }, $(c.ledSubtotal)), !modoVer && /*#__PURE__*/React.createElement("td", null)));
-    }))))));
-  }), !modoVer && !readonly && muebles.length > 0 && /*#__PURE__*/React.createElement(Btn, {
-    primary: true,
-    style: {
-      width: "100%",
-      marginTop: 8,
-      marginBottom: 12
-    },
-    onClick: nuevoMueble
-  }, "+ Agregar mueble"), muebles.length > 0 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
-    style: {
-      marginTop: 8
-    }
-  }, /*#__PURE__*/React.createElement(CardTitle, null, "Resumen de cotizaci\xF3n"), [["Subtotal productos", grand], [`Indirectos (${(cfg("indirectos") * 100).toFixed(1)}%)`, ind], [`Ingeniería (${(cfg("ingenieria") * 100).toFixed(1)}%)`, ing], [`Embalaje (${(cfg("embalaje") * 100).toFixed(1)}%)`, emb]].map(([l, v]) => /*#__PURE__*/React.createElement("div", {
-    key: l,
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      fontSize: 13,
-      padding: "6px 0",
-      borderBottom: "1px solid #EAE7E1",
-      color: "#888"
-    }
-  }, /*#__PURE__*/React.createElement("span", null, l), /*#__PURE__*/React.createElement("span", {
-    className: "num"
-  }, $(v)))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      fontSize: 13,
-      padding: "6px 0",
-      borderBottom: "1px solid #EAE7E1",
-      color: usaF ? "#888" : "rgba(0,0,0,0.3)"
-    }
-  }, /*#__PURE__*/React.createElement("label", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 6,
-      cursor: "pointer"
-    }
-  }, !modoVer && /*#__PURE__*/React.createElement("input", {
-    type: "checkbox",
-    checked: usaF,
-    onChange: e => setUsaF(e.target.checked),
-    style: {
-      accentColor: "#0080C1"
-    }
-  }), "Flete"), /*#__PURE__*/React.createElement("span", {
-    className: "num"
-  }, usaF ? $(fl) : "—")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 700,
-      background: "#F4F2EE",
-      padding: "9px 12px",
-      borderRadius: 3,
-      margin: "8px 0",
-      borderLeft: "2px solid #0080C1",
-      display: "flex",
-      justifyContent: "space-between"
-    }
-  }, /*#__PURE__*/React.createElement("span", null, "Total base"), /*#__PURE__*/React.createElement("span", {
-    className: "num"
-  }, $(tB))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      fontSize: 13,
-      padding: "6px 0",
-      borderBottom: "1px solid #EAE7E1",
-      color: usaA ? "#888" : "rgba(0,0,0,0.3)"
-    }
-  }, /*#__PURE__*/React.createElement("label", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 6,
-      cursor: "pointer"
-    }
-  }, !modoVer && /*#__PURE__*/React.createElement("input", {
-    type: "checkbox",
-    checked: usaA,
-    onChange: e => setUsaA(e.target.checked),
-    style: {
-      accentColor: "#0080C1"
-    }
-  }), "Comisi\xF3n profesionista (", (cfg("comisionArq") * 100).toFixed(0), "%)"), /*#__PURE__*/React.createElement("span", {
-    className: "num"
-  }, usaA ? $(cP) : "—")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      fontSize: 13,
-      padding: "6px 0",
-      borderBottom: "1px solid #EAE7E1",
-      color: usaT ? "#888" : "rgba(0,0,0,0.3)"
-    }
-  }, /*#__PURE__*/React.createElement("label", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 6,
-      cursor: "pointer"
-    }
-  }, !modoVer && /*#__PURE__*/React.createElement("input", {
-    type: "checkbox",
-    checked: usaT,
-    onChange: e => setUsaT(e.target.checked),
-    style: {
-      accentColor: "#0080C1"
-    }
-  }), "Comisi\xF3n TDC (", (cfg("comisionTDC") * 100).toFixed(1), "%)"), /*#__PURE__*/React.createElement("span", {
-    className: "num"
-  }, usaT ? $(cT) : "—")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      fontSize: 13,
-      padding: "8px 0",
-      borderBottom: "1px solid #EAE7E1",
-      color: descuento > 0 ? "#c0392b" : "rgba(0,0,0,0.3)",
-      alignItems: "center"
-    }
-  }, /*#__PURE__*/React.createElement("label", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 8,
-      cursor: "pointer",
-      flex: 1
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 14
-    }
-  }, "\uD83D\uDCB0"), /*#__PURE__*/React.createElement("span", null, "Descuento"), !modoVer && /*#__PURE__*/React.createElement("input", {
-    type: "number",
-    min: "0",
-    max: "100",
-    step: "0.5",
-    value: descuento,
-    onChange: e => setDescuento(Math.max(0, Math.min(100, parseFloat(e.target.value) || 0))),
-    style: {
-      width: 60,
-      padding: "3px 6px",
-      border: "1px solid #D8D4CD",
-      borderRadius: 4,
-      fontFamily: "Sansation,sans-serif",
-      fontSize: 12,
-      textAlign: "right"
-    }
-  }), !modoVer && /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 11,
-      color: "#888"
-    }
-  }, "%"), modoVer && descuento > 0 && /*#__PURE__*/React.createElement("span", {
-    className: "num",
-    style: {
-      fontSize: 12,
-      color: "#888"
-    }
-  }, "(", descuento, "%)")), /*#__PURE__*/React.createElement("span", {
-    className: "num"
-  }, descuento > 0 ? "− " + $(descMonto) : "—")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      fontSize: 17,
-      fontWeight: 700,
-      color: "#2C2C2C",
-      paddingTop: 12,
-      borderTop: "2px solid #2C2C2C",
-      marginTop: 6
-    }
-  }, /*#__PURE__*/React.createElement("span", null, "Total cotizaci\xF3n"), /*#__PURE__*/React.createElement("span", {
-    className: "num"
-  }, $(tF)))), !modoVer && /*#__PURE__*/React.createElement(Btn, {
-    primary: true,
-    style: {
-      width: "100%",
-      padding: 14,
-      fontSize: 13,
-      marginTop: 4
-    },
-    onClick: () => onGuardar({
+  // NAV: la hoja de cotización (Mike, 23-sep-2026). Lo que había aquí —la
+  // lista de muebles con su tabla de componentes y el resumen de cargos— se
+  // sustituyó por la hoja; el desglose de cargos sigue en el «PDF interno».
+  return /*#__PURE__*/React.createElement(HojaCotizacion, {
+    muebles,
+    setMuebles,
+    hoja,
+    setHoja,
+    precios: preciosHoja(muebles, { usaF, usaA, usaT }),
+    descuento,
+    setDescuento,
+    usaF,
+    setUsaF,
+    usaA,
+    setUsaA,
+    usaT,
+    setUsaT,
+    cotNombre,
+    setCotNombre,
+    folio: cotIni === null || cotIni === void 0 ? void 0 : cotIni.folio,
+    clienteNombre: cotIni === null || cotIni === void 0 ? void 0 : cotIni.clienteNombre,
+    proyectoNombre: cotIni === null || cotIni === void 0 ? void 0 : cotIni.proyectoNombre,
+    modoVer,
+    readonly,
+    onBack,
+    onEditarCot,
+    onGuardar: () => onGuardar({
       muebles,
       totalFinal: tF,
       usaFlete: usaF,
@@ -8800,65 +7947,16 @@ ${rowHTML}
       descuento,
       nombre: cotNombre,
       materiales,
+      hoja,
       fecha: new Date().toISOString()
-    })
-  }, "\uD83D\uDCBE Guardar cotizaci\xF3n"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8,
-      marginTop: 8,
-      flexWrap: "wrap"
-    }
-  }, /*#__PURE__*/React.createElement(Btn, {
-    style: {
-      flex: "1 1 140px",
-      padding: 10,
-      fontSize: 12,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 6
-    },
-    onClick: exportPDF
-  }, "\uD83D\uDDA8\uFE0F PDF interno"), /*#__PURE__*/React.createElement(Btn, {
-    primary: true,
-    style: {
-      flex: "1 1 140px",
-      padding: 10,
-      fontSize: 12,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 6
-    },
-    onClick: exportClientePDF
-  }, "\uD83D\uDCC4 PDF cliente"), /*#__PURE__*/React.createElement(Btn, {
-    style: {
-      flex: "1 1 140px",
-      padding: 10,
-      fontSize: 12,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 6,
-      borderColor: "#27ae60",
-      color: "#27ae60"
-    },
-    onClick: exportPresupuestoPDF
-  }, "\uD83D\uDCB0 Presupuesto"), /*#__PURE__*/React.createElement(Btn, {
-    style: {
-      flex: "1 1 140px",
-      padding: 10,
-      fontSize: 12,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 6,
-      borderColor: "#e67e22",
-      color: "#e67e22"
-    },
-    onClick: exportClienteExcel
-  }, "\uD83D\uDCCA EXCEL ARQ"))));
+    }),
+    nuevoMueble,
+    editarMueble,
+    exportPDF,
+    exportClientePDF,
+    exportPresupuestoPDF,
+    exportClienteExcel
+  });
 }
 
 // ── COTIZADOR OVERLAY ─────────────────────────────────────────────────────
@@ -10639,7 +9737,9 @@ function App() {
     fecha: ((_nav$cot$versiones6 = nav.cot.versiones) === null || _nav$cot$versiones6 === void 0 || (_nav$cot$versiones6 = _nav$cot$versiones6[nav.ver ? nav.vi : 0]) === null || _nav$cot$versiones6 === void 0 ? void 0 : _nav$cot$versiones6.fecha) || null,
     clienteNombre: ((_nav$cliente2 = nav.cliente) === null || _nav$cliente2 === void 0 ? void 0 : _nav$cliente2.nombre) || "",
     proyectoNombre: ((_nav$proyecto2 = nav.proyecto) === null || _nav$proyecto2 === void 0 ? void 0 : _nav$proyecto2.nombre) || "",
-    materiales: (nav.cot.versiones && nav.cot.versiones[nav.ver ? nav.vi : 0] && nav.cot.versiones[nav.ver ? nav.vi : 0].materiales) || {}
+    materiales: (nav.cot.versiones && nav.cot.versiones[nav.ver ? nav.vi : 0] && nav.cot.versiones[nav.ver ? nav.vi : 0].materiales) || {},
+    hoja: nav.cot.versiones && nav.cot.versiones[nav.ver ? nav.vi : 0] && nav.cot.versiones[nav.ver ? nav.vi : 0].hoja || null,
+    folio: nav.cot.folio || null
   } : null;
   const fecha = new Date().toLocaleDateString("es-MX", {
     year: "numeric",
