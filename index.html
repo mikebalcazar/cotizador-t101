@@ -1191,6 +1191,11 @@ window.suiteDB = {
             // foto se vería igual y la foto no subiría nunca.
             for (const v of (q.versiones || [])) {
               for (const m of (v.muebles || [])) {
+                // El plano del armador (Mike, 23-sep) sube igual que las fotos:
+                // en `datos` sólo queda su dirección, nunca la imagen entera.
+                if (m.plano && typeof m.plano.src === 'string' && m.plano.src.startsWith('data:image')) {
+                  m.plano.src = await subirFoto(m.plano.src, q.id);
+                }
                 if (!Array.isArray(m.imagenes)) continue;
                 for (let i = 0; i < m.imagenes.length; i++) {
                   if (typeof m.imagenes[i] === 'string' && m.imagenes[i].startsWith('data:image')) {
@@ -4115,7 +4120,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G85";
+const APP_VERSION = "G86";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -5939,6 +5944,199 @@ function HojaCotizacion({
     velo && ReactDOM.createPortal(velo, document.body));
 }
 
+// ─── EL ARMADOR SOBRE PLANO ────────────────────────────────────────────────
+/* Mike, 23-sep-2026: «Cuando le des en agregar mueble, ahora te va a dar la
+ * opción de subir plano/imagen. Al subirlo, vamos a usar un sistema similar al
+ * de quell para agregar items, pero en este caso vamos a agregar los
+ * componentes sobre el plano/foto. Y a la derecha se va a desplegar el menú de
+ * los diferentes componentes para poder configurarlo».
+ *
+ * Como en quell101: se toca el plano, ahí queda un punto, y el componente que
+ * se configura a la derecha se queda en ese punto. La posición se guarda como
+ * fracción del ancho y del alto (0 a 1), así que no depende del tamaño con que
+ * se vea el plano.
+ *
+ * El plano se guarda como IMAGEN, también cuando llega en PDF (se toma la
+ * primera página, como quell101): una sola forma de pintarlo, en cualquier
+ * teléfono, y se sube a la suite al guardar igual que las fotos del mueble. */
+const PDFJS_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js";
+const PDFJS_TRABAJADOR = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+// El lado largo del plano ya guardado. Alcanza para leer cotas al acercarse y
+// no pesa lo que pesaría un plano a resolución de impresión.
+const PLANO_MAX = 2400;
+let pdfjsPromesa = null;
+function cargarPdfjs() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if (!pdfjsPromesa) {
+    pdfjsPromesa = new Promise((listo, falla) => {
+      const s = document.createElement("script");
+      s.src = PDFJS_URL;
+      s.onload = () => {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_TRABAJADOR;
+        listo(window.pdfjsLib);
+      };
+      s.onerror = () => {
+        pdfjsPromesa = null;
+        falla(new Error("no se pudo cargar el lector de PDF"));
+      };
+      document.head.appendChild(s);
+    });
+  }
+  return pdfjsPromesa;
+}
+/** Un archivo (imagen o PDF) → `{src, ancho, alto, nombre}`, con `src` en
+ *  JPEG y el lado largo en PLANO_MAX como máximo. */
+async function leerPlano(archivo) {
+  const esPdf = archivo.type === "application/pdf" || /\.pdf$/i.test(archivo.name || "");
+  const lienzo = document.createElement("canvas");
+  const ctx = lienzo.getContext("2d");
+  if (esPdf) {
+    const pdfjs = await cargarPdfjs();
+    const doc = await pdfjs.getDocument({ data: new Uint8Array(await archivo.arrayBuffer()) }).promise;
+    const pagina = await doc.getPage(1);
+    const base = pagina.getViewport({ scale: 1 });
+    const vista = pagina.getViewport({ scale: PLANO_MAX / Math.max(base.width, base.height) });
+    lienzo.width = Math.round(vista.width);
+    lienzo.height = Math.round(vista.height);
+    ctx.fillStyle = "#fff"; // un PDF no trae fondo: sin esto el JPEG sale negro
+    ctx.fillRect(0, 0, lienzo.width, lienzo.height);
+    await pagina.render({ canvasContext: ctx, viewport: vista }).promise;
+  } else {
+    const url = URL.createObjectURL(archivo);
+    try {
+      const img = await new Promise((listo, falla) => {
+        const i = new Image();
+        i.onload = () => listo(i);
+        i.onerror = () => falla(new Error("no es una imagen que el navegador pueda abrir"));
+        i.src = url;
+      });
+      const k = Math.min(1, PLANO_MAX / Math.max(img.naturalWidth, img.naturalHeight));
+      lienzo.width = Math.round(img.naturalWidth * k);
+      lienzo.height = Math.round(img.naturalHeight * k);
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, lienzo.width, lienzo.height);
+      ctx.drawImage(img, 0, 0, lienzo.width, lienzo.height);
+    } finally { URL.revokeObjectURL(url); }
+  }
+  return { src: lienzo.toDataURL("image/jpeg", 0.88), ancho: lienzo.width, alto: lienzo.height, nombre: archivo.name || "plano" };
+}
+const PLANO_CSS = `
+.arm-plano{width:min(1200px,calc(100vw - 40px));margin-left:calc(50% - min(600px,calc(50vw - 20px)))}
+.arm-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(330px,1fr);gap:16px;align-items:start}
+.arm-izq{position:sticky;top:0;background:#fff;border:1px solid #D8D4CD;border-radius:6px;padding:10px}
+.arm-cab{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-family:Raleway,sans-serif}
+.arm-cab b{font-size:13px;margin-right:auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.arm-cab button{font:inherit;font-size:12px;font-weight:600;border:1px solid #D8D4CD;background:#fff;border-radius:3px;padding:4px 9px;cursor:pointer}
+.arm-aviso{font-family:Raleway,sans-serif;font-size:12px;padding:7px 10px;border-radius:4px;margin-bottom:8px;background:#F4F2EE;color:#555}
+.arm-aviso.listo{background:#0080C1;color:#fff;font-weight:600}
+.arm-visor{overflow:auto;max-height:72vh;border:1px solid #EAE7E1;background:#f7f7f7;touch-action:pan-x pan-y}
+.arm-lienzo{position:relative;cursor:crosshair}
+.arm-lienzo img{display:block;width:100%;height:auto;user-select:none;-webkit-user-drag:none}
+.arm-pin{position:absolute;transform:translate(-50%,-50%);min-width:24px;height:24px;padding:0 5px;border-radius:12px;background:#0080C1;color:#fff;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);font:700 11px/20px Raleway,sans-serif;text-align:center;cursor:pointer}
+.arm-pin.sel{background:#C6FF3D;color:#1d1f20;transform:translate(-50%,-50%) scale(1.25)}
+.arm-pin.nuevo{background:transparent;border:3px solid #0080C1;box-shadow:0 0 0 4px rgba(0,128,193,.25);animation:arm-late 1s ease-in-out infinite}
+@keyframes arm-late{50%{box-shadow:0 0 0 9px rgba(0,128,193,.08)}}
+.arm-num{display:inline-block;min-width:18px;height:18px;border-radius:9px;background:#0080C1;color:#fff;font:700 10px/18px Raleway,sans-serif;text-align:center;margin-right:6px;padding:0 4px}
+.arm-sel{background:rgba(198,255,61,.25)}
+@media (max-width:900px){
+  .arm-grid{grid-template-columns:1fr}
+  .arm-izq{position:static}
+  .arm-visor{max-height:60vh}
+}`;
+/** El plano con sus puntos. Tocar pone el punto nuevo; tocar un punto lo
+ *  escoge. El acercamiento es por pasos y el plano se recorre con el scroll
+ *  del recuadro, que en el teléfono es el dedo. */
+function VisorPlano({ plano, pines, punto, sel, onTocar, onPin }) {
+  const h = React.createElement;
+  const [zoom, setZoom] = useState(1);
+  const imgRef = useRef(null);
+  const tocar = e => {
+    if (e.target.closest && e.target.closest(".arm-pin")) return;
+    const r = imgRef.current && imgRef.current.getBoundingClientRect();
+    if (!r || !r.width) return;
+    const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+    if (x < 0 || x > 1 || y < 0 || y > 1) return;
+    onTocar({ x: Math.round(x * 10000) / 10000, y: Math.round(y * 10000) / 10000 });
+  };
+  return h("div", null,
+    h("div", { className: "arm-visor", "data-armador": "visor" },
+      h("div", { className: "arm-lienzo", style: { width: zoom * 100 + "%" }, onClick: tocar, "data-armador": "lienzo" },
+        h("img", { ref: imgRef, src: plano.src, alt: plano.nombre || "Plano", draggable: false }),
+        pines.map(p => h("div", {
+          key: p.i,
+          className: "arm-pin" + (sel === p.i ? " sel" : ""),
+          "data-pin": p.n,
+          title: p.titulo,
+          style: { left: p.x * 100 + "%", top: p.y * 100 + "%" },
+          onClick: e => { e.stopPropagation(); onPin(p.i); }
+        }, p.n)),
+        punto && h("div", { className: "arm-pin nuevo", "data-pin": "nuevo", style: { left: punto.x * 100 + "%", top: punto.y * 100 + "%" } }))),
+    h("div", { className: "arm-cab", style: { marginTop: 8, marginBottom: 0 } },
+      h("span", { style: { fontSize: 11, color: "#888", marginRight: "auto" } }, pines.length + (pines.length === 1 ? " componente ubicado" : " componentes ubicados")),
+      h("button", { onClick: () => setZoom(z => Math.max(1, z / 1.5)), disabled: zoom <= 1, title: "Alejar" }, "−"),
+      h("button", { onClick: () => setZoom(z => Math.min(6, z * 1.5)), title: "Acercar" }, "+"),
+      h("button", { onClick: () => setZoom(1), title: "Ver completo" }, "Completo")));
+}
+/** El botón de subir plano, para el paso nuevo y para «Cambiar plano». */
+function BotonPlano({ etiqueta, onPlano, estilo }) {
+  const h = React.createElement;
+  const [leyendo, setLeyendo] = useState(false);
+  const [error, setError] = useState("");
+  const elegir = async e => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!f) return;
+    setError("");
+    setLeyendo(true);
+    try { onPlano(await leerPlano(f)); } catch (err) { setError("No se pudo leer «" + f.name + "»: " + (err && err.message || err)); } finally { setLeyendo(false); }
+  };
+  return h("span", { style: { display: "inline-flex", flexDirection: "column", gap: 4 } },
+    h("label", { style: { ...(estilo || {}), cursor: leyendo ? "wait" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" } },
+      leyendo ? "Leyendo el plano…" : etiqueta,
+      h("input", { type: "file", accept: "image/*,application/pdf", "data-armador": "subir-plano", onChange: elegir, disabled: leyendo, style: { display: "none" } })),
+    error && h("span", { style: { color: "#c0392b", fontSize: 12 } }, error));
+}
+/** El primer paso de «Agregar mueble»: subir un plano o una foto, o seguir
+ *  como siempre. */
+function PasoPlano({ plano, setPlano, onSeguir, onCancelar }) {
+  const h = React.createElement;
+  return h(Card, null,
+    h(PhaseLbl, { num: "1" }, "Plano o imagen del mueble"),
+    h("div", { style: { fontSize: 13, color: "#666", marginBottom: 14, fontFamily: "Raleway,sans-serif" } },
+      "Sube el plano o una foto y vas a poner cada componente sobre ella. Puede ser una imagen o un PDF (se usa su primera página)."),
+    plano && h("div", { style: { marginBottom: 14, border: "1px solid #D8D4CD", borderRadius: 6, padding: 8, background: "#fff" } },
+      h("img", { src: plano.src, alt: plano.nombre, "data-armador": "vista-previa", style: { display: "block", maxWidth: "100%", maxHeight: 280, margin: "0 auto" } }),
+      h("div", { style: { fontSize: 11, color: "#888", marginTop: 6, textAlign: "center" } }, plano.nombre)),
+    h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+      h(BotonPlano, { etiqueta: plano ? "Cambiar plano o imagen" : "📄 Subir plano o imagen", onPlano: setPlano, estilo: { ...st.btn, padding: "10px 16px", fontWeight: 700, color: "#0080C1", borderColor: "#0080C1" } }),
+      h(Btn, { primary: true, onClick: onSeguir, style: { flex: 1, minWidth: 180 } }, plano ? "Continuar con este plano →" : "Seguir sin plano →")),
+    h("div", { style: { marginTop: 10 } }, h(Btn, { onClick: onCancelar }, "Cancelar")));
+}
+/** El paso de componentes con plano: el plano a la izquierda y, a la derecha,
+ *  lo de siempre —el menú de componentes, lo que se va armando y los
+ *  botones—. Sin plano, es exactamente la pantalla de antes. */
+function ArmadorSobrePlano({ plano, pines, punto, sel, onTocar, onPin, onPlano, onQuitarPlano, children }) {
+  const h = React.createElement;
+  if (!plano) {
+    return h("div", null,
+      h("div", { style: { marginBottom: 8, display: "flex", justifyContent: "flex-end" } },
+        h(BotonPlano, { etiqueta: "📄 Subir plano o imagen", onPlano, estilo: { ...st.btn, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: "#0080C1", borderColor: "#0080C1" } })),
+      children);
+  }
+  return h("div", { className: "arm-plano", "data-armador": "con-plano" },
+    h("style", null, PLANO_CSS),
+    h("div", { className: "arm-grid" },
+      h("div", { className: "arm-izq" },
+        h("div", { className: "arm-cab" },
+          h("b", { title: plano.nombre }, plano.nombre || "Plano"),
+          h(BotonPlano, { etiqueta: "Cambiar", onPlano, estilo: { font: "inherit", fontSize: 12, fontWeight: 600, border: "1px solid #D8D4CD", background: "#fff", borderRadius: 3, padding: "4px 9px" } }),
+          h("button", { onClick: onQuitarPlano, title: "Quitar el plano (los componentes se quedan)" }, "Quitar")),
+        h("div", { className: "arm-aviso" + (punto ? " listo" : ""), "data-armador": "aviso" },
+          punto ? "Punto marcado. Escoge a la derecha el componente que va ahí →" : "Toca el plano donde va el siguiente componente."),
+        h(VisorPlano, { plano, pines, punto, sel, onTocar, onPin })),
+      h("div", { className: "arm-der" }, children)));
+}
+
 function Cotizador({
   cotIni,
   onGuardar,
@@ -5970,6 +6168,11 @@ function Cotizador({
   const [mod, setMod] = useState(null);
   const [modK, setModK] = useState(0);
   const [comps, setComps] = useState([]);
+  // El plano del mueble que se está armando, el punto recién tocado y el
+  // componente escogido (por su lugar en `comps`). Ver ArmadorSobrePlano.
+  const [plano, setPlano] = useState(null);
+  const [punto, setPunto] = useState(null);
+  const [selComp, setSelComp] = useState(null);
   const [nomMueble, setNomMueble] = useState("");
   const [nomOk, setNomOk] = useState(false);
   const [imgs, setImgs] = useState((cotIni === null || cotIni === void 0 ? void 0 : cotIni.imagenes) || []);
@@ -6116,7 +6319,10 @@ function Cotizador({
     setMod(null);
     setEditIdx(null);
     setImgs([]);
-    setFase("perfil");
+    setPlano(null);
+    setPunto(null);
+    setSelComp(null);
+    setFase("plano");
   };
   // Registrar intercept de "Volver" del overlay: si está editando, regresar a nav en vez de cerrar
   useEffect(() => {
@@ -6169,7 +6375,12 @@ function Cotizador({
     setPs("int-formato");
     setNomMueble(m.nombre);
     setNomOk(true);
-    setComps([]);
+    // Se abren TODOS sus componentes, no una lista vacía para agregar: así
+    // se pueden quitar, cambiar de cantidad y ver en su lugar del plano.
+    setComps((m.componentes || []).map(c => ({ ...c })));
+    setPlano(m.plano || null);
+    setPunto(null);
+    setSelComp(null);
     setMod(null);
     setEditIdx(i);
     setImgs(m.imagenes || []);
@@ -6426,9 +6637,10 @@ function Cotizador({
     if (editIdx !== null) {
       setMuebles(p => p.map((m, i) => i === editIdx ? {
         ...m,
-        componentes: [...m.componentes, ...comps],
-        total: m.componentes.reduce((s, c) => s + c.subtotal, 0) + tot,
-        imagenes: imgs.length ? imgs : m.imagenes
+        componentes: [...comps],
+        total: tot,
+        imagenes: imgs.length ? imgs : m.imagenes,
+        plano
       } : m));
     } else {
       setMuebles(p => [...p, {
@@ -6438,7 +6650,8 @@ function Cotizador({
         total: tot,
         qty: 1,
         perfil: JSON.parse(JSON.stringify(perfil)),
-        imagenes: imgs
+        imagenes: imgs,
+        plano
       }]);
     }
     setComps([]);
@@ -6457,7 +6670,7 @@ function Cotizador({
     const tot = comps.reduce((s, c) => s + c.subtotal, 0);
     setMuebles(p => p.map((m, i) => {
       if (i !== editIdx) return m;
-      const nuevosComps = comps.length ? [...m.componentes, ...comps] : m.componentes;
+      const nuevosComps = [...comps];
       const nuevoTotal = nuevosComps.reduce((s, c) => s + c.subtotal, 0);
       return {
         ...m,
@@ -6465,7 +6678,8 @@ function Cotizador({
         perfil: JSON.parse(JSON.stringify(perfil)),
         imagenes: imgs.length ? imgs : m.imagenes,
         componentes: nuevosComps,
-        total: nuevoTotal
+        total: nuevoTotal,
+        plano
       };
     }));
     setComps([]);
@@ -7594,8 +7808,18 @@ ${rowHTML}
     },
     onClick: back
   }, "\u270E"));
+  if (fase === "plano") return /*#__PURE__*/React.createElement(PasoPlano, {
+    plano,
+    setPlano,
+    onSeguir: () => setFase("perfil"),
+    onCancelar: () => {
+      setComps([]);
+      setPlano(null);
+      setFase("nav");
+    }
+  });
   if (fase === "perfil") return /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(BtnGuardarCambios, null), /*#__PURE__*/React.createElement(PhaseLbl, {
-    num: "1"
+    num: "2"
   }, "Perfil del mueble"), /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: 14
@@ -7745,7 +7969,40 @@ ${rowHTML}
     },
     onClick: () => setFase("componentes")
   }, "Continuar a componentes \u2192"))));
-  if (fase === "componentes") return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(BtnGuardarCambios, null), /*#__PURE__*/React.createElement(Card, {
+  const pinesArmador = comps.map((c, i) => c.pos ? { i, n: i + 1, x: c.pos.x, y: c.pos.y, titulo: (c.modulo || "") + " " + (c.desc || "") } : null).filter(Boolean);
+  // Lo que se agrega mientras hay un punto marcado se queda en ese punto.
+  const agregarEnPunto = (tipo, data) => {
+    const antes = comps.length, pt = punto;
+    agregar(tipo, data);
+    if (pt) setComps(p => p.map((c, i) => i >= antes && !c.pos ? { ...c, pos: pt } : c));
+    setPunto(null);
+  };
+  if (fase === "componentes") return React.createElement(ArmadorSobrePlano, {
+    plano,
+    pines: pinesArmador,
+    punto,
+    sel: selComp,
+    onTocar: pt => {
+      setPunto(pt);
+      setSelComp(null);
+      // En el teléfono el menú queda abajo del plano: se lleva ahí la vista.
+      if (window.innerWidth < 900) setTimeout(() => { const d = document.querySelector(".arm-der"); d && d.scrollIntoView({ behavior: "smooth", block: "start" }); }, 50);
+    },
+    onPin: i => {
+      setSelComp(i);
+      setPunto(null);
+    },
+    onPlano: pl => {
+      setPlano(pl);
+      setPunto(null);
+    },
+    onQuitarPlano: () => {
+      if (!window.confirm("¿Quitar el plano? Los componentes se quedan, sin su lugar en el plano.")) return;
+      setPlano(null);
+      setPunto(null);
+      setComps(p => p.map(c => { const { pos, ...resto } = c; return resto; }));
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(BtnGuardarCambios, null), /*#__PURE__*/React.createElement(Card, {
     style: {
       marginBottom: 8,
       borderLeft: "3px solid #0080C1",
@@ -7779,7 +8036,7 @@ ${rowHTML}
       letterSpacing: "0.1em",
       marginBottom: 2
     }
-  }, "Paso 1 \u2014 Mueble"), /*#__PURE__*/React.createElement("div", {
+  }, "Paso 2 \u2014 Mueble"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 14,
       fontWeight: 700
@@ -7798,7 +8055,7 @@ ${rowHTML}
       flexShrink: 0
     }
   }, "\u270E Editar"))), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(PhaseLbl, {
-    num: "2"
+    num: "3"
   }, "Componentes"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -7827,12 +8084,15 @@ ${rowHTML}
     }
   }, React.createElement(MODS.find(m => m.id === mod).C, {
     key: mod + "-" + modK,
-    onAgregar: agregar,
+    onAgregar: agregarEnPunto,
     pfAcabado: perfil.fre.acabado,
     pfChapa: perfil.fre.chapa,
     especiales: especiales
   }))), comps.length > 0 && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(CardTitle, null, "Componentes de ", nomMueble), comps.map((c, i) => /*#__PURE__*/React.createElement("div", {
     key: c.id || i,
+    className: selComp === i ? "arm-sel" : undefined,
+    "data-componente": i + 1,
+    onClick: () => c.pos && setSelComp(i),
     style: {
       display: "flex",
       justifyContent: "space-between",
@@ -7853,7 +8113,10 @@ ${rowHTML}
       color: "#0080C1",
       textTransform: "uppercase"
     }
-  }, c.modulo), /*#__PURE__*/React.createElement("div", {
+  }, c.pos && /*#__PURE__*/React.createElement("span", {
+    className: "arm-num",
+    title: "Su lugar en el plano"
+  }, i + 1), c.modulo), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
       fontWeight: 600
@@ -7954,7 +8217,7 @@ ${rowHTML}
       flex: 1
     },
     onClick: confirmar
-  }, "Agregar mueble \u2192"))));
+  }, editIdx !== null ? "Guardar mueble \u2192" : "Agregar mueble \u2192")))));
 
   // NAV: la hoja de cotización (Mike, 23-sep-2026). Lo que había aquí —la
   // lista de muebles con su tabla de componentes y el resumen de cargos— se

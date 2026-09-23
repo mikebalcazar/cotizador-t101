@@ -120,7 +120,14 @@ describe('los tres caminos son uno solo', () => {
   });
 
   test('sólo `fotoAMiniatura` encoge: nadie más toca un canvas', () => {
-    const veces = (app.match(/createElement\("canvas"\)/g) || []).length;
+    /* La única excepción, con nombre: `leerPlano`, el plano del armador
+     * (23-sep). Un plano NO es una foto de muestra: a 300 px no se leen sus
+     * cotas, así que va a otra resolución y también lee PDF. Fuera de esas
+     * dos, nadie crea un canvas. */
+    const plano = app.slice(app.indexOf('async function leerPlano('), app.indexOf('const PLANO_CSS'));
+    assert.ok(plano.length > 0, 'leerPlano existe');
+    assert.equal((plano.match(/createElement\("canvas"\)/g) || []).length, 1, 'el plano tiene su propio y único lienzo');
+    const veces = (app.replace(plano, '').match(/createElement\("canvas"\)/g) || []).length;
     assert.equal(veces, 1, 'hay más de un lugar que crea un canvas para fotos');
   });
 
