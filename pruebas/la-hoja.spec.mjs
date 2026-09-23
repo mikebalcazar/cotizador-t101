@@ -148,7 +148,7 @@ test('una cotización se abre en la hoja, y el mueble vale lo mismo que en el PD
 
     const unit = await leer(p, '[data-precio="0"]');
     assert.ok(unit > 10000, `al cliente no se le cotiza el costo ($${unit})`);
-    assert.equal(unit % 10, 0, 'redondeado a $10, como siempre');
+    assert.equal(unit % 50, 0, 'redondeado de $50 en $50 (Mike, 23-sep)');
     assert.equal(await leer(p, '[data-total="0"]'), unit * 2, 'total del renglón = unitario × cantidad');
     const subtotal = await leer(p, '[data-hoja="subtotal"]');
     const total = await leer(p, '[data-hoja="total"]');
@@ -362,7 +362,8 @@ test('debajo de cada cargo, su monto: los indirectos y los demás suman el preci
     const suma = async () => { let t = 0; for (const k of partes) t += (await p.locator(`[data-cargo="${k}"]`).innerText()) === '—' ? 0 : await cargo(k); return Math.round(t * 100) / 100; };
     assert.equal(await suma(), await cargo('armados'), 'las partes suman el precio de los armados');
     assert.equal(await cargo('armados'), await leer(p, '[data-hoja="subtotal"]'), 'que es lo que dice la hoja');
-    assert.ok(Math.abs(await cargo('redondeo')) < 10 * 2, 'el redondeo son centavos o pesos, no cientos');
+    const red = await cargo('redondeo');
+    assert.ok(red >= 0 && red < 50 * 2, `el redondeo es hacia arriba y de menos de $50 por pieza (${red})`);
 
     // Apagar el flete: su monto se va y el resto sigue cuadrando.
     await p.locator('[data-hoja="cargos"] label', { hasText: 'Flete' }).locator('input').uncheck();
@@ -374,30 +375,80 @@ test('debajo de cada cargo, su monto: los indirectos y los demás suman el preci
   } finally { await ctx.close(); }
 });
 
-test('el PDF cliente da el precio final de cada componente, y aguanta un renglón a mano', async () => {
-  /* Mike, 23-sep: «en el desglose del mueble para el cliente el costo final
-   * por componente (ya incluidos los costos de flete y comisiones prorrateados
-   * en todos los componentes proporcionalmente)». */
+/* Un plano gris de 200×100 para la cotización: basta con que sea una imagen. */
+const PLANO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMgAAABkCAIAAABM5OhcAAAAx0lEQVR42u3SMQ0AAAzDsPIHWwxFMWmHDSFKCgciAcbCWBgLjIWxMBYYC2NhLDAWxsJYYCyMhbHAWBgLY4GxMBbGAmNhLIwFxsJYGAuMhbEwFhgLY2EsMBbGwlhgLIyFscBYGAtjgbEwFsYCY2EsjAXGwlgYC4yFsTAWGAtjYSwwFsbCWGAsjIWxwFgYC2OBsTAWxgJjYSyMBcbCWBgLjIWxMBYYC2NhLDAWxsJYYCyMhbEwFhgLY2EsMBbGwlhgLIyFscBY/Dbu6fH4+vPYCgAAAABJRU5ErkJggg==';
+
+test('el PDF cliente: cada componente con su número, precio unitario de $50 en $50, cantidad y subtotal', async () => {
+  /* Mike, 23-sep: «necesito que en el PDF del cliente venga el costo
+   * unitario y la cantidad por componente y luego el subtotal. Y hay que
+   * redondear de $50 en $50 hacia arriba […] En la lista debe estar el número
+   * del componente». Y que la hoja dé lo mismo (lo escogió él). */
   const mueble = { ...MUEBLE, componentes: [
-    { id: 'c-1', modulo: 'Gabinete', desc: 'Base 60', tags: [], extras: [], unitario: 7000, qty: 1, subtotal: 7000 },
-    { id: 'c-2', modulo: 'Cubierta', desc: 'Cuarzo', tags: [], extras: [], unitario: 3000, qty: 1, subtotal: 3000 },
+    { id: 'c-1', marca: 1, modulo: 'Gabinete', desc: 'Base 60', tags: [], extras: [], unitario: 3500, qty: 2, subtotal: 7000 },
+    { id: 'c-2', marca: 3, modulo: 'Cubierta', desc: 'Cuarzo', tags: [], extras: [], unitario: 3000, qty: 1, subtotal: 3000 },
   ] };
-  const aMano = { id: 'm-2', manual: true, nombre: 'Instalación', qty: 1, precio: 1000, total: 1000, componentes: [], imagenes: [] };
+  const aMano = { id: 'm-2', manual: true, nombre: 'Instalación', qty: 1, precio: 1234, total: 1234, componentes: [], imagenes: [] };
   const cot = { ...COTIZACION, datos: { ...COTIZACION.datos, versiones: [{ ...VERSION, muebles: [mueble, aMano] }] } };
   const { ctx, p, errores } = await abrirApp({ cotizacion: cot });
   try {
     await abrirCotizacion(p);
     const unit = await leer(p, '[data-precio="0"]');
+    assert.equal(await leer(p, '[data-total="1"]'), 1234, 'lo escrito a mano no se redondea');
+    const subtotalHoja = await leer(p, '[data-hoja="subtotal"]');
     const [pdf] = await Promise.all([ctx.waitForEvent('page'), p.getByRole('button', { name: 'PDF cliente con condiciones' }).click()]);
     await pdf.waitForLoadState('domcontentloaded');
-    const celdas = await pdf.locator('[data-precio-comp]').allInnerTexts().catch(() => []);
-    const precios = celdas.map((t) => Number(t.replace(/[^0-9.]/g, '')));
-    assert.equal(precios.length, 2, 'un precio por componente');
-    assert.equal(precios[0] + precios[1], unit, `suman el unitario del mueble (${unit}), con flete y comisiones dentro`);
-    assert.ok(Math.abs(precios[0] - unit * 0.7) <= 1 && Math.abs(precios[1] - unit * 0.3) <= 1, 'en proporción a su costo (70/30)');
+    const filas = await pdf.locator('tr[data-comp]').evaluateAll((trs) => trs.map((tr) => ({
+      num: tr.querySelector('[data-comp-num]').innerText.trim(),
+      unit: Number(tr.querySelector('[data-comp-unit]').innerText.replace(/[^0-9.]/g, '')),
+      cant: Number(tr.querySelector('[data-comp-cant]').innerText.replace(/[^0-9.]/g, '')),
+      sub: Number(tr.querySelector('[data-comp-sub]').innerText.replace(/[^0-9.]/g, '')),
+    }))).catch(() => []);
+    assert.equal(filas.length, 2, 'un renglón por componente');
+    assert.deepEqual(filas.map((f) => f.num), ['1', '3'], 'con el número del componente (el del plano)');
+    assert.deepEqual(filas.map((f) => f.cant), [2, 1], 'y su cantidad');
+    for (const f of filas) {
+      assert.equal(f.unit % 50, 0, `precio unitario de $50 en $50 (${f.unit})`);
+      assert.equal(f.sub, f.unit * f.cant, 'subtotal = unitario × cantidad');
+    }
+    assert.equal(filas[0].sub + filas[1].sub, unit, `los componentes suman el unitario del mueble en la hoja (${unit})`);
+    // Proporción: el gabinete cuesta 70% del mueble; su precio, lo mismo (± el redondeo).
+    assert.ok(Math.abs(filas[0].sub / unit - 0.7) < 0.02, 'repartido según su costo');
     const texto = await pdf.locator('body').innerText();
-    assert.ok(!/\$7,000|\$3,000/.test(texto), 'el costo no se le enseña al cliente');
+    assert.ok(!/\$3,500|\$7,000|\$3,000\b/.test(texto), 'el costo no se le enseña al cliente');
+    assert.ok(texto.includes('$' + subtotalHoja.toLocaleString('es-MX')), `el subtotal del PDF es el de la hoja (${subtotalHoja})`);
     assert.ok(/Instalación/.test(texto), 'el renglón a mano también sale');
+    assert.equal(await pdf.locator('[data-plano-cliente]').count(), 0, 'sin plano, no hay página de plano');
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
+test('al final del PDF cliente, el plano con los círculos numerados en su lugar', async () => {
+  /* Mike, 23-sep: «incluye al final de la propuesta el plano con los íconos
+   * numerados para que el cliente pueda relacionar lo que se está cobrando y
+   * su ubicación». */
+  const mueble = { ...MUEBLE, plano: { src: PLANO_PNG, ancho: 200, alto: 100, nombre: 'cocina.png' }, componentes: [
+    { id: 'c-1', marca: 1, pos: { x: 0.25, y: 0.5 }, modulo: 'Gabinete', desc: 'Base 60', tags: [], extras: [], unitario: 7000, qty: 1, subtotal: 7000 },
+    { id: 'c-2', marca: 2, pos: { x: 0.75, y: 0.2 }, modulo: 'Alacena', desc: 'Alta 90', tags: [], extras: [], unitario: 3000, qty: 1, subtotal: 3000 },
+  ] };
+  const cot = { ...COTIZACION, datos: { ...COTIZACION.datos, versiones: [{ ...VERSION, muebles: [mueble] }] } };
+  const { ctx, p, errores } = await abrirApp({ cotizacion: cot });
+  try {
+    await abrirCotizacion(p);
+    const [pdf] = await Promise.all([ctx.waitForEvent('page'), p.getByRole('button', { name: 'PDF cliente con condiciones' }).click()]);
+    await pdf.waitForLoadState('load');
+    const plano = pdf.locator('[data-plano-cliente]');
+    assert.equal(await plano.count(), 1, 'una página con el plano del mueble');
+    const img = await plano.locator('img').boundingBox();
+    const pines = await plano.locator('.pin').evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(); return { n: e.innerText.trim(), x: r.x + r.width / 2, y: r.y + r.height / 2 }; }));
+    assert.deepEqual(pines.map((q) => q.n), ['1', '2'], 'un círculo por componente, con su número');
+    const donde = pines.map((q) => [(q.x - img.x) / img.width, (q.y - img.y) / img.height]);
+    assert.ok(Math.abs(donde[0][0] - 0.25) < 0.01 && Math.abs(donde[0][1] - 0.5) < 0.02, `el 1 donde se puso en el plano (${donde[0]})`);
+    assert.ok(Math.abs(donde[1][0] - 0.75) < 0.01 && Math.abs(donde[1][1] - 0.2) < 0.02, `el 2 también (${donde[1]})`);
+    const orden = await pdf.evaluate(() => {
+      const t = document.body.textContent; // innerText sale en mayúsculas por el CSS
+      return [t.indexOf('Ubicación de los componentes'), t.indexOf('Anexo de T\u00e9rminos')];
+    });
+    assert.ok(orden[0] > 0 && orden[0] < orden[1], 'al final de la propuesta, antes de las condiciones');
     assert.deepEqual(errores, [], 'sin errores de JavaScript');
   } finally { await ctx.close(); }
 });
