@@ -306,20 +306,25 @@ test('se ponen todos los componentes primero y se configuran al final: rojo sin 
 
 test('si se publica una versión nueva con la pestaña abierta, el cotizador lo avisa', async () => {
   /* Lo que le pasó a Mike con G87: probó en una pestaña abierta desde antes
-   * y le funcionaba como la versión anterior. */
+   * y le funcionaba como la versión anterior. Se revisa al volver a la
+   * pestaña (visibilitychange) y cada 2 minutos. */
   const { ctx, p, errores } = await abrirApp();
   try {
-    let huella = 'a'.repeat(64);
-    await p.route('**/huella.txt', (r) => r.fulfill({ status: 200, contentType: 'text/plain', body: huella + '\n' }));
+    // Se cuenta cuántas veces pregunta la app, para no depender del reloj:
+    // bajo carga, la primera pregunta puede tardar más que cualquier espera fija.
+    let huella = 'a'.repeat(64), preguntas = 0;
+    await p.route('**/huella.txt', (r) => { preguntas++; return r.fulfill({ status: 200, contentType: 'text/plain', body: huella + '\n' }); });
     await p.reload({ waitUntil: 'domcontentloaded' });
     await p.waitForFunction(() => document.querySelectorAll('#root *').length > 10);
-    await p.waitForTimeout(500);
-    await p.evaluate(() => window.dispatchEvent(new Event('focus')));
-    await p.waitForTimeout(300);
+    const hasta = async (cond, ms = 15000) => { const fin = Date.now() + ms; while (!(await cond())) { if (Date.now() > fin) assert.fail('no pasó a tiempo'); await p.waitForTimeout(50); } };
+    await hasta(() => preguntas >= 1);
+    await p.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await hasta(() => preguntas >= 2);
+    await p.waitForTimeout(200);
     assert.equal(await p.locator('[data-version-nueva]').count(), 0, 'con la misma versión, nada');
     huella = 'b'.repeat(64);
-    await p.evaluate(() => window.dispatchEvent(new Event('focus')));
-    await p.waitForSelector('[data-version-nueva]', { timeout: 5000 });
+    await p.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await p.waitForSelector('[data-version-nueva]', { timeout: 10000 });
     assert.ok(/versión nueva/.test(await p.locator('[data-version-nueva]').innerText()));
     await Promise.all([p.waitForEvent('load'), p.getByRole('button', { name: 'Recargar' }).click()]);
     assert.deepEqual(errores, [], 'sin errores de JavaScript');
