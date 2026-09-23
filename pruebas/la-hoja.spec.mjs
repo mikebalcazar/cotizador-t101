@@ -64,7 +64,7 @@ const COTIZACION = {
 };
 const PRODUCTO = { id: 'pd-1', negocio_id: 'n-1', codigo: 'PT-STD', nombre: 'Puerta estándar', descripcion: 'Tambor 90×210, chapa de encino', precio: 250000, moneda: 'MXN' };
 
-async function abrirApp() {
+async function abrirApp({ cotizacion = COTIZACION } = {}) {
   const ctx = await navegador.newContext({ viewport: { width: 1280, height: 900 } });
   const p = await ctx.newPage();
   const errores = [];
@@ -79,13 +79,17 @@ async function abrirApp() {
     if (metodo !== 'GET') {
       const cuerpo = route.request().postDataJSON?.() ?? null;
       escrituras.push({ metodo, ruta: r, cuerpo });
+      if (/\/aprobar$/.test(r)) {
+        const piezas = cuerpo.lineas.reduce((s, l) => s + l.cantidad, 0);
+        return route.fulfill({ ...ok({ cotizacion: { id: 'q-1', estado: 'aceptada', datos: { aprobacion: { at: '2026-09-23T18:00:00Z', items: piezas } } }, items: piezas, productos_nuevos: 1 }), status: 201 });
+      }
       return route.fulfill({ ...ok({ id: 'nuevo-' + (++n), folio: 'C-0099', ...(cuerpo || {}) }), status: metodo === 'POST' ? 201 : 200 });
     }
     if (r === '/yo') return route.fulfill(ok({ usuario: { correo: 'mike@ejemplo.mx' }, orgs: [{ id: 'org-1', nombre: 'Taller de prueba' }] }));
     if (r === '/orgs/org-1/negocios') return route.fulfill(ok({ filas: [{ id: 'n-1', nombre: 'Taller', moneda: 'MXN' }] }));
     if (r === '/orgs/org-1/clientes') return route.fulfill(ok({ filas: [CLIENTE] }));
     if (r === '/orgs/org-1/proyectos') return route.fulfill(ok({ filas: [PROYECTO] }));
-    if (r === '/orgs/org-1/cotizaciones') return route.fulfill(ok({ filas: [COTIZACION] }));
+    if (r === '/orgs/org-1/cotizaciones') return route.fulfill(ok({ filas: [cotizacion] }));
     if (r === '/orgs/org-1/productos') return route.fulfill(ok({ filas: [PRODUCTO] }));
     return route.fulfill(ok({ filas: [] }));
   });
@@ -236,6 +240,93 @@ test('«Nueva cotización» abre la hoja en blanco, y se imprime sin botones', a
     assert.ok(/GRAN TOTAL/.test(t) && /Closet vestidor/.test(t), 'imprime la hoja con lo escrito');
     assert.ok(/52,200/.test(t), 'con su total con IVA');
     assert.equal(await imp.locator('button, input, textarea').count(), 0, 'sin botones ni cajas de texto');
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
+test('una cotización nueva se da de alta UNA vez, aunque se guarde muchas', async () => {
+  /* El defecto que salió al medir la hoja: la suite le pone su id a la nueva
+   * y el cotizador seguía buscándola con el inventado, así que cada guardado
+   * automático la daba de alta otra vez, con otro folio. */
+  const { ctx, p, errores, escrituras } = await abrirApp();
+  try {
+    await alProyecto(p);
+    await p.getByText(/Nueva cotizaci[oó]n/).first().click();
+    await p.waitForSelector('[data-pantalla="hoja"]');
+    await p.getByRole('button', { name: '+ A mano' }).click();
+    await p.waitForTimeout(1000);
+    await p.locator('[data-campo="nombre-0"]').fill('Closet');
+    await p.waitForTimeout(1000);
+    await p.locator('[data-campo="precio-0"]').fill('45000');
+    await p.waitForTimeout(150);
+    await p.locator('[data-campo="cantidad-0"]').fill('2');
+    await p.waitForTimeout(1500);
+    const altas = escrituras.filter((e) => e.metodo === 'POST' && e.ruta === '/orgs/org-1/cotizaciones');
+    const cambios = escrituras.filter((e) => e.metodo === 'PATCH' && e.ruta.startsWith('/orgs/org-1/cotizaciones/'));
+    assert.equal(altas.length, 1, 'una sola alta');
+    assert.ok(cambios.length >= 1, 'lo demás son cambios a esa misma');
+    assert.ok(cambios.every((e) => e.ruta === '/orgs/org-1/cotizaciones/nuevo-1'), 'con el id que dio la suite');
+    assert.equal(escrituras.filter((e) => e.metodo === 'DELETE').length, 0, 'y nada se borra');
+    assert.equal(await p.locator('[data-hoja="folio"]').innerText(), 'C-0099', 'la hoja ya dice el folio que le dio la suite');
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
+test('«Aprobar» manda cada renglón con su cantidad y su precio con descuento, y la deja cerrada', async () => {
+  const { ctx, p, errores, escrituras } = await abrirApp();
+  const dialogos = [];
+  p.on('dialog', (d) => { dialogos.push(d.message()); d.accept(); });
+  try {
+    await abrirCotizacion(p);
+    await p.getByRole('button', { name: /Editar cotización/ }).click();
+    await p.getByRole('button', { name: '+ A mano' }).click();
+    await p.locator('[data-campo="nombre-1"]').fill('Instalación en sitio');
+    await p.locator('[data-campo="precio-1"]').fill('1000');
+    await p.locator('[data-campo="descuento"]').fill('10');
+    await p.waitForTimeout(900);
+    const unit = await leer(p, '[data-precio="0"]');
+
+    await p.getByRole('button', { name: 'Aprobar', exact: true }).click();
+    await p.waitForSelector('[data-hoja="aprobada"]', { timeout: 10000 });
+    assert.ok(/Se crean 3 piezas vendidas en el proyecto «Departamento Lomas»/.test(dialogos.join('\n')), 'antes pregunta, y dice cuántas piezas y dónde');
+
+    const i = escrituras.findIndex((e) => /\/cotizaciones\/q-1\/aprobar$/.test(e.ruta));
+    assert.ok(i >= 0, 'le pidió a la suite aprobarla');
+    const ultimoGuardado = escrituras.map((e, k) => (e.metodo === 'PATCH' && /cotizaciones\/q-1$/.test(e.ruta) ? k : -1)).filter((k) => k >= 0);
+    assert.ok(ultimoGuardado.some((k) => k < i), 'guardó lo último escrito ANTES de aprobar');
+    const { proyecto_id, lineas } = escrituras[i].cuerpo;
+    assert.equal(proyecto_id, 'pr-1');
+    assert.equal(lineas.length, 2, 'un renglón, una línea');
+    assert.deepEqual(
+      { nombre: lineas[0].nombre, cantidad: lineas[0].cantidad, precio: lineas[0].precio, descripcion: lineas[0].descripcion },
+      { nombre: 'Cocina integral', cantidad: 2, precio: Math.round(unit * 0.9 * 100), descripcion: 'Gabinete Base 60' },
+      'el mueble: su cantidad, su precio de la hoja con el 10% repartido, en centavos, y lo que lleva',
+    );
+    assert.deepEqual({ nombre: lineas[1].nombre, cantidad: lineas[1].cantidad, precio: lineas[1].precio }, { nombre: 'Instalación en sitio', cantidad: 1, precio: 90000 });
+
+    assert.ok(/Aprobada el 23 de septiembre de 2026 · 3 piezas en el proyecto/.test(await p.locator('[data-hoja="aprobada"]').innerText()));
+    assert.equal(await p.getByRole('button', { name: 'Aprobar', exact: true }).count(), 0, 'no se aprueba dos veces');
+    assert.equal(await p.locator('[data-campo="nombre-0"]').getAttribute('readonly'), '', 'y ya no se edita');
+    const antes = escrituras.length;
+    await p.waitForTimeout(900);
+    assert.equal(escrituras.slice(antes).filter((e) => e.metodo === 'PATCH').length, 0, 'ni se sigue guardando sola');
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
+test('una cotización aprobada se ve aprobada, en el menú y en la hoja, y no se puede editar', async () => {
+  const aprobada = { ...COTIZACION, estado: 'aceptada', datos: { ...COTIZACION.datos, aprobacion: { at: '2026-09-22T18:00:00Z', items: 2 } } };
+  const { ctx, p, errores, escrituras } = await abrirApp({ cotizacion: aprobada });
+  try {
+    await alProyecto(p);
+    assert.ok(/Folio C-0007 · aprobada/i.test(await p.locator('#root').innerText()), 'el menú dice que está aprobada');
+    await p.getByText('Corrida 1').first().click();
+    await p.waitForSelector('[data-hoja="aprobada"]', { timeout: 10000 });
+    assert.equal(await p.getByRole('button', { name: /Editar cotización/ }).count(), 0, 'sin «Editar»');
+    assert.equal(await p.getByRole('button', { name: 'Aprobar', exact: true }).count(), 0, 'ni «Aprobar»');
+    assert.equal(await p.getByRole('button', { name: 'Imprimir / PDF' }).count(), 1, 'pero se sigue imprimiendo');
+    await p.waitForTimeout(800);
+    assert.equal(escrituras.length, 0, 'abrirla no escribe nada');
     assert.deepEqual(errores, [], 'sin errores de JavaScript');
   } finally { await ctx.close(); }
 });
