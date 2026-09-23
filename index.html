@@ -1098,7 +1098,7 @@ window.suiteDB = {
       const porProyecto = new Map();
       for (const q of (cots.data?.filas || [])) {
         const datos = q.datos || {};
-        const cot = { id: q.id, nombre: datos.nombre || 'Cotización', folio: q.folio, versiones: datos.versiones || [] };
+        const cot = { id: q.id, nombre: datos.nombre || 'Cotización', folio: q.folio, versiones: datos.versiones || [], estado: q.estado || 'borrador', aprobacion: datos.aprobacion || null };
         const pid = datos.proyecto_id || '';
         if (!porProyecto.has(pid)) porProyecto.set(pid, []);
         porProyecto.get(pid).push(cot);
@@ -1326,6 +1326,17 @@ window.suiteDB = {
     const r = await pedir(`/orgs/${ORG}/productos?negocio_id=${encodeURIComponent(NEGOCIO)}&limite=5000`);
     if (r.estado !== 200 || !Array.isArray(r.data?.filas)) throw new Error(r.error || String(r.estado));
     return r.data.filas;
+  },
+
+  /** Aprueba la cotización: la suite crea sus piezas vendidas en el
+   *  proyecto, una por unidad (contrato 0.46.0). `lineas[].precio` es el de
+   *  UNA pieza en centavos, con el descuento ya repartido. Devuelve la
+   *  respuesta entera para que la hoja pueda decir por qué no se pudo. */
+  async aprobar(cotizacion_id, proyecto_id, lineas) {
+    await identidad();
+    return pedir(`/orgs/${ORG}/cotizaciones/${encodeURIComponent(cotizacion_id)}/aprobar`, {
+      method: 'POST', cuerpo: { proyecto_id, lineas },
+    });
   },
 
   async clientesParecidos(nombre) {
@@ -3346,7 +3357,7 @@ function PantallaInicio({
           }
         }, /*#__PURE__*/React.createElement("span", {
           className: "num"
-        }, MOSTRAR_HISTORIAL ? ((_cot$versiones5 = cot.versiones) === null || _cot$versiones5 === void 0 ? void 0 : _cot$versiones5.length) || 0 : cot.folio ? "Folio " + cot.folio : "Sin folio"), MOSTRAR_HISTORIAL ? " versi\xF3n" + (((_cot$versiones6 = cot.versiones) === null || _cot$versiones6 === void 0 ? void 0 : _cot$versiones6.length) !== 1 ? "es" : "") : "", tieneVersiones && /*#__PURE__*/React.createElement("button", {
+        }, MOSTRAR_HISTORIAL ? ((_cot$versiones5 = cot.versiones) === null || _cot$versiones5 === void 0 ? void 0 : _cot$versiones5.length) || 0 : (cot.folio ? "Folio " + cot.folio : "Sin folio") + (cot.estado === "aceptada" ? " · aprobada" : "")), MOSTRAR_HISTORIAL ? " versi\xF3n" + (((_cot$versiones6 = cot.versiones) === null || _cot$versiones6 === void 0 ? void 0 : _cot$versiones6.length) !== 1 ? "es" : "") : "", tieneVersiones && /*#__PURE__*/React.createElement("button", {
           onClick: e => {
             e.stopPropagation();
             toggleCot(cot.id);
@@ -4104,7 +4115,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G84";
+const APP_VERSION = "G85";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -5597,6 +5608,7 @@ const HOJA_CSS = `
 .hoja .h-cargos{display:flex;flex-wrap:wrap;gap:13.6px;align-items:center;font-size:12.5px;color:var(--h-muted);padding:6.8px 0 0}
 .hoja .h-cargos label{display:inline-flex;gap:5px;align-items:center;cursor:pointer}
 .hoja .h-aviso{font-size:12px;color:var(--h-muted);margin-top:6.8px}
+.hoja .h-aprobada{font-size:13px;padding:6px 10px;border:1px solid var(--h-accent);color:var(--h-accent-800);background:color-mix(in srgb,var(--h-accent) 10%,transparent)}
 .hoja-velo{position:fixed;inset:0;display:grid;place-items:center;padding:13.6px;background:color-mix(in srgb,#2b2b2d 50%,transparent);z-index:3000}
 .hoja-velo .dialog{position:relative;width:min(760px,100%);max-height:84vh;display:flex;flex-direction:column;gap:10.2px;padding:13.6px;background:#fbfbfc;border:1px solid var(--h-divider);box-shadow:0 12px 32px color-mix(in srgb,#2b2b2d 22%,transparent);left:auto;transform:none}
 .hoja-velo .h-cat{overflow:auto}
@@ -5692,6 +5704,8 @@ function HojaCotizacion({
   onBack,
   onEditarCot,
   onGuardar,
+  aprobacion,
+  onAprobar,
   nuevoMueble,
   editarMueble,
   exportPDF,
@@ -5703,7 +5717,9 @@ function HojaCotizacion({
   const hojaRef = useRef(null);
   const [catalogo, setCatalogo] = useState(null); // null = cerrado
   const [busqueda, setBusqueda] = useState("");
-  const soloVer = !!(modoVer || readonly);
+  const [aprobando, setAprobando] = useState(false);
+  // Aprobada es lo que se vendió: se ve, se imprime, pero ya no se cambia.
+  const soloVer = !!(modoVer || readonly || aprobacion);
   const campo = k => ({
     "data-campo": k,
     value: hoja[k] === undefined || hoja[k] === null ? "" : hoja[k],
@@ -5762,6 +5778,30 @@ function HojaCotizacion({
   const esquinas = () => ["tl", "tr", "bl", "br"].map(k => h("i", { key: k, className: "corner " + k }));
   const hayArmados = muebles.some(m => !esManual(m));
 
+  /* Aprobar (Mike, 23-sep): cada renglón se vuelve tantas piezas como su
+   * cantidad, vendidas, en el proyecto. El precio de cada pieza es el de la
+   * hoja con el descuento repartido, en centavos, para que el precio de venta
+   * del proyecto sea lo que el cliente aprobó (sin IVA, que el proyecto lleva
+   * aparte). */
+  const aprobar = async () => {
+    const sinNombre = muebles.findIndex(m => !String(m.nombre || "").trim());
+    if (sinNombre >= 0) { window.alert("El renglón " + (sinNombre + 1) + " no tiene nombre. Ponle nombre antes de aprobar: así se va a llamar la pieza en la obra."); return; }
+    const piezas = muebles.reduce((s, m) => s + (m.qty || 1), 0);
+    if (!window.confirm("¿Aprobar la cotización?\n\nSe crean " + piezas + (piezas === 1 ? " pieza vendida" : " piezas vendidas") + " en el proyecto «" + (proyectoNombre || "") + "» por " + hojaDinero(base) + " más IVA.\n\nDespués ya no se puede editar: para cambiarla se hace otra corrida.")) return;
+    const lineas = muebles.map((m, i) => ({
+      nombre: String(m.nombre).trim(),
+      descripcion: String(m.descripcion || "").trim() || (esManual(m) ? null : resumenArmado(m) || null),
+      codigo: String(m.codigo || "").trim() || null,
+      tipo: "mueble",
+      cantidad: m.qty || 1,
+      precio: Math.round((precios.unitarios[i] || 0) * (1 - desc / 100) * 100),
+      producto_id: m.producto_id || null
+    }));
+    setAprobando(true);
+    try { await onAprobar(lineas); } finally { setAprobando(false); }
+  };
+  const fechaAprobada = aprobacion && aprobacion.at ? new Date(aprobacion.at).toLocaleDateString("es-MX", { day: "numeric", month: "long", year: "numeric" }) : null;
+
   const barra = h("div", { className: "h-bar no-print" },
     h("div", { className: "h-marca" }, "COTIZADOR"),
     // En el teléfono se esconde: el panel del cotizador ya trae su «Volver».
@@ -5769,9 +5809,11 @@ function HojaCotizacion({
     !soloVer && h("button", { className: "btn", onClick: nuevoMueble }, "+ Agregar mueble"),
     !soloVer && h("button", { className: "btn", onClick: () => renglonAMano() }, "+ A mano"),
     !soloVer && h("button", { className: "btn", onClick: abrirCatalogo }, "Buscar en catálogo"),
-    modoVer && !readonly && h("button", { className: "btn", onClick: () => onEditarCot && onEditarCot() }, "✎ Editar cotización"),
+    modoVer && !readonly && !aprobacion && h("button", { className: "btn", onClick: () => onEditarCot && onEditarCot() }, "✎ Editar cotización"),
     h("button", { className: "btn", onClick: () => imprimirHoja(hojaRef.current, (folio ? folio + " · " : "") + (cotNombre || "Cotización")) }, "Imprimir / PDF"),
-    !soloVer && h("button", { className: "btn btn-primary", onClick: onGuardar }, "Guardar"));
+    !soloVer && h("button", { className: "btn", onClick: onGuardar }, "Guardar"),
+    !aprobacion && !readonly && onAprobar && muebles.length > 0 && h("button", { className: "btn btn-primary", disabled: aprobando, onClick: aprobar }, aprobando ? "Aprobando…" : "Aprobar"),
+    aprobacion && h("span", { className: "h-aprobada", "data-hoja": "aprobada" }, "✓ Aprobada" + (fechaAprobada ? " el " + fechaAprobada : "") + (aprobacion.items ? " · " + aprobacion.items + (aprobacion.items === 1 ? " pieza" : " piezas") + " en el proyecto" : "")));
 
   const encabezado = h("div", { className: "h-enc" },
     h("div", { style: { display: "flex", gap: 13.6, alignItems: "center", minWidth: 0 } },
@@ -5907,7 +5949,8 @@ function Cotizador({
   readonly = false,
   readonlyInfo = null,
   especiales = [],
-  onSaveEspecial
+  onSaveEspecial,
+  onAprobar
 }) {
   const [muebles, setMuebles] = useState((cotIni === null || cotIni === void 0 ? void 0 : cotIni.muebles) || []);
   const [fase, setFase] = useState("nav");
@@ -6136,7 +6179,8 @@ function Cotizador({
   const isFirstAutosave = useRef(true);
   useEffect(() => {
     if (isFirstAutosave.current) { isFirstAutosave.current = false; return; }
-    if (typeof onGuardar !== "function" || readonly || modoVer) return;
+    // Aprobada ya no se guarda: la suite la rechazaría (409), y con razón.
+    if (typeof onGuardar !== "function" || readonly || modoVer || cotIni !== null && cotIni !== void 0 && cotIni.aprobacion) return;
     const handle = setTimeout(() => {
       try {
         onGuardar({
@@ -7950,6 +7994,19 @@ ${rowHTML}
       hoja,
       fecha: new Date().toISOString()
     }),
+    aprobacion: cotIni === null || cotIni === void 0 ? void 0 : cotIni.aprobacion,
+    onAprobar: typeof onAprobar === "function" ? lineas => onAprobar({
+      muebles,
+      totalFinal: tF,
+      usaFlete: usaF,
+      usaArq: usaA,
+      usaTDC: usaT,
+      descuento,
+      nombre: cotNombre,
+      materiales,
+      hoja,
+      fecha: new Date().toISOString()
+    }, lineas) : null,
     nuevoMueble,
     editarMueble,
     exportPDF,
@@ -9335,6 +9392,11 @@ function PantallaConfig({
 function App() {
   var _cl$proyectos2, _nav$cot$versiones, _nav$cot$versiones2, _nav$cot$versiones3, _nav$cot$versiones4, _nav$cot$versiones5, _nav$cot$versiones6, _nav$cliente2, _nav$proyecto2, _nav$cliente3, _nav$proyecto3;
   const [clientes, setClientes] = useState([]);
+  // El árbol más reciente, para los guardados que van en fila (ver guardarCot).
+  const arbolRef = useRef(clientes);
+  arbolRef.current = clientes;
+  const colaCotRef = useRef(Promise.resolve());
+  const idSuiteRef = useRef({});
   const [loading, setLoading] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [nav, setNav] = useState({
@@ -9434,7 +9496,10 @@ function App() {
     setGuardando(true);
     const ok = await window.suiteDB.guardar(data);
     setGuardando(false);
-    if (!ok) alert("❌ Error al guardar. Verifica tu conexión e intenta de nuevo.");else setClientes(data);
+    if (!ok) alert("❌ Error al guardar. Verifica tu conexión e intenta de nuevo.");else {
+      arbolRef.current = data;
+      setClientes(data);
+    }
     return ok;
   };
 
@@ -9660,7 +9725,26 @@ function App() {
     vi,
     originRect: rect
   }));
-  const guardarCot = async data => {
+  /* UNA COTIZACIÓN NUEVA SE DABA DE ALTA EN CADA GUARDADO (23-sep-2026).
+   *
+   * Una cotización nueva nace con un id inventado aquí; la primera vez que se
+   * guarda, la suite le pone el suyo (`suiteDB.guardar` se lo escribe
+   * encima). Pero `nav.cot` se quedaba con el inventado, así que el siguiente
+   * guardado automático no la encontraba en el árbol, la volvía a agregar y la
+   * suite la daba de alta OTRA VEZ, con otro folio: una copia por cada pausa
+   * al escribir. Y dos guardados encimados —el automático es a los 400 ms y
+   * la suite tarda más— leían el mismo árbol viejo.
+   *
+   * Ahora los guardados de la cotización van en fila, cada uno sobre el árbol
+   * que dejó el anterior, y el id que da la suite se recuerda. */
+  const guardarCot = data => {
+    const turno = colaCotRef.current.then(() => guardarCotAhora(data));
+    colaCotRef.current = turno.catch(() => {});
+    return turno;
+  };
+  const guardarCotAhora = async data => {
+    const clientes = arbolRef.current;
+    const cotId = idSuiteRef.current[nav.cot.id] || nav.cot.id;
     const nuevoNombre = data.nombre;
     const silent = !!data.silent;
     const ver = {
@@ -9676,33 +9760,40 @@ function App() {
       if (silent && arr.length > 0) return [ver, ...arr.slice(1)];
       return [ver, ...arr];
     };
+    let nueva = null;
     const n = clientes.map(c => {
       if (c.id !== nav.cliente.id) return c;
       return {
         ...c,
         proyectos: (c.proyectos || []).map(p => {
           if (p.id !== nav.proyecto.id) return p;
-          const e = (p.cotizaciones || []).find(ct => ct.id === nav.cot.id);
+          const e = (p.cotizaciones || []).find(ct => ct.id === cotId);
           if (e) return {
             ...p,
-            cotizaciones: p.cotizaciones.map(ct => ct.id === nav.cot.id ? {
+            cotizaciones: p.cotizaciones.map(ct => ct.id === cotId ? {
               ...ct,
               nombre: nuevoNombre || ct.nombre,
               versiones: mergeVersiones(ct.versiones)
             } : ct)
           };
+          nueva = {
+            ...nav.cot,
+            nombre: nuevoNombre || nav.cot.nombre,
+            versiones: [ver]
+          };
           return {
             ...p,
-            cotizaciones: [...(p.cotizaciones || []), {
-              ...nav.cot,
-              nombre: nuevoNombre || nav.cot.nombre,
-              versiones: [ver]
-            }]
+            cotizaciones: [...(p.cotizaciones || []), nueva]
           };
         })
       };
     });
     const ok = await save(n);
+    // La suite le puso su id y su folio a la nueva: de aquí en adelante es ésa.
+    if (ok && nueva && nueva.id !== nav.cot.id) {
+      idSuiteRef.current[nav.cot.id] = nueva.id;
+      setNav(v => v.cot && v.cot.id === nav.cot.id ? { ...v, cot: { ...v.cot, id: nueva.id, folio: nueva.folio } } : v);
+    }
     if (ok && !silent) {
       setExpandirEnInicio({
         cliente: nav.cliente.id,
@@ -9718,6 +9809,31 @@ function App() {
         originRect: null
       });
     }
+  };
+  /* Aprobar (Mike, 23-sep): primero se guarda lo último que se escribió —en
+   * la misma fila que los guardados automáticos, para no encimarse—, y luego
+   * la suite crea las piezas. Si la suite dice que no, no se toca nada aquí. */
+  const aprobarCot = async (data, lineas) => {
+    await guardarCot({ ...data, silent: true });
+    const cotId = idSuiteRef.current[nav.cot.id] || nav.cot.id;
+    const r = await window.suiteDB.aprobar(cotId, nav.proyecto.id, lineas);
+    if (r.estado !== 201) {
+      const porQue = r.error === 'ya_aprobada' ? 'ya estaba aprobada.' : r.error === 'no_encontrado' ? 'la suite no encontró la cotización o el proyecto.' : (r.error || 'error ' + r.estado) + '.';
+      alert("No se pudo aprobar: " + porQue);
+      return null;
+    }
+    const aprobacion = r.data.cotizacion?.datos?.aprobacion || { at: new Date().toISOString(), items: r.data.items };
+    const marcar = arbol => arbol.map(c => c.id !== nav.cliente.id ? c : {
+      ...c,
+      proyectos: (c.proyectos || []).map(p => p.id !== nav.proyecto.id ? p : {
+        ...p,
+        cotizaciones: (p.cotizaciones || []).map(ct => ct.id !== cotId ? ct : { ...ct, estado: 'aceptada', aprobacion })
+      })
+    });
+    arbolRef.current = marcar(arbolRef.current);
+    setClientes(arbolRef.current);
+    setNav(v => v.cot ? { ...v, cot: { ...v.cot, id: cotId, estado: 'aceptada', aprobacion } } : v);
+    return aprobacion;
   };
   const cl = clientes.find(c => {
     var _nav$cliente;
@@ -9739,7 +9855,8 @@ function App() {
     proyectoNombre: ((_nav$proyecto2 = nav.proyecto) === null || _nav$proyecto2 === void 0 ? void 0 : _nav$proyecto2.nombre) || "",
     materiales: (nav.cot.versiones && nav.cot.versiones[nav.ver ? nav.vi : 0] && nav.cot.versiones[nav.ver ? nav.vi : 0].materiales) || {},
     hoja: nav.cot.versiones && nav.cot.versiones[nav.ver ? nav.vi : 0] && nav.cot.versiones[nav.ver ? nav.vi : 0].hoja || null,
-    folio: nav.cot.folio || null
+    folio: nav.cot.folio || null,
+    aprobacion: nav.cot.estado === 'aceptada' ? nav.cot.aprobacion || { at: null } : null
   } : null;
   const fecha = new Date().toLocaleDateString("es-MX", {
     year: "numeric",
@@ -9982,6 +10099,7 @@ function App() {
   }, /*#__PURE__*/React.createElement(Cotizador, {
     cotIni: cotIni,
     onGuardar: guardarCot,
+    onAprobar: aprobarCot,
     modoVer: nav.ver,
     readonly: nav.readonly,
     readonlyInfo: nav.readonlyInfo,
@@ -10004,6 +10122,7 @@ function App() {
   }))) : /*#__PURE__*/React.createElement(Cotizador, {
     cotIni: cotIni,
     onGuardar: guardarCot,
+    onAprobar: aprobarCot,
     modoVer: nav.ver,
     readonly: nav.readonly,
     readonlyInfo: nav.readonlyInfo,
