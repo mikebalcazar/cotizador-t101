@@ -1,0 +1,243 @@
+/* La hoja de cotización: la pantalla que Mike diseñó en Claude Design.
+ *
+ * Mike, 23-sep-2026: «Necesitamos reestructurar por completo la UI del
+ * cotizador. Primero, ocultar el historial de versiones de cotizaciones.
+ * Luego, ese menú principal está bien. Después, una vez creada una cotización
+ * nueva, es donde comienzan los cambios».
+ *
+ * Y cómo se arma: «cada renglón es un ítem que se va agregando con su
+ * producto, su descripción y su cantidad, su precio unitario y su total. La
+ * manera de crearlo son 2 formas: 1) como se hace hoy en día, "agregar
+ * mueble"; 2) escribir a mano el producto, descripción, cantidad, precio. Pero
+ * aquí debe haber una opción de "buscar en catálogo"».
+ *
+ * Lo que más importa medir es lo que no se ve: que el precio de un mueble en
+ * la hoja sea EXACTAMENTE el que el cliente veía en el PDF de siempre, y que un
+ * renglón escrito a mano NO lleve cargos encima. Un peso de diferencia entre
+ * la pantalla y el PDF es una cotización que no se puede defender.
+ *
+ *     node --test pruebas/la-hoja.spec.mjs
+ */
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { extname, join, normalize } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { chromium } from 'playwright';
+
+const PUBLICAR = fileURLToPath(new URL('../publicar/', import.meta.url));
+const TIPOS = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.woff2': 'font/woff2', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
+
+const servidor = createServer(async (req, res) => {
+  const ruta = normalize(decodeURIComponent(new URL(req.url, 'http://x').pathname)).replace(/^(\.\.[/\\])+/, '');
+  const archivo = join(PUBLICAR, ruta === '/' ? 'index.html' : ruta);
+  try {
+    const cuerpo = await readFile(archivo);
+    res.writeHead(200, { 'Content-Type': TIPOS[extname(archivo)] ?? 'application/octet-stream' });
+    res.end(cuerpo);
+  } catch { res.writeHead(404).end('no está'); }
+});
+await new Promise((r) => servidor.listen(0, r));
+const base = `http://127.0.0.1:${servidor.address().port}`;
+
+const CHROMIUM = process.env.CHROMIUM ?? '/opt/pw-browsers/chromium';
+const navegador = await chromium.launch(existsSync(CHROMIUM) ? { executablePath: CHROMIUM } : {});
+const ok = (data) => ({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, data }) });
+
+/* Un mueble armado de $10,000 de costo, dos piezas, con los tres cargos
+ * prendidos: el caso de todos los días. Y tres versiones guardadas, para ver
+ * que el historial ya no se ofrece. */
+const MUEBLE = {
+  id: 'm-1', nombre: 'Cocina integral', qty: 2, total: 10000,
+  componentes: [{ id: 'c-1', modulo: 'Gabinete', desc: 'Base 60', tags: [], extras: [], unitario: 10000, qty: 1, subtotal: 10000 }],
+  perfil: { int: { formato: '18mm', acabado: 'laminado', chapa: null }, fre: { formato: '18mm', acabado: 'laminado', chapa: null } },
+  imagenes: [],
+};
+const VERSION = { muebles: [MUEBLE], usaFlete: true, usaArq: true, usaTDC: true, descuento: 0, fecha: '2026-09-20T12:00:00Z' };
+const CLIENTE = { id: 'cl-1', nombre: 'Casa Muestra', negocio_id: 'n-1' };
+const PROYECTO = { id: 'pr-1', nombre: 'Departamento Lomas', cliente_id: 'cl-1', negocio_id: 'n-1' };
+const COTIZACION = {
+  id: 'q-1', folio: 'C-0007', cliente_id: 'cl-1', negocio_id: 'n-1', total: 2000000,
+  datos: { nombre: 'Corrida 1', proyecto_id: 'pr-1', versiones: [VERSION, { ...VERSION, fecha: '2026-09-19T12:00:00Z' }, { ...VERSION, fecha: '2026-09-18T12:00:00Z' }] },
+};
+const PRODUCTO = { id: 'pd-1', negocio_id: 'n-1', codigo: 'PT-STD', nombre: 'Puerta estándar', descripcion: 'Tambor 90×210, chapa de encino', precio: 250000, moneda: 'MXN' };
+
+async function abrirApp() {
+  const ctx = await navegador.newContext({ viewport: { width: 1280, height: 900 } });
+  const p = await ctx.newPage();
+  const errores = [];
+  const escrituras = [];
+  p.on('pageerror', (e) => errores.push('excepción: ' + e));
+  p.on('console', (m) => { if (m.type() === 'error' && !m.text().startsWith('Failed to load resource')) errores.push(m.text()); });
+  let n = 0;
+  await p.route('**/s101/**', (route) => {
+    const u = new URL(route.request().url());
+    const r = u.pathname.replace(/^\/s101/, '');
+    const metodo = route.request().method();
+    if (metodo !== 'GET') {
+      const cuerpo = route.request().postDataJSON?.() ?? null;
+      escrituras.push({ metodo, ruta: r, cuerpo });
+      return route.fulfill({ ...ok({ id: 'nuevo-' + (++n), folio: 'C-0099', ...(cuerpo || {}) }), status: metodo === 'POST' ? 201 : 200 });
+    }
+    if (r === '/yo') return route.fulfill(ok({ usuario: { correo: 'mike@ejemplo.mx' }, orgs: [{ id: 'org-1', nombre: 'Taller de prueba' }] }));
+    if (r === '/orgs/org-1/negocios') return route.fulfill(ok({ filas: [{ id: 'n-1', nombre: 'Taller', moneda: 'MXN' }] }));
+    if (r === '/orgs/org-1/clientes') return route.fulfill(ok({ filas: [CLIENTE] }));
+    if (r === '/orgs/org-1/proyectos') return route.fulfill(ok({ filas: [PROYECTO] }));
+    if (r === '/orgs/org-1/cotizaciones') return route.fulfill(ok({ filas: [COTIZACION] }));
+    if (r === '/orgs/org-1/productos') return route.fulfill(ok({ filas: [PRODUCTO] }));
+    return route.fulfill(ok({ filas: [] }));
+  });
+  await p.goto(base, { waitUntil: 'domcontentloaded' });
+  await p.waitForFunction(() => document.querySelectorAll('#root *').length > 10, null, { timeout: 20000 });
+  return { ctx, p, errores, escrituras };
+}
+
+async function alProyecto(p) {
+  await p.getByText('Casa Muestra').first().click();
+  await p.waitForTimeout(400);
+  await p.getByText('Departamento Lomas').first().click();
+  await p.waitForTimeout(400);
+}
+async function abrirCotizacion(p) {
+  await alProyecto(p);
+  await p.getByText('Corrida 1').first().click();
+  await p.waitForSelector('[data-pantalla="hoja"]', { timeout: 10000 });
+}
+const pesos = (t) => Number(String(t).replace(/[^0-9.\-]/g, ''));
+const leer = (p, sel) => p.locator(sel).first().innerText().then(pesos);
+/** La última versión guardada de la cotización, tal como se mandó a la suite. */
+const ultimaVersion = (escrituras) => {
+  const w = escrituras.filter((e) => /\/cotizaciones/.test(e.ruta) && e.cuerpo?.datos?.versiones).pop();
+  return w?.cuerpo.datos.versiones[0];
+};
+
+test('el menú ya no ofrece el historial de versiones, y dice el folio', async () => {
+  const { ctx, p, errores } = await abrirApp();
+  try {
+    await alProyecto(p);
+    const texto = await p.locator('#root').innerText();
+    assert.ok(/Corrida 1/.test(texto), 'la cotización sigue en el menú');
+    assert.ok(!/historial/i.test(texto), 'sin «ver historial» ni «Historial — N anteriores»');
+    assert.ok(!/3 versiones/.test(texto), 'ni el conteo de versiones');
+    assert.ok(/Folio C-0007/i.test(texto), 'en su lugar, el folio que dio la suite');
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
+test('una cotización se abre en la hoja, y el mueble vale lo mismo que en el PDF cliente', async () => {
+  const { ctx, p, errores } = await abrirApp();
+  try {
+    await abrirCotizacion(p);
+    const hoja = p.locator('[data-pantalla="hoja"]');
+    assert.ok(/COTIZACIÓN/.test(await hoja.innerText()), 'el encabezado de la hoja');
+    assert.equal(await p.locator('[data-hoja="folio"]').innerText(), 'C-0007', 'con el folio de la suite');
+    assert.equal(await p.locator('[data-hoja="cliente"]').innerText(), 'Casa Muestra');
+    assert.equal(await p.locator('[data-hoja="proyecto"]').innerText(), 'Departamento Lomas');
+    assert.equal(await p.locator('[data-campo="titulo"]').inputValue(), 'Corrida 1', 'el nombre de la cotización es el título de la corrida');
+    assert.equal(await p.locator('[data-renglon]').count(), 1, 'un renglón por mueble');
+    assert.equal(await p.locator('[data-campo="nombre-0"]').inputValue(), 'Cocina integral');
+    assert.equal(await p.locator('[data-campo="cantidad-0"]').inputValue(), '2');
+    assert.ok(/Armado: Gabinete Base 60/.test(await p.locator('[data-renglon="0"]').innerText()), 'dice qué lleva el mueble sin abrirlo');
+
+    const unit = await leer(p, '[data-precio="0"]');
+    assert.ok(unit > 10000, `al cliente no se le cotiza el costo ($${unit})`);
+    assert.equal(unit % 10, 0, 'redondeado a $10, como siempre');
+    assert.equal(await leer(p, '[data-total="0"]'), unit * 2, 'total del renglón = unitario × cantidad');
+    const subtotal = await leer(p, '[data-hoja="subtotal"]');
+    const total = await leer(p, '[data-hoja="total"]');
+    assert.equal(subtotal, unit * 2);
+    assert.equal(Math.round(total * 100), Math.round(subtotal * 1.16 * 100), 'gran total = subtotal + IVA 16%');
+
+    // El PDF de siempre, el que lleva las condiciones, tiene que dar lo mismo.
+    const [pdf] = await Promise.all([ctx.waitForEvent('page'), p.getByRole('button', { name: 'PDF cliente con condiciones' }).click()]);
+    await pdf.waitForLoadState('domcontentloaded');
+    const textoPdf = await pdf.locator('body').innerText();
+    const enPdf = (n) => textoPdf.includes('$' + Math.round(n).toLocaleString('es-MX'));
+    assert.ok(enPdf(unit), `el PDF cliente trae el mismo unitario (${unit})`);
+    assert.ok(enPdf(total), `y el mismo total con IVA (${total})`);
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
+test('un renglón a mano se cobra tal cual: sin cargos, sin flete, y se guarda', async () => {
+  const { ctx, p, errores, escrituras } = await abrirApp();
+  try {
+    await abrirCotizacion(p);
+    // Se abre para ver; para cambiar hay que pedirlo, como antes.
+    assert.equal(await p.locator('[data-campo="nombre-0"]').getAttribute('readonly'), '', 'se abre en modo ver');
+    await p.getByRole('button', { name: /Editar cotización/ }).click();
+    await p.waitForTimeout(300);
+    const antes = await leer(p, '[data-hoja="subtotal"]');
+    const unitMueble = await leer(p, '[data-precio="0"]');
+
+    await p.getByRole('button', { name: '+ A mano' }).click();
+    await p.locator('[data-campo="nombre-1"]').fill('Instalación en sitio');
+    await p.locator('[data-campo="descripcion-1"]').fill('Cuadrilla de 3, una jornada');
+    await p.locator('[data-campo="cantidad-1"]').fill('3');
+    await p.locator('[data-campo="precio-1"]').fill('1000');
+    await p.locator('[data-campo="contacto"]').fill('Ana Ruiz · 55 1234 5678');
+    await p.waitForTimeout(900);
+
+    assert.equal(await leer(p, '[data-total="1"]'), 3000, '3 × $1,000');
+    assert.equal(await leer(p, '[data-hoja="subtotal"]'), antes + 3000, 'el subtotal sube exactamente lo escrito: nada de cargos encima');
+    assert.equal(await leer(p, '[data-precio="0"]'), unitMueble, 'y el mueble no cambió de precio (el flete no se reparte en lo escrito a mano)');
+
+    const v = ultimaVersion(escrituras);
+    assert.ok(v, 'la hoja se guardó sola en la suite');
+    const r = v.muebles[1];
+    assert.equal(r.manual, true);
+    assert.equal(r.nombre, 'Instalación en sitio');
+    assert.equal(r.descripcion, 'Cuadrilla de 3, una jornada');
+    assert.equal(r.qty, 3);
+    assert.equal(r.precio, 1000);
+    assert.equal(v.hoja?.contacto, 'Ana Ruiz · 55 1234 5678', 'lo de la hoja viaja con la versión');
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
+test('«Buscar en catálogo» trae los productos de la suite con su precio', async () => {
+  const { ctx, p, errores, escrituras } = await abrirApp();
+  try {
+    await abrirCotizacion(p);
+    await p.getByRole('button', { name: /Editar cotización/ }).click();
+    await p.getByRole('button', { name: 'Buscar en catálogo' }).first().click();
+    await p.locator('.hoja-velo input').fill('tambor');
+    await p.waitForTimeout(200);
+    assert.ok(/Puerta estándar/.test(await p.locator('.hoja-velo').innerText()), 'busca también en la descripción');
+    await p.locator('.hoja-velo').getByRole('button', { name: 'Agregar' }).click();
+    await p.waitForTimeout(900);
+    assert.equal(await p.locator('.hoja-velo').count(), 0, 'el catálogo se cierra al agregar');
+    assert.equal(await p.locator('[data-campo="nombre-1"]').inputValue(), 'Puerta estándar');
+    assert.equal(await p.locator('[data-campo="codigo-1"]').inputValue(), 'PT-STD');
+    assert.equal(await p.locator('[data-campo="precio-1"]').inputValue(), '2500', 'los centavos de la suite se vuelven pesos');
+    const v = ultimaVersion(escrituras);
+    assert.equal(v?.muebles[1]?.producto_id, 'pd-1', 'el renglón queda ligado a su producto');
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
+test('«Nueva cotización» abre la hoja en blanco, y se imprime sin botones', async () => {
+  const { ctx, p, errores } = await abrirApp();
+  try {
+    await alProyecto(p);
+    await p.getByText(/Nueva cotizaci[oó]n/).first().click();
+    await p.waitForSelector('[data-pantalla="hoja"]', { timeout: 10000 });
+    assert.ok(/Sin renglones todavía/.test(await p.locator('[data-pantalla="hoja"]').innerText()), 'hoja en blanco');
+    assert.ok(/se asigna al guardar/.test(await p.locator('[data-hoja="folio"]').innerText()), 'el folio lo da la suite al guardar');
+
+    await p.getByRole('button', { name: '+ A mano' }).click();
+    await p.locator('[data-campo="nombre-0"]').fill('Closet vestidor');
+    await p.locator('[data-campo="precio-0"]').fill('45000');
+    const [imp] = await Promise.all([ctx.waitForEvent('page'), p.getByRole('button', { name: 'Imprimir / PDF' }).click()]);
+    await imp.waitForLoadState('domcontentloaded');
+    const t = await imp.locator('body').innerText();
+    assert.ok(/GRAN TOTAL/.test(t) && /Closet vestidor/.test(t), 'imprime la hoja con lo escrito');
+    assert.ok(/52,200/.test(t), 'con su total con IVA');
+    assert.equal(await imp.locator('button, input, textarea').count(), 0, 'sin botones ni cajas de texto');
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
+test.after(async () => { await navegador.close(); servidor.close(); });
