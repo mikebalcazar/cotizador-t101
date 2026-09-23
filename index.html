@@ -4121,7 +4121,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G87";
+const APP_VERSION = "G88";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -6034,27 +6034,27 @@ const PLANO_CSS = `
 .arm-visor{overflow:auto;max-height:72vh;border:1px solid #EAE7E1;background:#f7f7f7;touch-action:pan-x pan-y}
 .arm-lienzo{position:relative;cursor:crosshair}
 .arm-lienzo img{display:block;width:100%;height:auto;user-select:none;-webkit-user-drag:none}
-.arm-pin{position:absolute;transform:translate(-50%,-50%);min-width:24px;height:24px;padding:0 5px;border-radius:12px;background:#0080C1;color:#fff;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);font:700 11px/20px Raleway,sans-serif;text-align:center;cursor:pointer}
+.arm-pin{position:absolute;transform:translate(-50%,-50%);width:24px;height:24px;border-radius:50%;background:#0080C1;color:#fff;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);font:700 11px/20px Raleway,sans-serif;text-align:center;cursor:pointer;overflow:hidden}
 .arm-pin.sel{background:#C6FF3D;color:#1d1f20;transform:translate(-50%,-50%) scale(1.25)}
-.arm-pin.marca{background:rgba(255,255,255,.85);color:#0080C1;border:2px dashed #0080C1;box-shadow:none}
-.arm-pin.marca.activa{background:#fff;border:3px solid #0080C1;box-shadow:0 0 0 4px rgba(0,128,193,.25);animation:arm-late 1s ease-in-out infinite}
+.arm-pin.marca{background:#d93025}
+.arm-pin.marca.activa{box-shadow:0 0 0 4px rgba(217,48,37,.3);animation:arm-late 1s ease-in-out infinite}
 .arm-visor.paneando,.arm-visor.paneando .arm-lienzo{cursor:grabbing}
-.arm-marcas{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:10px 12px;margin-bottom:8px;border:1px dashed #0080C1;border-radius:6px;background:#fff;font:12px Raleway,sans-serif}
+.arm-marcas{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:10px 12px;margin-bottom:8px;border:1px dashed #d93025;border-radius:6px;background:#fff;font:12px Raleway,sans-serif}
 .arm-marcas b{margin-right:4px}
-.arm-marcas span{display:inline-flex;align-items:center;gap:2px;border:1px solid #D8D4CD;border-radius:12px;padding:1px 3px 1px 8px;cursor:pointer;font-weight:700;color:#0080C1}
-.arm-marcas span.activa{background:#0080C1;color:#fff;border-color:#0080C1}
+.arm-marcas span{display:inline-flex;align-items:center;gap:2px;border:1px solid #d93025;border-radius:12px;padding:1px 3px 1px 8px;cursor:pointer;font-weight:700;color:#d93025}
+.arm-marcas span.activa{background:#d93025;color:#fff}
 .arm-marcas span button{border:0;background:none;color:inherit;cursor:pointer;font-size:12px;padding:0 4px}
-@keyframes arm-late{50%{box-shadow:0 0 0 9px rgba(0,128,193,.08)}}
-.arm-num{display:inline-block;min-width:18px;height:18px;border-radius:9px;background:#0080C1;color:#fff;font:700 10px/18px Raleway,sans-serif;text-align:center;margin-right:6px;padding:0 4px}
+@keyframes arm-late{50%{box-shadow:0 0 0 9px rgba(217,48,37,.1)}}
+.arm-num{display:inline-block;width:18px;height:18px;border-radius:50%;background:#0080C1;color:#fff;font:700 10px/18px Raleway,sans-serif;text-align:center;margin-right:6px;padding:0 4px}
 .arm-sel{background:rgba(198,255,61,.25)}
 @media (max-width:900px){
   .arm-grid{grid-template-columns:1fr}
   .arm-izq{position:static}
   .arm-visor{max-height:60vh}
 }`;
-/** El plano con sus componentes (numerados) y sus marcadores pendientes
- *  (con letra). Tocar pone un marcador; tocar un número o una letra lo
- *  escoge. */
+/** El plano con sus componentes: circulito azul con número si ya está
+ *  configurado, rojo si todavía no. Tocar el plano pone uno nuevo; tocar un
+ *  circulito lo escoge. */
 function VisorPlano({ plano, pines, marcas, activa, sel, onTocar, onPin, onMarca }) {
   /* Mike, 23-sep: «en el plano, necesito poder hacer zoom con el scroll y
    * panear con click central». La rueda acerca y aleja con el punto bajo el
@@ -6134,11 +6134,11 @@ function VisorPlano({ plano, pines, marcas, activa, sel, onTocar, onPin, onMarca
         marcas.map(m => h("div", {
           key: "m" + m.id,
           className: "arm-pin marca" + (activa === m.id ? " activa" : ""),
-          "data-marca": m.letra,
-          title: "Marcador " + m.letra + ": falta configurarlo",
+          "data-marca": m.n,
+          title: "Componente " + m.n + ": falta configurarlo",
           style: { left: m.x * 100 + "%", top: m.y * 100 + "%" },
           onClick: e => { e.stopPropagation(); onMarca(m.id); }
-        }, m.letra)))),
+        }, m.n)))),
     h("div", { className: "arm-cab", style: { marginTop: 8, marginBottom: 0 } },
       h("span", { style: { fontSize: 11, color: "#888", marginRight: "auto" } }, "Rueda: acercar · botón central: mover"),
       h("button", { onClick: () => acercar(1 / 1.5), disabled: zoom <= 1, title: "Alejar" }, "−"),
@@ -6193,9 +6193,11 @@ function ArmadorSobrePlano({ plano, pines, marcas, activa, sel, onTocar, onPin, 
   const marcaActiva = marcas.find(m => m.id === activa);
   /* Mike, 23-sep: «Quiero poder agregar todos los marcadores de los
    * componentes sin necesidad de irlos configurando, y ya al final
-   * configurarlos». Cada toque deja un marcador con letra; lo que se configure
-   * a la derecha se queda en el marcador ACTIVO (el primero que falta, o el
-   * que se escoja), y el siguiente se activa solo. */
+   * configurarlos». Y: «el ícono que sea un circulito con el número de
+   * componente, rojo si no tiene información y azul si ya está confirmado».
+   * Cada toque deja el circulito rojo con su número; lo que se configure a la
+   * derecha se queda en el ACTIVO (el primero que falta, o el que se escoja),
+   * se vuelve azul con el MISMO número, y el siguiente se activa solo. */
   return h("div", { className: "arm-plano", "data-armador": "con-plano" },
     h("style", null, PLANO_CSS),
     h("div", { className: "arm-grid" },
@@ -6206,19 +6208,17 @@ function ArmadorSobrePlano({ plano, pines, marcas, activa, sel, onTocar, onPin, 
           h("button", { onClick: onQuitarPlano, title: "Quitar el plano (los componentes se quedan)" }, "Quitar")),
         h("div", { className: "arm-aviso" + (marcaActiva ? " listo" : ""), "data-armador": "aviso" },
           marcaActiva
-            ? "Configurando el marcador " + marcaActiva.letra + ": escoge a la derecha el componente que va ahí →"
-            : "Toca el plano para poner un marcador. Puedes poner todos y configurarlos al final."),
+            ? "Configurando el componente " + marcaActiva.n + ": escógelo a la derecha →"
+            : "Toca el plano para poner cada componente. Puedes poner todos y configurarlos al final."),
         h(VisorPlano, { plano, pines, marcas, activa, sel, onTocar, onPin, onMarca })),
       h("div", { className: "arm-der" },
         marcas.length > 0 && h("div", { className: "arm-marcas", "data-armador": "por-configurar" },
-          h("b", null, marcas.length === 1 ? "1 marcador por configurar:" : marcas.length + " marcadores por configurar:"),
-          marcas.map(m => h("span", { key: m.id, className: activa === m.id ? "activa" : "", "data-marca-lista": m.letra, onClick: () => onMarca(m.id), title: "Configurar el marcador " + m.letra },
-            m.letra,
-            h("button", { title: "Quitar el marcador " + m.letra, onClick: e => { e.stopPropagation(); onQuitarMarca(m.id); } }, "✕")))),
+          h("b", null, marcas.length === 1 ? "1 componente sin configurar:" : marcas.length + " componentes sin configurar:"),
+          marcas.map(m => h("span", { key: m.id, className: activa === m.id ? "activa" : "", "data-marca-lista": m.n, onClick: () => onMarca(m.id), title: "Configurar el componente " + m.n },
+            m.n,
+            h("button", { title: "Quitar el componente " + m.n, onClick: e => { e.stopPropagation(); onQuitarMarca(m.id); } }, "✕")))),
         children)));
 }
-/** A, B, … Z, AA, AB… */
-const letraMarca = n => { let t = ""; n += 1; while (n > 0) { const r = (n - 1) % 26; t = String.fromCharCode(65 + r) + t; n = Math.floor((n - 1) / 26); } return t; };
 function Cotizador({
   cotIni,
   onGuardar,
@@ -6257,7 +6257,9 @@ function Cotizador({
   // escogió para configurar (si no se escogió ninguno, va el primero).
   const [marcas, setMarcas] = useState([]);
   const [marcaSel, setMarcaSel] = useState(null);
-  const letrasRef = useRef(0);
+  // El siguiente número de componente en el plano. El número se queda con el
+  // componente al configurarlo (`c.marca`), no depende de su lugar en la lista.
+  const numRef = useRef(1);
   const [selComp, setSelComp] = useState(null);
   const [nomMueble, setNomMueble] = useState("");
   const [nomOk, setNomOk] = useState(false);
@@ -6408,7 +6410,7 @@ function Cotizador({
     setPlano(null);
     setMarcas([]);
     setMarcaSel(null);
-    letrasRef.current = 0;
+    numRef.current = 1;
     setSelComp(null);
     setFase("plano");
   };
@@ -6465,11 +6467,14 @@ function Cotizador({
     setNomOk(true);
     // Se abren TODOS sus componentes, no una lista vacía para agregar: así
     // se pueden quitar, cambiar de cantidad y ver en su lugar del plano.
-    setComps((m.componentes || []).map(c => ({ ...c })));
+    // Los que ya estaban en el plano sin número (de antes del 23-sep) lo
+    // toman aquí, en su orden.
+    let siguiente = Math.max(0, ...(m.componentes || []).map(c => c.marca || 0)) + 1;
+    setComps((m.componentes || []).map(c => c.pos && !c.marca ? { ...c, marca: siguiente++ } : { ...c }));
+    numRef.current = siguiente;
     setPlano(m.plano || null);
     setMarcas([]);
     setMarcaSel(null);
-    letrasRef.current = 0;
     setSelComp(null);
     setMod(null);
     setEditIdx(i);
@@ -6723,7 +6728,7 @@ function Cotizador({
   };
   const confirmar = () => {
     if (!comps.length) return;
-    if (marcas.length && !window.confirm("Quedan " + marcas.length + (marcas.length === 1 ? " marcador" : " marcadores") + " sin configurar (" + marcas.map(m => m.letra).join(", ") + "). Si sigues, se descartan. ¿Guardar el mueble así?")) return;
+    if (marcas.length && !window.confirm("Quedan " + marcas.length + (marcas.length === 1 ? " componente" : " componentes") + " sin configurar en el plano (" + marcas.map(m => m.n).join(", ") + "). Si sigues, se descartan. ¿Guardar el mueble así?")) return;
     setMarcas([]);
     setMarcaSel(null);
     const tot = comps.reduce((s, c) => s + c.subtotal, 0);
@@ -8062,7 +8067,7 @@ ${rowHTML}
     },
     onClick: () => setFase("componentes")
   }, "Continuar a componentes \u2192"))));
-  const pinesArmador = comps.map((c, i) => c.pos ? { i, n: i + 1, x: c.pos.x, y: c.pos.y, titulo: (c.modulo || "") + " " + (c.desc || "") } : null).filter(Boolean);
+  const pinesArmador = comps.map((c, i) => c.pos ? { i, n: c.marca || i + 1, x: c.pos.x, y: c.pos.y, titulo: (c.modulo || "") + " " + (c.desc || "") } : null).filter(Boolean);
   // El marcador que se está configurando: el escogido o, si no, el primero.
   const marcaActiva = marcas.find(m => m.id === marcaSel) || marcas[0] || null;
   // Lo que se agrega mientras hay un marcador activo se queda en su lugar, y
@@ -8071,7 +8076,7 @@ ${rowHTML}
     const antes = comps.length, m = marcaActiva;
     agregar(tipo, data);
     if (!m) return;
-    setComps(p => p.map((c, i) => i >= antes && !c.pos ? { ...c, pos: { x: m.x, y: m.y } } : c));
+    setComps(p => p.map((c, i) => i >= antes && !c.pos ? { ...c, pos: { x: m.x, y: m.y }, marca: m.n } : c));
     setMarcas(p => p.filter(x => x.id !== m.id));
     setMarcaSel(null);
   };
@@ -8083,7 +8088,7 @@ ${rowHTML}
     sel: selComp,
     onTocar: pt => {
       const id = "mk" + Date.now() + Math.random().toString(36).slice(2, 6);
-      setMarcas(p => [...p, { id, letra: letraMarca(letrasRef.current++), x: pt.x, y: pt.y }]);
+      setMarcas(p => [...p, { id, n: numRef.current++, x: pt.x, y: pt.y }]);
       setSelComp(null);
     },
     onMarca: id => {
@@ -8225,7 +8230,7 @@ ${rowHTML}
   }, c.pos && /*#__PURE__*/React.createElement("span", {
     className: "arm-num",
     title: "Su lugar en el plano"
-  }, i + 1), c.modulo), /*#__PURE__*/React.createElement("div", {
+  }, c.marca || i + 1), c.modulo), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
       fontWeight: 600
@@ -9768,6 +9773,36 @@ function App() {
   const arbolRef = useRef(clientes);
   arbolRef.current = clientes;
   const colaCotRef = useRef(Promise.resolve());
+  /* ¿HAY UNA VERSIÓN NUEVA? (23-sep-2026)
+   *
+   * Mike probó el armador con marcadores en una pestaña que tenía abierta
+   * desde antes de publicarlo, y le funcionaba como la versión anterior: el
+   * cotizador es una sola página y no se recarga solo. Se compara la huella
+   * del index publicado (`/huella.txt`, pública y sin datos) con la que había
+   * al abrir; si cambió, se avisa y la persona decide cuándo recargar. */
+  const [hayVersionNueva, setHayVersionNueva] = useState(false);
+  useEffect(() => {
+    let base = null;
+    const revisar = async () => {
+      try {
+        const r = await fetch("/huella.txt", { cache: "no-store" });
+        if (!r.ok) return;
+        const h = (await r.text()).trim();
+        if (!/^[0-9a-f]{64}$/.test(h)) return;
+        if (base === null) base = h;else if (h !== base) setHayVersionNueva(true);
+      } catch (e) {}
+    };
+    revisar();
+    const cada = setInterval(revisar, 120000);
+    const alVolver = () => document.visibilityState === "visible" && revisar();
+    window.addEventListener("focus", revisar);
+    document.addEventListener("visibilitychange", alVolver);
+    return () => {
+      clearInterval(cada);
+      window.removeEventListener("focus", revisar);
+      document.removeEventListener("visibilitychange", alVolver);
+    };
+  }, []);
   const idSuiteRef = useRef({});
   const [loading, setLoading] = useState(true);
   const [guardando, setGuardando] = useState(false);
@@ -10243,7 +10278,38 @@ function App() {
       position: "relative",
       zIndex: 1
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, hayVersionNueva && /*#__PURE__*/React.createElement("div", {
+    "data-version-nueva": true,
+    style: {
+      position: "fixed",
+      left: "50%",
+      bottom: 16,
+      transform: "translateX(-50%)",
+      zIndex: 5000,
+      display: "flex",
+      alignItems: "center",
+      gap: 12,
+      padding: "10px 14px",
+      borderRadius: 8,
+      background: "#1d1f20",
+      color: "#fff",
+      fontSize: 13,
+      boxShadow: "0 8px 24px rgba(0,0,0,.3)",
+      maxWidth: "calc(100vw - 32px)"
+    }
+  }, /*#__PURE__*/React.createElement("span", null, "Hay una versión nueva del cotizador. Termina el mueble que estés armando y recarga."), /*#__PURE__*/React.createElement("button", {
+    onClick: () => location.reload(),
+    style: {
+      border: 0,
+      borderRadius: 4,
+      padding: "6px 12px",
+      background: "#C6FF3D",
+      color: "#1d1f20",
+      fontWeight: 700,
+      cursor: "pointer",
+      fontFamily: "inherit"
+    }
+  }, "Recargar")), /*#__PURE__*/React.createElement("div", {
     style: {
       background: "rgba(0,128,193,0.85)",
       backdropFilter: "blur(20px) saturate(180%)",

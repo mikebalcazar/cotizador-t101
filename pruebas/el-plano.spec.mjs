@@ -169,8 +169,8 @@ test('agregar mueble: se sube el plano y cada componente queda donde se tocó', 
     const img = p.locator('[data-armador="lienzo"] img');
     const caja = await img.boundingBox();
     await img.click({ position: { x: caja.width * 0.3, y: caja.height * 0.4 } });
-    assert.ok(/Configurando el marcador A/.test(await p.locator('[data-armador="aviso"]').innerText()), 'el plano dice que ahora toca escoger el componente');
-    assert.equal(await p.locator('[data-marca="A"]').count(), 1);
+    assert.ok(/Configurando el componente 1/.test(await p.locator('[data-armador="aviso"]').innerText()), 'el plano dice que ahora toca escoger el componente');
+    assert.equal(await p.locator('[data-marca="1"]').count(), 1);
 
     await especial(p, 'Jaladera de piso', 500);
     const pin = p.locator('[data-pin="1"]');
@@ -247,10 +247,12 @@ test('sin plano, el armador es el de siempre y el plano se puede subir después'
   } finally { await ctx.close(); }
 });
 
-test('se ponen todos los marcadores primero y se configuran al final', async () => {
+test('se ponen todos los componentes primero y se configuran al final: rojo sin configurar, azul confirmado', async () => {
   /* Mike, 23-sep: «Quiero poder agregar todos los marcadores de los
    * componentes sin necesidad de irlos configurando, y ya al final
-   * configurarlos». */
+   * configurarlos». Y: «el ícono que sea un circulito con el número de
+   * componente. Y que se ponga en rojo si no tiene información y en azul si
+   * ya está confirmado». */
   const { ctx, p, errores, escrituras } = await abrirApp();
   const dialogos = [];
   p.on('dialog', (d) => { dialogos.push(d.message()); d.accept(); });
@@ -264,35 +266,62 @@ test('se ponen todos los marcadores primero y se configuran al final', async () 
     const img = p.locator('[data-armador="lienzo"] img');
     const caja = await img.boundingBox();
     for (const [x, y] of [[0.2, 0.2], [0.5, 0.5], [0.8, 0.3], [0.9, 0.9]]) await img.click({ position: { x: caja.width * x, y: caja.height * y } });
-    assert.equal(await p.locator('[data-marca]').count(), 4, 'cuatro marcadores sin configurar nada');
+    assert.deepEqual(await p.locator('[data-marca]').evaluateAll((e) => e.map((x) => x.textContent)), ['1', '2', '3', '4'], 'cuatro circulitos numerados, sin configurar nada');
     assert.equal(await p.locator('[data-componente]').count(), 0, 'y ningún componente todavía');
-    assert.ok(/4 marcadores por configurar/.test(await p.locator('[data-armador="por-configurar"]').innerText()));
+    const color = (sel) => p.locator(sel).evaluate((e) => [getComputedStyle(e).backgroundColor, getComputedStyle(e).borderRadius]);
+    assert.deepEqual(await color('[data-marca="2"]'), ['rgb(217, 48, 37)', '50%'], 'rojo y redondo mientras no tiene información');
+    assert.ok(/4 componentes sin configurar/.test(await p.locator('[data-armador="por-configurar"]').innerText()));
 
     // Uno sobraba: se quita.
-    await p.locator('[data-marca-lista="D"]').getByRole('button').click();
+    await p.locator('[data-marca-lista="4"]').getByRole('button').click();
     assert.equal(await p.locator('[data-marca]').count(), 3);
 
-    // Se configuran en orden: A, luego B solo.
-    assert.ok(/marcador A/.test(await p.locator('[data-armador="aviso"]').innerText()), 'arranca por el primero');
+    // Se configuran en orden: el 1, y luego pasa solo al 2.
+    assert.ok(/componente 1/.test(await p.locator('[data-armador="aviso"]').innerText()), 'arranca por el primero');
     await especial(p, 'Gabinete alto', 900);
-    assert.ok(/marcador B/.test(await p.locator('[data-armador="aviso"]').innerText()), 'y pasa solo al siguiente');
-    // Pero se puede escoger cualquiera: C antes que B.
-    await p.locator('[data-marca="C"]').click();
-    assert.ok(/marcador C/.test(await p.locator('[data-armador="aviso"]').innerText()));
+    assert.equal(await p.locator('[data-marca="1"]').count(), 0, 'el 1 ya no está pendiente');
+    assert.deepEqual(await color('[data-pin="1"]'), ['rgb(0, 128, 193)', '50%'], 'se volvió azul, con el mismo número');
+    assert.ok(/componente 2/.test(await p.locator('[data-armador="aviso"]').innerText()), 'y pasa solo al siguiente');
+    // Pero se puede escoger cualquiera: el 3 antes que el 2.
+    await p.locator('[data-marca="3"]').click();
+    assert.ok(/componente 3/.test(await p.locator('[data-armador="aviso"]').innerText()));
     await especial(p, 'Alacena', 700);
-    assert.equal(await p.locator('[data-marca]').count(), 1, 'queda B');
-    const estiloAlacena = await p.locator('[data-pin="2"]').getAttribute('style');
+    assert.equal(await p.locator('[data-pin="3"]').count(), 1, 'la alacena es el 3, no el 2: el número es del lugar, no del orden en que se configura');
+    assert.deepEqual(await p.locator('[data-marca]').evaluateAll((e) => e.map((x) => x.textContent)), ['2'], 'queda el 2 en rojo');
+    const estiloAlacena = await p.locator('[data-pin="3"]').getAttribute('style');
     const lugar = (k) => Number(new RegExp(k + ':\\s*([\\d.]+)%').exec(estiloAlacena)[1]);
-    assert.ok(Math.abs(lugar('left') - 80) < 1.5 && Math.abs(lugar('top') - 30) < 1.5, 'la alacena quedó donde estaba C: ' + estiloAlacena);
+    assert.ok(Math.abs(lugar('left') - 80) < 1.5 && Math.abs(lugar('top') - 30) < 1.5, 'donde estaba el 3: ' + estiloAlacena);
+    assert.ok(/\b3\b/.test(await p.locator('[data-componente="2"] .arm-num').innerText()), 'y en la lista dice 3');
 
-    // B se queda sin configurar: guardar lo avisa y lo descarta.
+    // El 2 se queda sin configurar: guardar lo avisa y lo descarta.
     await p.getByRole('button', { name: /Agregar mueble →/ }).click();
     await p.waitForSelector('[data-pantalla="hoja"]');
-    assert.ok(dialogos.some((d) => /Quedan 1 marcador sin configurar \(B\)/.test(d)), 'avisó del marcador que faltaba');
+    assert.ok(dialogos.some((d) => /Quedan 1 componente sin configurar en el plano \(2\)/.test(d)), 'avisó del que faltaba');
     const m = await esperarMueble(escrituras, 1);
-    assert.deepEqual(m.componentes.map((c) => c.desc), ['Gabinete alto', 'Alacena']);
-    assert.ok(m.componentes.every((c) => c.pos), 'los dos con su lugar');
+    assert.deepEqual(m.componentes.map((c) => [c.desc, c.marca]), [['Gabinete alto', 1], ['Alacena', 3]], 'cada uno con su número');
     assert.ok(Math.abs(m.componentes[1].pos.x - 0.8) < 0.015 && Math.abs(m.componentes[1].pos.y - 0.3) < 0.015);
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
+test('si se publica una versión nueva con la pestaña abierta, el cotizador lo avisa', async () => {
+  /* Lo que le pasó a Mike con G87: probó en una pestaña abierta desde antes
+   * y le funcionaba como la versión anterior. */
+  const { ctx, p, errores } = await abrirApp();
+  try {
+    let huella = 'a'.repeat(64);
+    await p.route('**/huella.txt', (r) => r.fulfill({ status: 200, contentType: 'text/plain', body: huella + '\n' }));
+    await p.reload({ waitUntil: 'domcontentloaded' });
+    await p.waitForFunction(() => document.querySelectorAll('#root *').length > 10);
+    await p.waitForTimeout(500);
+    await p.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await p.waitForTimeout(300);
+    assert.equal(await p.locator('[data-version-nueva]').count(), 0, 'con la misma versión, nada');
+    huella = 'b'.repeat(64);
+    await p.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await p.waitForSelector('[data-version-nueva]', { timeout: 5000 });
+    assert.ok(/versión nueva/.test(await p.locator('[data-version-nueva]').innerText()));
+    await Promise.all([p.waitForEvent('load'), p.getByRole('button', { name: 'Recargar' }).click()]);
     assert.deepEqual(errores, [], 'sin errores de JavaScript');
   } finally { await ctx.close(); }
 });
