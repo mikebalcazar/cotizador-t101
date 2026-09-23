@@ -136,6 +136,19 @@ async function especial(p, nombre, costo) {
   await p.getByRole('button', { name: '+ Agregar concepto' }).click();
   await p.waitForTimeout(150);
 }
+/** Espera a que la suite reciba el guardado que cumple `listo`, en vez de
+ *  contar segundos. El 23-sep, en la máquina de publicar, 1.2 s no alcanzaron
+ *  para subir el plano y guardar la cotización, y la prueba tronó sin que la
+ *  app hiciera nada mal. */
+async function esperarMueble(escrituras, i, listo = () => true, ms = 20000) {
+  const fin = Date.now() + ms;
+  for (;;) {
+    const m = ultimaVersion(escrituras)?.muebles?.[i];
+    if (m && listo(m)) return m;
+    if (Date.now() > fin) assert.fail(`la suite no recibió el guardado esperado del mueble ${i}; lo último: ${JSON.stringify(m ?? null).slice(0, 300)}`);
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
 const pct = (estilo) => Number(/([\d.]+)%/.exec(estilo || '')?.[1]);
 
 test('agregar mueble: se sube el plano y cada componente queda donde se tocó', async () => {
@@ -174,9 +187,8 @@ test('agregar mueble: se sube el plano y cada componente queda donde se tocó', 
     await p.getByRole('button', { name: /Agregar mueble →/ }).click();
     await p.waitForSelector('[data-pantalla="hoja"]');
     assert.equal(await p.locator('[data-campo="nombre-1"]').inputValue(), 'Closet recámara');
-    await p.waitForTimeout(1200);
+    const m = await esperarMueble(escrituras, 1, (x) => x.plano);
     assert.ok(escrituras.some((e) => e.metodo === 'POST' && e.ruta === '/orgs/org-1/archivos'), 'el plano se subió a la suite');
-    const m = ultimaVersion(escrituras).muebles[1];
     assert.ok(m.plano && !String(m.plano.src).startsWith('data:'), 'en datos sólo va la dirección del plano');
     assert.equal(m.plano.nombre, 'closet.png');
     assert.ok(Math.abs(m.componentes[0].pos.x - 0.3) < 0.015 && Math.abs(m.componentes[0].pos.y - 0.4) < 0.015, 'la posición se guarda como fracción');
@@ -209,8 +221,7 @@ test('al volver a abrir un mueble están todos sus componentes, en su lugar, y s
     await p.locator('[data-componente="2"]').getByRole('button', { name: '\u2715' }).click();
     await p.getByRole('button', { name: /Guardar mueble →/ }).click();
     await p.waitForSelector('[data-pantalla="hoja"]');
-    await p.waitForTimeout(1200);
-    const m = ultimaVersion(escrituras).muebles[0];
+    const m = await esperarMueble(escrituras, 0, (x) => x.componentes.length === 1);
     assert.equal(m.componentes.length, 1, 'se quitó, no se duplicó lo que ya había');
     assert.equal(m.componentes[0].desc, 'Jaladera');
     assert.equal(m.total, 500, 'y el costo del mueble es el de lo que quedó');
@@ -278,8 +289,7 @@ test('se ponen todos los marcadores primero y se configuran al final', async () 
     await p.getByRole('button', { name: /Agregar mueble →/ }).click();
     await p.waitForSelector('[data-pantalla="hoja"]');
     assert.ok(dialogos.some((d) => /Quedan 1 marcador sin configurar \(B\)/.test(d)), 'avisó del marcador que faltaba');
-    await p.waitForTimeout(1200);
-    const m = ultimaVersion(escrituras).muebles[1];
+    const m = await esperarMueble(escrituras, 1);
     assert.deepEqual(m.componentes.map((c) => c.desc), ['Gabinete alto', 'Alacena']);
     assert.ok(m.componentes.every((c) => c.pos), 'los dos con su lugar');
     assert.ok(Math.abs(m.componentes[1].pos.x - 0.8) < 0.015 && Math.abs(m.componentes[1].pos.y - 0.3) < 0.015);
