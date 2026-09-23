@@ -90,7 +90,8 @@ async function abrirApp({ cotizacion = COTIZACION } = {}) {
     if (r === '/orgs/org-1/clientes') return route.fulfill(ok({ filas: [CLIENTE] }));
     if (r === '/orgs/org-1/proyectos') return route.fulfill(ok({ filas: [PROYECTO] }));
     if (r === '/orgs/org-1/cotizaciones') return route.fulfill(ok({ filas: [cotizacion] }));
-    if (r === '/orgs/org-1/productos') return route.fulfill(ok({ filas: [PRODUCTO] }));
+    // El catálogo tarda a propósito: así llega la suite en un día cargado.
+    if (r === '/orgs/org-1/productos') return new Promise((f) => setTimeout(f, 600)).then(() => route.fulfill(ok({ filas: [PRODUCTO] })));
     return route.fulfill(ok({ filas: [] }));
   });
   await p.goto(base, { waitUntil: 'domcontentloaded' });
@@ -208,11 +209,17 @@ test('«Buscar en catálogo» trae los productos de la suite con su precio', asy
     await p.getByRole('button', { name: /Editar cotización/ }).click();
     await p.getByRole('button', { name: 'Buscar en catálogo' }).first().click();
     await p.locator('.hoja-velo input').fill('tambor');
-    await p.waitForTimeout(200);
-    assert.ok(/Puerta estándar/.test(await p.locator('.hoja-velo').innerText()), 'busca también en la descripción');
+    /* El catálogo llega de la suite cuando llega: con un reloj fijo de 200 ms
+     * esta prueba tumbó el despliegue de G88 (run 35829997931). Se espera a
+     * que aparezca; si la búsqueda no mirara la descripción, diría «Nada
+     * coincide» y la espera se vence igual. */
+    const puerta = p.locator('.hoja-velo').getByText('Puerta estándar');
+    await puerta.waitFor({ timeout: 10000 }).catch(() => {});
+    assert.ok(await puerta.count() > 0, 'busca también en la descripción');
     await p.locator('.hoja-velo').getByRole('button', { name: 'Agregar' }).click();
-    await p.waitForTimeout(900);
+    await p.locator('.hoja-velo').waitFor({ state: 'detached', timeout: 5000 }).catch(() => {});
     assert.equal(await p.locator('.hoja-velo').count(), 0, 'el catálogo se cierra al agregar');
+    for (let t = Date.now(); !ultimaVersion(escrituras)?.muebles[1] && Date.now() - t < 10000;) await p.waitForTimeout(100);
     assert.equal(await p.locator('[data-campo="nombre-1"]').inputValue(), 'Puerta estándar');
     assert.equal(await p.locator('[data-campo="codigo-1"]').inputValue(), 'PT-STD');
     assert.equal(await p.locator('[data-campo="precio-1"]').inputValue(), '2500', 'los centavos de la suite se vuelven pesos');

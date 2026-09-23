@@ -93,7 +93,11 @@ test('con varios negocios se puede escoger, y el escogido se recuerda', async ()
     await pintada(p);
     // Abre el primero por nombre, como siempre; lo que cambia es que ahora se ve cuál.
     const sel = p.locator('select[title*="negocio"]');
+    // «pintada» puede ser todavía la pantalla de carga: bajo carga el selector
+    // llegaba después y la prueba lo contaba en cero.
+    await sel.waitFor({ timeout: 15000 }).catch(() => {});
     assert.equal(await sel.count(), 1, 'con dos negocios, la barra ofrece cambiarlo');
+    await p.waitForFunction(() => /Cliente de Alfa/.test(document.querySelector('#root').innerText), null, { timeout: 15000 }).catch(() => {});
     assert.equal(await sel.inputValue(), ALFA.id, 'arranca en el primero por nombre');
     assert.ok(/Cliente de Alfa/.test(await p.locator('#root').innerText()), 'y enseña los clientes de ése');
 
@@ -107,6 +111,7 @@ test('con varios negocios se puede escoger, y el escogido se recuerda', async ()
     const otra = await abrirApp({ almacen });
     try {
       await pintada(otra.p);
+      await otra.p.waitForFunction(() => /Cliente de (Zeta|Alfa)/.test(document.querySelector('#root').innerText), null, { timeout: 15000 }).catch(() => {});
       assert.equal(await otra.p.locator('select[title*="negocio"]').inputValue(), ZETA.id, 'recuerda el negocio escogido');
       assert.ok(/Cliente de Zeta/.test(await otra.p.locator('#root').innerText()), 'y abre con sus datos');
     } finally { await otra.ctx.close(); }

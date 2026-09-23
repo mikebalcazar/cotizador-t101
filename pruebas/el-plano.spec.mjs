@@ -316,6 +316,10 @@ test('si se publica una versión nueva con la pestaña abierta, el cotizador lo 
     await p.route('**/huella.txt', (r) => { preguntas++; return r.fulfill({ status: 200, contentType: 'text/plain', body: huella + '\n' }); });
     await p.reload({ waitUntil: 'domcontentloaded' });
     await p.waitForFunction(() => document.querySelectorAll('#root *').length > 10);
+    // Recargar corta lo que la página de antes seguía pidiendo, y eso sale
+    // como «Failed to fetch». No es de esta prueba: se cuentan los errores
+    // de la página nueva, hasta antes de que «Recargar» la cambie otra vez.
+    errores.length = 0;
     const hasta = async (cond, ms = 15000) => { const fin = Date.now() + ms; while (!(await cond())) { if (Date.now() > fin) assert.fail('no pasó a tiempo'); await p.waitForTimeout(50); } };
     await hasta(() => preguntas >= 1);
     await p.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
@@ -326,8 +330,9 @@ test('si se publica una versión nueva con la pestaña abierta, el cotizador lo 
     await p.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
     await p.waitForSelector('[data-version-nueva]', { timeout: 10000 });
     assert.ok(/versión nueva/.test(await p.locator('[data-version-nueva]').innerText()));
+    const erroresAntes = [...errores];
     await Promise.all([p.waitForEvent('load'), p.getByRole('button', { name: 'Recargar' }).click()]);
-    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+    assert.deepEqual(erroresAntes, [], 'sin errores de JavaScript');
   } finally { await ctx.close(); }
 });
 
