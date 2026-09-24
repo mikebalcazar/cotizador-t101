@@ -87,6 +87,8 @@ async function abrirApp({ cotizacion = COTIZACION } = {}) {
     if (r === '/orgs/org-1/proyectos') return route.fulfill(ok({ filas: [PROYECTO] }));
     if (r === '/orgs/org-1/cotizaciones') return route.fulfill(ok({ filas: [cotizacion] }));
     if (r === '/orgs/org-1/productos') return route.fulfill(ok({ filas: [PRODUCTO] }));
+    // Lo que se subió (un plano, una foto) se vuelve a pedir como imagen.
+    if (/\/archivos\//.test(r)) return route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from(PLANO_GRIS.split(',')[1], 'base64') });
     return route.fulfill(ok({ filas: [] }));
   });
   await p.goto(base, { waitUntil: 'domcontentloaded' });
@@ -376,6 +378,101 @@ test('la rueda acerca donde está el cursor, y el botón central mueve el plano'
     for (let k = 0; k < 10; k++) await p.mouse.wheel(0, 400);
     await p.waitForTimeout(200);
     assert.equal(await p.locator('[data-armador="lienzo"]').getAttribute('data-zoom'), '1.000', 'alejar no pasa de ver el plano completo');
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
+/* Mike, 24-sep: «Cuando ya tengo un mueble terminado, si quiero editar un
+ * componente no puedo. Quería quitarle el led a un entrepaño y no hay
+ * manera. Y de hecho me sobreescribe el ícono que coloqué». */
+/* Un plano gris de 400×300 que sí carga: medir sobre una imagen rota es
+ * medir sobre nada. */
+const PLANO_GRIS = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZAAAAEsCAIAAABi1XKVAAAC8UlEQVR42u3UQREAAAzCMPyLRQM6tksk9NEU4IhIABgWgGEBhgVgWACGBRgWgGEBGBZgWACGBWBYgGEBGBaAYQGGBWBYAIYFGBaAYQEYFmBYAIYFYFiAYQEYFoBhAYYFYFiAYQEYFoBhAYYFYFgAhgUYFoBhARgWYFgAhgVgWIBhARgWgGEBhgVgWACGBRgWgGEBGBZgWACGBWBYgGEBGBaAYQGGBWBYgGEBGBaAYQGGBWBYAIYFGBaAYQEYFmBYAIYFYFiAYQEYFoBhAYYFYFgAhgUYFoBhARgWYFgAhgVgWIBhARgWgGEBhgVgWIBhARgWgGEBhgVgWACGBRgWgGEBGBZgWACGBWBYgGEBGBaAYQGGBWBYAIYFGBaAYQEYFmBYAIYFYFiAYQEYFoBhAYYFYFiAYQEYFoBhAYYFYFgAhgUYFoBhARgWYFgAhgVgWIBhARgWgGEBhgVgWACGBRgWgGEBGBZgWACGBWBYgGEBGBaAYQGGBWBYgGEBGBaAYQGGBWBYAIYFGBaAYQEYFmBYAIYFYFiAYQEYFoBhAYYFYFgAhgUYFoBhARgWYFgAhgVgWIBhARgWgGEBhgVgWIBhARgWgGEBhgVgWACGBRgWgGEBGBZgWACGBWBYgGEBGBaAYQGGBWBYAIYFGBaAYQEYFmBYAIYFYFiAYQEYFoBhAYYFYFiAYQEYFoBhAYYFYFgAhgUYFoBhARgWYFgAhgVgWIBhARgWgGEBhgVgWACGBRgWgGEBGBZgWACGBWBYgGEBGBaAYQGGBWBYgGEBGBaAYQGGBWBYAIYFGBaAYQEYFmBYAIYFYFiAYQEYFoBhAYYFYFgAhgUYFoBhARgWYFgAhgVgWIBhARgWYFgSAIYFYFiAYQEYFoBhAYYFYFgAhgUYFoBhARgWYFgAhgVgWIBhARgWgGEBhgVgWACGBRgWgGEBGBZgWACGBWBYgGEBGBZgWACGBWBYgGEBGBaAYQGGBWBYAIYFGBaAYQEYFvDZADrBrBbpJi6LAAAAAElFTkSuQmCC';
+const ARMADO = {
+  ...MUEBLE, nombre: 'Closet con LED', qty: 1, plano: { src: PLANO_GRIS, ancho: 400, alto: 300, nombre: 'closet.png' },
+  componentes: [
+    { id: 'c-j', marca: 1, modulo: 'Especial', desc: 'Jaladera', tags: [], extras: [], unitario: 500, qty: 1, subtotal: 500, pos: { x: 0.2, y: 0.5 } },
+    { id: 'c-e', marca: 2, modulo: 'Entrepaño', desc: 'Fondo 40cm · 18mm · 1.2ml × 2', tags: ['Prelaminado'], extras: ['💡 LED'], unitario: 1000, ledUnitario: 1800, ledSubtotal: 4320, qty: 2.4, subtotal: 6720, pos: { x: 0.7, y: 0.4 } },
+  ],
+};
+ARMADO.total = 500 + 6720;
+async function alArmadorDe(p, mueble) {
+  await abrirCotizacion(p);
+  await p.getByRole('button', { name: /Editar cotización/ }).click();
+  await p.getByRole('button', { name: 'abrir el armador' }).click();
+  await perfilComun(p, null);
+  await p.waitForSelector('[data-armador="con-plano"]');
+  await p.waitForFunction(() => { const i = document.querySelector('[data-armador="lienzo"] img'); return i && i.complete && i.naturalWidth > 0; }, null, { timeout: 10000 });
+}
+const cotCon = (mueble) => ({ ...COTIZACION, datos: { ...COTIZACION.datos, versiones: [{ ...VERSION, muebles: [mueble] }] } });
+
+test('se le quita el LED a un entrepaño ya puesto, tocando su círculo', async () => {
+  const { ctx, p, errores, escrituras } = await abrirApp({ cotizacion: cotCon(ARMADO) });
+  try {
+    await alArmadorDe(p, ARMADO);
+    await p.locator('[data-pin="2"]').click();
+    const editor = p.locator('[data-editor-componente="2"]');
+    await editor.waitFor({ timeout: 5000 }).catch(() => {});
+    assert.equal(await editor.count(), 1, 'tocar el círculo abre su editor');
+    const led = editor.locator('[data-editor="led"]');
+    assert.equal(await led.isChecked(), true, 'dice que lleva LED');
+    // Primero una pieza más: el LED sigue a la cantidad (antes se perdía su costo).
+    await p.locator('[data-componente="2"]').getByRole('button', { name: '+' }).click();
+    assert.ok((await p.locator('[data-componente="2"]').innerText()).includes('$9,520'), '3.4 m × ($1,000 + $1,800 de LED)');
+    await led.uncheck();
+    assert.ok((await p.locator('[data-componente="2"]').innerText()).includes('$3,400'), 'sin LED: 3.4 m × $1,000');
+    await editor.locator('[data-editor="listo"]').click();
+    await p.getByRole('button', { name: /Guardar mueble →/ }).click();
+    await p.waitForSelector('[data-pantalla="hoja"]');
+    const m = await esperarMueble(escrituras, 0, (x) => x.componentes[1] && !x.componentes[1].extras.length);
+    const e = m.componentes[1];
+    assert.deepEqual(e.extras, [], 'ya no dice LED');
+    assert.equal(e.ledSubtotal, 0);
+    assert.equal(e.subtotal, 3400);
+    assert.deepEqual([e.marca, e.pos], [2, { x: 0.7, y: 0.4 }], 'sigue en su lugar, con su número');
+    assert.equal(m.componentes.length, 2, 'no se agregó nada');
+    assert.equal(m.total, 3900, 'y el mueble cuesta lo que quedó');
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
+test('un componente se reemplaza por otro y conserva su lugar y su número', async () => {
+  const { ctx, p, errores, escrituras } = await abrirApp({ cotizacion: cotCon(ARMADO) });
+  try {
+    await alArmadorDe(p, ARMADO);
+    await p.locator('[data-editar="1"]').click();
+    await p.locator('[data-editor-componente="1"] [data-editor="reemplazar"]').click();
+    await p.waitForSelector('[data-reemplazando="1"]', { timeout: 5000 });
+    await especial(p, 'Jaladera negra', 650);
+    assert.equal(await p.locator('[data-reemplazando]').count(), 0, 'el aviso se va al agregar');
+    assert.equal(await p.locator('[data-componente]').count(), 2, 'reemplazó: no agregó otro');
+    assert.equal(await p.locator('[data-pin]').count(), 2, 'ni otro círculo');
+    await p.getByRole('button', { name: /Guardar mueble →/ }).click();
+    await p.waitForSelector('[data-pantalla="hoja"]');
+    const m = await esperarMueble(escrituras, 0, (x) => x.componentes[0]?.desc?.includes('negra'));
+    assert.equal(m.componentes.length, 2);
+    assert.equal(m.componentes[0].subtotal, 650);
+    assert.deepEqual([m.componentes[0].marca, m.componentes[0].pos], [1, { x: 0.2, y: 0.5 }], 'en el lugar y con el número del que reemplazó');
+    assert.equal(m.componentes[1].desc, ARMADO.componentes[1].desc, 'el otro no se toca');
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
+test('tocar junto a un círculo lo abre, no pone otro encima', async () => {
+  const { ctx, p, errores } = await abrirApp({ cotizacion: cotCon(ARMADO) });
+  try {
+    await alArmadorDe(p, ARMADO);
+    const pin = await p.locator('[data-pin="2"]').boundingBox();
+    // 17 px a la derecha del centro: fuera del círculo (mide 28), pero junto a él.
+    assert.ok(pin.width <= 30, `el círculo mide lo que se cree (${pin.width})`);
+    assert.equal(await p.evaluate(({ x, y }) => !!document.elementFromPoint(x, y).closest('.arm-pin'), { x: pin.x + pin.width / 2 + 17, y: pin.y + pin.height / 2 }), false, 'el toque cae fuera del círculo');
+    await p.mouse.click(pin.x + pin.width / 2 + 17, pin.y + pin.height / 2);
+    assert.equal(await p.locator('[data-marca]').count(), 0, 'no dejó un marcador rojo encima');
+    assert.equal(await p.locator('[data-editor-componente="2"]').count(), 1, 'abrió el del círculo');
+    // Lejos de todo, sí pone uno nuevo, con el número que sigue.
+    const lienzo = await p.locator('[data-armador="lienzo"] img').boundingBox();
+    await p.mouse.click(lienzo.x + lienzo.width * 0.45, lienzo.y + lienzo.height * 0.85);
+    assert.equal(await p.locator('[data-marca="3"]').count(), 1);
     assert.deepEqual(errores, [], 'sin errores de JavaScript');
   } finally { await ctx.close(); }
 });

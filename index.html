@@ -4156,7 +4156,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G91";
+const APP_VERSION = "G92";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -6174,6 +6174,14 @@ function VisorPlano({ plano, pines, marcas, activa, sel, onTocar, onPin, onMarca
     if (!r || !r.width) return;
     const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
     if (x < 0 || x > 1 || y < 0 || y > 1) return;
+    // A menos de 20 px del centro de un círculo que ya está (el círculo mide
+    // 28), es ese círculo: si no, el nuevo cae encima y tapa al que se quería
+    // tocar (Mike, 24-sep: «me sobreescribe el ícono que coloqué»).
+    const cerca = q => Math.hypot((q.x - x) * r.width, (q.y - y) * r.height) < 20;
+    const pin = pines.find(cerca);
+    if (pin) { onPin(pin.i); return; }
+    const marca = marcas.find(cerca);
+    if (marca) { onMarca(marca.id); return; }
     onTocar({ x: Math.round(x * 10000) / 10000, y: Math.round(y * 10000) / 10000 });
   };
   return h("div", null,
@@ -6220,6 +6228,44 @@ function BotonPlano({ etiqueta, onPlano, estilo }) {
       h("input", { type: "file", accept: "image/*,application/pdf", "data-armador": "subir-plano", onChange: elegir, disabled: leyendo, style: { display: "none" } })),
     error && h("span", { style: { color: "#c0392b", fontSize: 12 } }, error));
 }
+/* ─── Editar un componente ya puesto (Mike, 24-sep: «si quiero editar un
+ * componente no puedo. Quería quitarle el led a un entrepaño y no hay
+ * manera»). Lo que se puede cambiar sin volver a configurarlo —el LED, la
+ * cantidad— se cambia en su lugar; lo demás se REEMPLAZA: se configura otra
+ * vez con el menú y el nuevo toma el lugar del viejo en la lista, en el plano
+ * y con su número. Los componentes no guardan con qué se configuraron, por
+ * eso no se puede abrir el menú ya lleno. */
+const MOD_DE_MODULO = { "Gabinete": "gabinete", "Cajones": "cajones", "Entrepaño": "entrepano", "Puerta gabinete": "puerta_gab", "Puerta closet": "puerta", "Poste": "poste", "Cubierta": "cubierta", "Lambrín": "lambrin", "Puerta comunicación": "puerta_com", "Especial": "especial" };
+const tieneLed = c => (c.ledUnitario || 0) > 0 || (c.extras || []).some(x => /LED/.test(x));
+// El LED se cobra por metro lineal: sólo entrepaños y postes lo llevan.
+const aceptaLed = c => c.modulo === "Entrepaño" || c.modulo === "Poste" || tieneLed(c);
+/** La misma pieza con otra cantidad; el LED, si lo lleva, sigue la cantidad. */
+function conCantidad(c, qty) {
+  const led = c.ledUnitario || 0;
+  return { ...c, qty, ledSubtotal: led * qty, subtotal: (c.unitario || 0) * qty + led * qty };
+}
+/** La misma pieza con o sin LED. */
+function conLed(c, si) {
+  const q = c.qty || 0;
+  const extras = (c.extras || []).filter(x => !/LED/.test(x));
+  return si
+    ? { ...c, ledUnitario: LED_ML, ledSubtotal: LED_ML * q, extras: [...extras, "💡 LED"], subtotal: (c.unitario || 0) * q + LED_ML * q }
+    : { ...c, ledUnitario: 0, ledSubtotal: 0, extras, subtotal: (c.unitario || 0) * q };
+}
+function EditorComponente({ c, n, onLed, onReemplazar, onCerrar }) {
+  const h = React.createElement;
+  const boton = { font: "inherit", fontSize: 12, fontWeight: 700, border: "1px solid #0080C1", color: "#0080C1", background: "#fff", borderRadius: 3, padding: "5px 10px", cursor: "pointer" };
+  return h("div", { "data-editor-componente": n, onClick: e => e.stopPropagation(), style: { background: "#F4F2EE", border: "1px solid #D8D4CD", borderRadius: 4, padding: "10px 12px", margin: "2px 0 8px", fontSize: 12.5, fontFamily: "Raleway,sans-serif" } },
+    h("div", { style: { fontWeight: 700, marginBottom: 8 } }, "Editar el componente " + n + " · " + (c.modulo || "")),
+    aceptaLed(c) && h("label", { style: { display: "flex", gap: 6, alignItems: "center", marginBottom: 8, cursor: "pointer" } },
+      h("input", { type: "checkbox", "data-editor": "led", checked: tieneLed(c), onChange: e => onLed(e.target.checked) }),
+      "💡 LED (" + $(LED_ML) + " por metro)"),
+    h("div", { style: { color: "#666", marginBottom: 8 } }, "La cantidad se cambia con − y + en su renglón. Para cambiar medidas, acabado o tipo, reemplázalo: lo configuras de nuevo y queda en el mismo lugar del plano, con el mismo número."),
+    h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+      h("button", { style: boton, "data-editor": "reemplazar", onClick: onReemplazar }, "Reemplazar por otro…"),
+      h("button", { style: { ...boton, borderColor: "#D8D4CD", color: "#555" }, "data-editor": "listo", onClick: onCerrar }, "Listo")));
+}
+
 /** Un archivo sirve de plano si es imagen o PDF. */
 const esArchivoPlano = f => !!f && (/^image\//.test(f.type || "") || f.type === "application/pdf" || /\.pdf$/i.test(f.name || ""));
 /** El primer paso de «Agregar mueble»: subir un plano o una foto, o seguir
@@ -6360,6 +6406,9 @@ function Cotizador({
   // componente al configurarlo (`c.marca`), no depende de su lugar en la lista.
   const numRef = useRef(1);
   const [selComp, setSelComp] = useState(null);
+  // El componente que se está editando, y el que se va a reemplazar.
+  const [editComp, setEditComp] = useState(null);
+  const [reemplazo, setReemplazo] = useState(null);
   const [nomMueble, setNomMueble] = useState("");
   const [nomOk, setNomOk] = useState(false);
   const [imgs, setImgs] = useState((cotIni === null || cotIni === void 0 ? void 0 : cotIni.imagenes) || []);
@@ -6511,6 +6560,8 @@ function Cotizador({
     setMarcaSel(null);
     numRef.current = 1;
     setSelComp(null);
+    setEditComp(null);
+    setReemplazo(null);
     setFase("plano");
   };
   // Registrar intercept de "Volver" del overlay: si está editando, regresar a nav en vez de cerrar
@@ -6575,6 +6626,8 @@ function Cotizador({
     setMarcas([]);
     setMarcaSel(null);
     setSelComp(null);
+    setEditComp(null);
+    setReemplazo(null);
     setMod(null);
     setEditIdx(i);
     setImgs(m.imagenes || []);
@@ -8144,6 +8197,24 @@ ${rowHTML}
   // Lo que se agrega mientras hay un marcador activo se queda en su lugar, y
   // el marcador deja de estar pendiente.
   const agregarEnPunto = (tipo, data) => {
+    if (reemplazo !== null && comps[reemplazo]) {
+      // El nuevo toma el lugar del viejo: su renglón, su punto del plano y su
+      // número. Un entrepaño con varios grupos trae varios: el primero toma
+      // el lugar y los demás quedan justo después.
+      const r = reemplazo, viejo = comps[r], antes = comps.length;
+      agregar(tipo, data);
+      setComps(p => {
+        const nuevos = p.slice(antes);
+        if (!nuevos.length) return p;
+        const lugar = { ...(viejo.pos ? { pos: viejo.pos } : {}), ...(viejo.marca ? { marca: viejo.marca } : {}) };
+        const base = p.slice(0, antes);
+        return [...base.slice(0, r), { ...nuevos[0], ...lugar }, ...nuevos.slice(1), ...base.slice(r + 1)];
+      });
+      setReemplazo(null);
+      setEditComp(null);
+      setSelComp(null);
+      return;
+    }
     const antes = comps.length, m = marcaActiva;
     agregar(tipo, data);
     if (!m) return;
@@ -8174,6 +8245,8 @@ ${rowHTML}
     },
     onPin: i => {
       setSelComp(i);
+      setEditComp(i);
+      setTimeout(() => { const d = document.querySelector('[data-componente="' + (i + 1) + '"]'); d && d.scrollIntoView && d.scrollIntoView({ behavior: "smooth", block: "center" }); }, 50);
     },
     onPlano: pl => {
       setPlano(pl);
@@ -8241,7 +8314,11 @@ ${rowHTML}
     }
   }, "\u270E Editar"))), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(PhaseLbl, {
     num: "3"
-  }, "Componentes"), /*#__PURE__*/React.createElement("div", {
+  }, "Componentes"), reemplazo !== null && comps[reemplazo] && React.createElement("div", {
+    "data-reemplazando": reemplazo + 1,
+    style: { background: "#FFF8D6", border: "1px solid #E8C84A", borderRadius: 4, padding: "8px 10px", marginBottom: 10, fontSize: 12.5, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }
+  }, React.createElement("span", { style: { flex: 1, minWidth: 200 } }, "Reemplazando el componente " + (comps[reemplazo].marca || reemplazo + 1) + " · " + comps[reemplazo].modulo + " " + comps[reemplazo].desc + ". Configúralo abajo y agrégalo: toma su lugar en el plano y su número."),
+    React.createElement("button", { onClick: () => setReemplazo(null), style: { font: "inherit", fontSize: 12, border: "1px solid #D8D4CD", background: "#fff", borderRadius: 3, padding: "4px 9px", cursor: "pointer" } }, "Cancelar")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 6,
@@ -8273,8 +8350,7 @@ ${rowHTML}
     pfAcabado: perfil.fre.acabado,
     pfChapa: perfil.fre.chapa,
     especiales: especiales
-  }))), comps.length > 0 && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(CardTitle, null, "Componentes de ", nomMueble), comps.map((c, i) => /*#__PURE__*/React.createElement("div", {
-    key: c.id || i,
+  }))), comps.length > 0 && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(CardTitle, null, "Componentes de ", nomMueble), comps.map((c, i) => React.createElement(React.Fragment, { key: c.id || i }, /*#__PURE__*/React.createElement("div", {
     className: selComp === i ? "arm-sel" : undefined,
     "data-componente": i + 1,
     onClick: () => c.pos && setSelComp(i),
@@ -8319,11 +8395,7 @@ ${rowHTML}
       padding: "0 4px",
       color: "#0080C1"
     },
-    onClick: () => setComps(p => p.map((x, j) => j !== i ? x : {
-      ...x,
-      qty: Math.max(0.5, +(x.qty - 1).toFixed(1)),
-      subtotal: x.unitario * Math.max(0.5, +(x.qty - 1).toFixed(1))
-    }))
+    onClick: () => setComps(p => p.map((x, j) => j !== i ? x : conCantidad(x, Math.max(0.5, +(x.qty - 1).toFixed(1)))))
   }, "\u2212"), /*#__PURE__*/React.createElement("input", {
     type: "number",
     min: "0.5",
@@ -8331,11 +8403,7 @@ ${rowHTML}
     value: c.qty,
     onChange: e => {
       const v = parseFloat(e.target.value);
-      if (!isNaN(v) && v >= 0.5) setComps(p => p.map((x, j) => j !== i ? x : {
-        ...x,
-        qty: v,
-        subtotal: x.unitario * v
-      }));
+      if (!isNaN(v) && v >= 0.5) setComps(p => p.map((x, j) => j !== i ? x : conCantidad(x, v)));
     },
     style: {
       ...st.inp,
@@ -8349,11 +8417,7 @@ ${rowHTML}
       padding: "0 4px",
       color: "#0080C1"
     },
-    onClick: () => setComps(p => p.map((x, j) => j !== i ? x : {
-      ...x,
-      qty: +(x.qty + 1).toFixed(1),
-      subtotal: x.unitario * +(x.qty + 1).toFixed(1)
-    }))
+    onClick: () => setComps(p => p.map((x, j) => j !== i ? x : conCantidad(x, +(x.qty + 1).toFixed(1))))
   }, "+"), /*#__PURE__*/React.createElement("strong", {
     style: {
       color: "#2C2C2C",
@@ -8361,12 +8425,33 @@ ${rowHTML}
       minWidth: 60,
       textAlign: "right"
     }
-  }, $(c.subtotal)), /*#__PURE__*/React.createElement(BtnD, {
-    onClick: () => setComps(p => p.filter((_, j) => j !== i)),
+  }, $(c.subtotal)), React.createElement("button", {
+    onClick: e => { e.stopPropagation(); setEditComp(editComp === i ? null : i); setSelComp(c.pos ? i : null); },
+    "data-editar": i + 1,
+    title: "Editar este componente",
+    style: {
+      ...st.btd,
+      color: "#0080C1",
+      fontWeight: 700
+    }
+  }, "\u270E"), /*#__PURE__*/React.createElement(BtnD, {
+    onClick: () => { setComps(p => p.filter((_, j) => j !== i)); setEditComp(null); setReemplazo(null); setSelComp(null); },
     style: {
       color: "#c0392b"
     }
-  }, "\u2715")))), /*#__PURE__*/React.createElement(HR, null), /*#__PURE__*/React.createElement("div", {
+  }, "\u2715"))), editComp === i && React.createElement(EditorComponente, {
+    c,
+    n: c.marca || i + 1,
+    onLed: si => setComps(p => p.map((x, j) => j !== i ? x : conLed(x, si))),
+    onReemplazar: () => {
+      setReemplazo(i);
+      setEditComp(null);
+      setMod(MOD_DE_MODULO[c.modulo] || null);
+      setModK(k => k + 1);
+      setTimeout(() => { const d = document.querySelector("[data-reemplazando]"); d && d.scrollIntoView && d.scrollIntoView({ behavior: "smooth", block: "start" }); }, 50);
+    },
+    onCerrar: () => { setEditComp(null); setSelComp(null); }
+  }))), /*#__PURE__*/React.createElement(HR, null), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       justifyContent: "space-between",
