@@ -1,3 +1,9 @@
+# 24-sep-2026: Netlify se retiró de la suite (Mike). Este archivo se queda
+# SÓLO hasta que el sitio `cotizador-t101` se borre en netlify.com: mientras
+# exista, si vuelve a construir, sin esta regla serviría la raíz del
+# repositorio sin puerta. Borrado el sitio, este archivo se borra también
+# (lo mide `scripts/medir.mjs`, apartado 5).
+#
 # Netlify ya no sirve el cotizador: lo manda a la dirección con puerta.
 #
 # ── 16-sep-2026 ──────────────────────────────────────────────────────────

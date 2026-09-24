@@ -207,78 +207,49 @@ for (const nombre of ['claude', 'OPERAR.md', 'README.md']) {
   rev(!hay, `${nombre} no está en lo que se publicó`);
 }
 
-/* 5 · la puerta vieja de Netlify, sólo al medir producción
+/* 5 · las direcciones viejas de Netlify, sólo al medir producción
  *
- * El candado vive en el Worker, pero `cotizador-t101.netlify.app` servía la
- * MISMA app desde la raíz del repositorio, sin puerta, y se rearmaba en cada
- * cambio. Una puerta en una de tres entradas no es una puerta. Ahora redirige,
- * y aquí se comprueba desde afuera: el chat no alcanza `*.netlify.app`, el
- * corredor sí.
+ * Netlify se retiró de la suite el 24-sep (lo decidió Mike, con la cuenta
+ * suspendida por uso). Lo que importa medir sigue siendo lo mismo: que
+ * `cotizador-t101.netlify.app` —y `cotizador-t101-old`— NO sirvan el
+ * cotizador. Cada respuesta dice algo distinto:
  *
- * Netlify tarda en rearmar después de un cambio, así que se reintenta.
+ *   · 404, 410 o que el nombre no resuelva: el sitio ya no existe. Cerrado.
+ *   · 302 a quote101: el sitio existe y sólo redirige. Inofensivo, pero falta
+ *     borrarlo: se avisa.
+ *   · 5xx: Netlify suspendido o caído. El sitio EXISTE y vuelve cuando vuelva
+ *     la cuota («un sitio caído no es un sitio cerrado»): se avisa que falta
+ *     borrarlo. No tumba la publicación: no es algo que arregle un commit.
+ *   · 200 o cualquier otra cosa: algo se está sirviendo ahí. Falla.
+ *
+ * El borrado lo hace Mike en netlify.com: el conector del chat no borra.
+ * Hasta entonces `netlify.toml` se queda: sin él, un sitio que volviera
+ * serviría la raíz del repositorio, sin puerta.
  */
-if (ENTORNO === 'produccion') {
-  const VIEJA = 'https://cotizador-t101.netlify.app';
-  let r = null, estado = 'sin respuesta';
-  for (let i = 1; i <= 12; i++) {
-    try {
-      r = await fetch(VIEJA + '/', { redirect: 'manual' });
-      estado = String(r.status);
-      if (r.status === 302) break;
-    } catch (e) { estado = e.cause?.code || e.message; }
-    if (i < 12) await new Promise((s) => setTimeout(s, 10000));
-  }
-  const destino = r?.headers?.get('location') || '';
-  if (Number(estado) >= 500) {
-    // Netlify caído: la redirección puede estar bien puesta y no poder
-    // comprobarse. Se dice con esas palabras en vez de acusar al repositorio.
-    mal(`Netlify contestó ${estado} en la dirección vieja: no se pudo comprobar la redirección. ` +
-        'El sitio puede estar caído o el equipo suspendido; con Netlify abajo, esa dirección no se puede dar por cerrada.');
-  } else {
-    rev(r?.status === 302, `la dirección vieja de Netlify ya no sirve el cotizador (${estado})`);
-    rev(destino.startsWith(BASE), `y manda a la dirección con puerta (${destino || 'sin location'})`);
-  }
-
-  // Y que lo que manda sí pida sesión: si redirigiera a algo abierto, no
-  // habríamos cerrado nada.
-  if (destino.startsWith(BASE)) {
-    const alFinal = await fetch(destino, { redirect: 'manual' });
-    rev(alFinal.status === 302, `y ahí sí se pide sesión (${alFinal.status})`);
-  }
-
-  /* La tercera dirección: `cotizador-t101-old`.
-   *
-   * Mike lo revisó y decidió borrar el proyecto (16-sep). Eso no lo puede
-   * hacer ningún commit, ni el conector de Netlify que tiene el chat —sólo
-   * lee, renombra, pone contraseña y maneja variables—, así que esto avisa en
-   * cada medición hasta que esté cerrado.
-   *
-   * Lo que se mide es lo que importa, y no la forma de cerrarlo: que esa
-   * dirección YA NO SIRVA el cotizador. Borrado contesta 404, o deja de
-   * resolver el nombre; cualquiera de las dos cuenta.
-   *
-   * Y lo que NO cuenta como cerrado: un 5xx. El 16-sep las dos direcciones de
-   * Netlify contestaron 503 con los sitios en `ready`, y la primera versión de
-   * esto lo cantó como «ya no sirve el cotizador» — se dio por buena con una
-   * caída. **Un sitio caído no es un sitio cerrado**: mañana vuelve, y con él
-   * el cotizador abierto. Un 5xx es «no se pudo saber», y se dice así.
-   */
-  const OTRA = 'https://cotizador-t101-old.netlify.app';
-  let vieja = null, comoEsta = 'no resuelve';
+async function comoContesta(url) {
   try {
-    vieja = await fetch(OTRA + '/', { redirect: 'manual' });
-    comoEsta = String(vieja.status);
-  } catch (e) { comoEsta = e.cause?.code || e.message; }
-  const codigo = vieja?.status ?? 0;
-  const cerrado = codigo === 404 || codigo === 410 || codigo === 301 || codigo === 302 || codigo === 0;
-  const caido = codigo >= 500;
-  aviso(cerrado, caido
-    ? `cotizador-t101-old contestó ${comoEsta}: NO se pudo saber si sigue abierto. ` +
-      'Un sitio caído no es un sitio cerrado; cuando vuelva, vuelve el cotizador. Se cierra borrando el proyecto.'
-    : cerrado
-      ? `cotizador-t101-old ya no sirve el cotizador (${comoEsta})`
-      : `cotizador-t101-old sigue sirviendo el cotizador SIN puerta (${comoEsta}). ` +
-        'Se cierra borrando el proyecto en Netlify; no lo puede hacer un commit.');
+    const r = await fetch(url + '/', { redirect: 'manual' });
+    return { codigo: r.status, destino: r.headers.get('location') || '', texto: String(r.status) };
+  } catch (e) {
+    return { codigo: 0, destino: '', texto: e.cause?.code || e.message };
+  }
+}
+if (ENTORNO === 'produccion') {
+  for (const vieja of ['https://cotizador-t101.netlify.app', 'https://cotizador-t101-old.netlify.app']) {
+    const nombre = vieja.replace('https://', '');
+    const r = await comoContesta(vieja);
+    if (r.codigo === 0 || r.codigo === 404 || r.codigo === 410) {
+      rev(true, `${nombre} ya no existe (${r.texto})`);
+    } else if (r.codigo === 302 || r.codigo === 301) {
+      rev(r.destino.startsWith(BASE), `${nombre} sólo redirige a la dirección con puerta (${r.destino || 'sin location'})`);
+      aviso(false, `${nombre} todavía existe en Netlify: falta borrarlo (Mike, netlify.com)`);
+    } else if (r.codigo >= 500) {
+      aviso(false, `${nombre} contestó ${r.texto}: Netlify suspendido o caído. El sitio sigue existiendo ` +
+        'y vuelve cuando vuelva la cuota; falta borrarlo (Mike, netlify.com)');
+    } else {
+      rev(false, `${nombre} está sirviendo algo (${r.texto}): no debería contestar nada`);
+    }
+  }
 }
 
 console.log();
