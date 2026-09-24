@@ -380,6 +380,78 @@ test('la rueda acerca donde está el cursor, y el botón central mueve el plano'
   } finally { await ctx.close(); }
 });
 
+/** Suelta o pega un archivo en la página como lo haría el navegador. */
+async function soltar(p, sel, { nombre, tipo, base64 }) {
+  await p.locator(sel).evaluate((el, a) => {
+    const dt = new DataTransfer();
+    dt.items.add(new File([Uint8Array.from(atob(a.base64), (c) => c.charCodeAt(0))], a.nombre, { type: a.tipo }));
+    el.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    el.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+  }, { nombre, tipo, base64 });
+}
+async function pegar(p, { nombre, tipo, base64, texto }) {
+  await p.evaluate((a) => {
+    const dt = new DataTransfer();
+    if (a.texto) dt.setData('text/plain', a.texto);
+    else dt.items.add(new File([Uint8Array.from(atob(a.base64), (c) => c.charCodeAt(0))], a.nombre, { type: a.tipo }));
+    document.body.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }));
+  }, { nombre, tipo, base64, texto });
+}
+async function alPasoPlano(p) {
+  await abrirCotizacion(p);
+  await p.getByRole('button', { name: /Editar cotización/ }).click();
+  await p.getByRole('button', { name: '+ Agregar mueble' }).first().click();
+  await p.locator('[data-armador="zona-plano"]').waitFor({ timeout: 10000 }).catch(() => {});
+}
+
+test('el plano se puede arrastrar a «Agregar mueble»', async () => {
+  /* Mike, 24-sep: «Quiero poder arrastrar la imagen o plano para agregarlo
+   * al mueble que se va a trabajar». */
+  const { ctx, p, errores } = await abrirApp();
+  try {
+    await alPasoPlano(p);
+    assert.equal(await p.locator('[data-armador="zona-plano"]').count(), 1, 'el paso del plano recibe lo que se suelte');
+    // Algo que no es plano: se dice, y no se usa.
+    await soltar(p, '[data-armador="zona-plano"]', { nombre: 'notas.txt', tipo: 'text/plain', base64: btoa('hola') });
+    await p.waitForSelector('[data-armador="aviso-plano"]', { timeout: 5000 });
+    assert.equal(await p.locator('[data-armador="vista-previa"]').count(), 0);
+    // El plano sí.
+    // Se suelta encima del texto de la tarjeta, no en su borde: como cae en la vida real.
+    await soltar(p, '[data-armador="zona-plano"] b', { nombre: 'cocina.png', tipo: 'image/png', base64: PNG.toString('base64') });
+    await p.waitForSelector('[data-armador="vista-previa"]', { timeout: 10000 });
+    assert.equal(await p.locator('[data-armador="aviso-plano"]').count(), 0, 'el aviso se va');
+    assert.equal(await p.locator('[data-armador="zona-plano"]').getAttribute('data-arrastrando'), null, 'y el recuadro de «suéltalo aquí» también');
+    await p.getByRole('button', { name: /Continuar con este plano/ }).click();
+    await perfilComun(p, 'Cocina');
+    await p.waitForSelector('[data-armador="con-plano"]', { timeout: 10000 });
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
+test('el plano se puede pegar del portapapeles (Ctrl-V)', async () => {
+  /* Mike, 24-sep: «O pegar la imagen o plano que está en el portapapeles». */
+  const { ctx, p, errores } = await abrirApp();
+  try {
+    await alPasoPlano(p);
+    // Pegar texto no es asunto del plano.
+    await pegar(p, { texto: 'nada que ver' });
+    await p.waitForTimeout(300);
+    assert.equal(await p.locator('[data-armador="vista-previa"]').count(), 0);
+    assert.equal(await p.locator('[data-armador="aviso-plano"]').count(), 0, 'ni se queja');
+    await pegar(p, { nombre: 'image.png', tipo: 'image/png', base64: PNG.toString('base64') });
+    await p.waitForSelector('[data-armador="vista-previa"]', { timeout: 10000 });
+    await p.getByRole('button', { name: /Continuar con este plano/ }).click();
+    await perfilComun(p, 'Closet');
+    await p.waitForSelector('[data-armador="con-plano"]', { timeout: 10000 });
+    // Ya en el armador, pegar no cambia el plano (el paso del plano ya se fue).
+    const antes = await p.locator('[data-armador="lienzo"] img').getAttribute('src');
+    await pegar(p, { nombre: 'otra.png', tipo: 'image/png', base64: PNG.toString('base64') });
+    await p.waitForTimeout(300);
+    assert.equal(await p.locator('[data-armador="lienzo"] img').getAttribute('src'), antes);
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
 test('un plano en PDF se lee de su primera página', async () => {
   /* El lector de PDF se baja de internet la primera vez que se usa. Donde el
    * navegador no sale (la máquina del chat) esto no se puede medir y se dice;

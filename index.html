@@ -4156,7 +4156,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G90";
+const APP_VERSION = "G91";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -6220,21 +6220,63 @@ function BotonPlano({ etiqueta, onPlano, estilo }) {
       h("input", { type: "file", accept: "image/*,application/pdf", "data-armador": "subir-plano", onChange: elegir, disabled: leyendo, style: { display: "none" } })),
     error && h("span", { style: { color: "#c0392b", fontSize: 12 } }, error));
 }
+/** Un archivo sirve de plano si es imagen o PDF. */
+const esArchivoPlano = f => !!f && (/^image\//.test(f.type || "") || f.type === "application/pdf" || /\.pdf$/i.test(f.name || ""));
 /** El primer paso de «Agregar mueble»: subir un plano o una foto, o seguir
- *  como siempre. */
+ *  como siempre. Mike, 24-sep: «quiero poder arrastrar la imagen o plano […]
+ *  o pegar la imagen o plano que está en el portapapeles». Toda la tarjeta
+ *  recibe lo que se suelte, y Ctrl-V / Cmd-V pega mientras este paso está a
+ *  la vista (en este paso no hay otra cosa que reciba lo pegado). */
 function PasoPlano({ plano, setPlano, onSeguir, onCancelar }) {
   const h = React.createElement;
-  return h(Card, null,
-    h(PhaseLbl, { num: "1" }, "Plano o imagen del mueble"),
-    h("div", { style: { fontSize: 13, color: "#666", marginBottom: 14, fontFamily: "Raleway,sans-serif" } },
-      "Sube el plano o una foto y vas a poner cada componente sobre ella. Puede ser una imagen o un PDF (se usa su primera página)."),
-    plano && h("div", { style: { marginBottom: 14, border: "1px solid #D8D4CD", borderRadius: 6, padding: 8, background: "#fff" } },
-      h("img", { src: plano.src, alt: plano.nombre, "data-armador": "vista-previa", style: { display: "block", maxWidth: "100%", maxHeight: 280, margin: "0 auto" } }),
-      h("div", { style: { fontSize: 11, color: "#888", marginTop: 6, textAlign: "center" } }, plano.nombre)),
-    h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
-      h(BotonPlano, { etiqueta: plano ? "Cambiar plano o imagen" : "📄 Subir plano o imagen", onPlano: setPlano, estilo: { ...st.btn, padding: "10px 16px", fontWeight: 700, color: "#0080C1", borderColor: "#0080C1" } }),
-      h(Btn, { primary: true, onClick: onSeguir, style: { flex: 1, minWidth: 180 } }, plano ? "Continuar con este plano →" : "Seguir sin plano →")),
-    h("div", { style: { marginTop: 10 } }, h(Btn, { onClick: onCancelar }, "Cancelar")));
+  const [arrastrando, setArrastrando] = useState(false);
+  const [leyendo, setLeyendo] = useState(false);
+  const [aviso, setAviso] = useState("");
+  const usar = async archivos => {
+    const f = Array.from(archivos || []).find(esArchivoPlano);
+    if (!f) { setAviso("Eso no es una imagen ni un PDF."); return; }
+    setAviso("");
+    setLeyendo(true);
+    try { setPlano(await leerPlano(f)); } catch (err) { setAviso("No se pudo leer «" + (f.name || "lo pegado") + "»: " + (err && err.message || err)); } finally { setLeyendo(false); }
+  };
+  const usarRef = useRef(usar);
+  usarRef.current = usar;
+  useEffect(() => {
+    const alPegar = e => {
+      const archivos = Array.from((e.clipboardData && e.clipboardData.items) || [])
+        .filter(it => it.kind === "file").map(it => it.getAsFile()).filter(esArchivoPlano);
+      if (!archivos.length) return; // pegaron texto: no es asunto nuestro
+      e.preventDefault();
+      usarRef.current(archivos);
+    };
+    window.addEventListener("paste", alPegar);
+    return () => window.removeEventListener("paste", alPegar);
+  }, []);
+  return h("div", {
+      "data-armador": "zona-plano",
+      "data-arrastrando": arrastrando ? "si" : null,
+      onDragOver: e => { e.preventDefault(); setArrastrando(true); },
+      // `dragleave` también salta al pasar sobre un hijo: sólo cuenta si de
+      // veras se salió de la tarjeta.
+      onDragLeave: e => { if (!e.currentTarget.contains(e.relatedTarget)) setArrastrando(false); },
+      onDrop: e => { e.preventDefault(); setArrastrando(false); usar(e.dataTransfer && e.dataTransfer.files); },
+      style: { borderRadius: 8, outline: arrastrando ? "2px dashed #0080C1" : "2px dashed transparent", outlineOffset: 2, background: arrastrando ? "rgba(0,128,193,0.06)" : "transparent", transition: "background 120ms" }
+    },
+    h(Card, null,
+      h(PhaseLbl, { num: "1" }, "Plano o imagen del mueble"),
+      h("div", { style: { fontSize: 13, color: "#666", marginBottom: 14, fontFamily: "Raleway,sans-serif" } },
+        "Sube el plano o una foto y vas a poner cada componente sobre ella. Puede ser una imagen o un PDF (se usa su primera página). ",
+        h("b", null, "También puedes arrastrarlo aquí o pegarlo con Ctrl-V.")),
+      arrastrando && h("div", { style: { marginBottom: 14, padding: 18, textAlign: "center", fontWeight: 700, color: "#0080C1", border: "2px dashed #0080C1", borderRadius: 6 } }, "Suéltalo aquí"),
+      leyendo && h("div", { style: { marginBottom: 14, fontSize: 13, color: "#0080C1" }, "data-armador": "leyendo" }, "Leyendo el plano…"),
+      aviso && h("div", { style: { marginBottom: 14, fontSize: 12, color: "#c0392b" }, "data-armador": "aviso-plano" }, aviso),
+      plano && h("div", { style: { marginBottom: 14, border: "1px solid #D8D4CD", borderRadius: 6, padding: 8, background: "#fff" } },
+        h("img", { src: plano.src, alt: plano.nombre, "data-armador": "vista-previa", style: { display: "block", maxWidth: "100%", maxHeight: 280, margin: "0 auto" } }),
+        h("div", { style: { fontSize: 11, color: "#888", marginTop: 6, textAlign: "center" } }, plano.nombre)),
+      h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+        h(BotonPlano, { etiqueta: plano ? "Cambiar plano o imagen" : "📄 Subir plano o imagen", onPlano: setPlano, estilo: { ...st.btn, padding: "10px 16px", fontWeight: 700, color: "#0080C1", borderColor: "#0080C1" } }),
+        h(Btn, { primary: true, onClick: onSeguir, disabled: leyendo, style: { flex: 1, minWidth: 180 } }, plano ? "Continuar con este plano →" : "Seguir sin plano →")),
+      h("div", { style: { marginTop: 10 } }, h(Btn, { onClick: onCancelar }, "Cancelar"))));
 }
 /** El paso de componentes con plano: el plano a la izquierda y, a la derecha,
  *  lo de siempre —el menú de componentes, lo que se va armando y los
