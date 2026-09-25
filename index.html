@@ -4156,7 +4156,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G93";
+const APP_VERSION = "G94";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -6308,6 +6308,319 @@ function EditorComponente({ c, n, onLed, onReemplazar, onCerrar }) {
       h("button", { style: { ...boton, borderColor: "#D8D4CD", color: "#555" }, "data-editor": "listo", onClick: onCerrar }, "Listo")));
 }
 
+/* ─── El precio de un componente (Mike, 25-sep: «si quiero cambiar el
+ * material de los interiores o el material de los frentes, NO me lo cambia y
+ * queda el mismo costo»). Lo que antes vivía dentro de «agregar» vive aquí,
+ * sin tocar pantalla: «agregar» lo usa para armar, y cambiar los materiales lo
+ * usa para volver a armar con los materiales nuevos. Al ser la MISMA función,
+ * un componente recalculado vale exactamente lo que valdría si se agregara
+ * hoy con esos materiales. Cada componente guarda su `receta` (tipo + lo que
+ * se escogió en el menú) para poder rearmarse. */
+function armarComponentes(tipo, data, pi, pf) {
+  // Entrepaños y postes: múltiples componentes, manejar separado
+  if (tipo === "entrepano" || tipo === "poste") {
+    const isE = tipo === "entrepano";
+    const acAcabado = data.acabadoOverride || pf.acabado;
+    const acChapa = data.chapaOverride || pf.chapa;
+    const p = isE ? getE(data.fondo, data.formato || "18mm", acAcabado, acChapa) : getPO(data.fondo, data.formato || "18mm", acAcabado, acChapa);
+    const tag = (NOM_ACABADO[acAcabado] || "") + (acChapa ? " · " + NOM_CHAPA[acChapa] : "") + (data.acabadoOverride ? " (tambor)" : "");
+    const fmtLabel = {
+      "18mm": "18mm",
+      "tambor4": "Tambor 4cm",
+      "tambor6": "Tambor 6cm"
+    }[data.formato || "18mm"] || "18mm";
+    const modulo = isE ? "Entrepaño" : "Poste";
+    const nuevos = (data.grupos || []).map(g => {
+      const totalML = +(g.ml * g.cant).toFixed(2);
+      const sub = p * totalML;
+      const ledSub = g.led ? LED_ML * totalML : 0;
+      const extras = g.led ? ["💡 LED"] : [];
+      return {
+        id: uid(),
+        modulo,
+        desc: "Fondo " + NOM_FONDO[data.fondo] + " · " + fmtLabel + " · " + g.ml + "ml × " + g.cant,
+        tags: [tag],
+        extras,
+        unitario: p,
+        ledUnitario: g.led ? LED_ML : 0,
+        ledSubtotal: ledSub,
+        qty: totalML,
+        subtotal: sub + ledSub
+      };
+    });
+    return nuevos.map((n, k) => ({ ...n, receta: { tipo, data: { ...data, grupos: [data.grupos[k]] } } }));
+  }
+  let c = {
+    id: uid()
+  };
+  if (tipo === "gabinete") {
+    const base = calcPG(data.tipo, pi, pf);
+    const jP = (JALADERAS[data.jaladera] || 0) * (JAL_COUNT[data.tipo] || 0);
+    const eP = data.etp && data.etp !== "ninguno" ? ENTREP_P[data.etp] * (data.etpQty || 1) : 0;
+    const tot = base + jP + eP;
+    const ex = [];
+    if (data.jaladera && data.jaladera !== "ninguna") ex.push(NOM_JAL[data.jaladera] + " ×" + (JAL_COUNT[data.tipo] || 0));
+    if (data.etp && data.etp !== "ninguno") ex.push(NOM_ENTREP[data.etp] + " ×" + (data.etpQty || 1));
+    c = {
+      ...c,
+      modulo: "Gabinete",
+      desc: NOM_TIPO[data.tipo],
+      tags: ["Interior " + NOM_FORMATO[pi.formato] + " " + NOM_ACABADO[pi.acabado] + (pi.chapa ? " " + NOM_CHAPA[pi.chapa] : ""), "Frentes 18mm " + NOM_ACABADO[pf.acabado] + (pf.chapa ? " " + NOM_CHAPA[pf.chapa] : "")],
+      extras: ex,
+      unitario: tot,
+      qty: data.qty || 1,
+      subtotal: tot * (data.qty || 1)
+    };
+  } else if (tipo === "cajones") {
+    const n = data.num || 1;
+    const cuerpo = getPC(pf.acabado, pf.chapa);
+    const frente = getPFAcabado("frenteCajon", pf.acabado, pf.chapa);
+    const pu = cuerpo + frente;
+    const jP = (JALADERAS[data.jaladera] || 0) * n;
+    const tot = pu * n + jP;
+    const ex = data.jaladera && data.jaladera !== "ninguna" ? [NOM_JAL[data.jaladera]] : [];
+    c = {
+      ...c,
+      modulo: "Cajones",
+      desc: "Cajón",
+      tags: [NOM_ACABADO[pf.acabado] + (pf.chapa ? " · " + NOM_CHAPA[pf.chapa] : "")],
+      extras: ex,
+      unitario: pu + (JALADERAS[data.jaladera] || 0),
+      qty: n,
+      subtotal: tot
+    };
+  } else if (tipo === "lambrin") {
+    const pu = PL[data.acabado] || 0;
+    const tot = pu * (data.m2 || 1);
+    c = {
+      ...c,
+      modulo: "Lambrín",
+      desc: "Lambrín " + ({
+        formaica: "Formaica",
+        pino: "Chapa pino/caobilla",
+        encino: "Chapa comercial",
+        premium: "Premium",
+        traceless: "Traceless/Highgloss",
+        laca2k: "Laca 2K"
+      }[data.acabado] || ""),
+      tags: [],
+      extras: [],
+      unitario: pu,
+      qty: +(data.m2 || 1).toFixed(2),
+      subtotal: tot
+    };
+  } else if (tipo === "puerta_gabinete") {
+    const pu = getPPG(pf.acabado, pf.chapa);
+    const jP = JALADERAS[data.jaladera] || 0;
+    const tot = pu + jP;
+    const tag = NOM_ACABADO[pf.acabado] + (pf.chapa ? " · " + NOM_CHAPA[pf.chapa] : "");
+    const ex = data.jaladera && data.jaladera !== "ninguna" ? [NOM_JAL[data.jaladera]] : [];
+    c = {
+      ...c,
+      modulo: "Puerta gabinete",
+      desc: "Puerta gabinete",
+      tags: [tag],
+      extras: ex,
+      unitario: tot,
+      qty: data.qty || 1,
+      subtotal: tot * (data.qty || 1)
+    };
+  } else if (tipo === "puerta") {
+    const p = getP(data.tipo, "18mm", pf.acabado, pf.chapa);
+    const jV = data.tipo === "corrediza" ? "normal" : data.jaladera;
+    const tot = p + (JALADERAS[jV] || 0);
+    const jl = data.tipo === "corrediza" ? "Jaladera incluida" : data.jaladera && data.jaladera !== "ninguna" ? NOM_JAL[data.jaladera] : null;
+    c = {
+      ...c,
+      modulo: "Puerta closet",
+      desc: "Puerta " + data.tipo,
+      tags: [NOM_ACABADO[pf.acabado] + (pf.chapa ? " · " + NOM_CHAPA[pf.chapa] : "")],
+      extras: jl ? [jl] : [],
+      unitario: tot,
+      qty: data.qty || 1,
+      subtotal: tot * (data.qty || 1)
+    };
+  } else if (tipo === "cubierta") {
+    var _PCUB$data$material;
+    const pB = ((_PCUB$data$material = PCUB[data.material]) === null || _PCUB$data$material === void 0 ? void 0 : _PCUB$data$material[data.tipo]) || 0;
+    const fondoMult = { "30cm": 0.5, "40cm": 0.7, "50-60cm": 1.0, "mas60cm": 1.3 };
+    const fm = fondoMult[data.fondo] || 1.0;
+    const pBf = Math.round(pB * fm / 10) * 10;
+    const pN = data.nariz ? Math.ceil(pB * 0.15 / 10) * 10 : 0;
+    const tot = pBf + pN;
+    const fondoLbl = { "30cm": "Fondo 30cm", "40cm": "Fondo 40cm", "50-60cm": "Fondo 50-60cm", "mas60cm": "Fondo +60cm" };
+    c = {
+      ...c,
+      modulo: "Cubierta",
+      desc: NOM_CUB_MATERIAL[data.material] + " — " + NOM_CUB_TIPO[data.tipo],
+      tags: data.fondo ? [fondoLbl[data.fondo]] : [],
+      extras: data.nariz ? ["Nariz $" + pN.toLocaleString("es-MX") + "/ml"] : [],
+      unitario: tot,
+      qty: data.qty || 1,
+      subtotal: tot * (data.qty || 1)
+    };
+  } else if (tipo === "puerta_com") {
+    const lMat = {
+      formaica: "Formaica",
+      chapa_comercial: "Chapa comercial",
+      chapa_premium: "Chapa premium"
+    };
+    const lDis = {
+      sencillo: "Sencillo",
+      cortes: "Cortes chapa/forro",
+      molduras: "Molduras especiales"
+    };
+    const lBis = {
+      libro: "Libro",
+      ocultas: "Ocultas",
+      simonwerks: "Simonwerks"
+    };
+    const base = PDC_MAT[data.mat] || 0;
+    const dis = PDC_DISENO[data.diseno] || 0;
+    let cerr = 0,
+      lCerr = "Sin cerradura";
+    if (data.cerr === "americano") {
+      cerr = PDC_CERR_AM[data.cerrTipo] || 0;
+      lCerr = "Americano · " + (data.cerrTipo === "comercial" ? "Chapa comercial" : "Especial");
+    }
+    if (data.cerr === "europeo") {
+      cerr = PDC_CERR_EU[data.cerrTipo] || 0;
+      lCerr = "Europeo · " + (data.cerrTipo === "comercial" ? "Manija comercial" : "Manija especial");
+    }
+    const bisB = PDC_BIS[data.bis];
+    const bisTotal = bisB ? bisB.precio * data.bisQty : 0;
+    const extras = (data.burlete ? PDC_EXTRAS.burlete : 0) + (data.acustico ? PDC_EXTRAS.acustico : 0);
+    const tot = base + dis + cerr + bisTotal + extras;
+    const tags = [lMat[data.mat], lDis[data.diseno], lCerr];
+    const ex = [lBis[data.bis] + " ×" + data.bisQty, ...(data.burlete ? ["Burlete"] : []), data.acustico ? ["Aislante acústico"] : []].flat();
+    c = {
+      ...c,
+      modulo: "Puerta comunicación",
+      desc: "Puerta de comunicación",
+      tags,
+      extras: ex,
+      unitario: tot,
+      qty: data.qty || 1,
+      subtotal: tot * (data.qty || 1)
+    };
+  } else if (tipo === "especial") {
+    c = {
+      ...c,
+      modulo: "Especial",
+      desc: data.nombre || "Concepto especial",
+      tags: [],
+      extras: [],
+      unitario: data.costo || 0,
+      qty: data.qty || 1,
+      subtotal: (data.costo || 0) * (data.qty || 1)
+    };
+  }
+  return [{ ...c, receta: { tipo, data } }];
+}
+
+/** La receta de un componente que se agregó antes de que existiera
+ *  `receta`: se lee de lo que quedó escrito (desc, tags, extras). Sólo para
+ *  los que dependen de los materiales; los demás no se tocan (null). */
+const clavePorNombre = (tabla, nombre) => Object.keys(tabla).find(k => tabla[k] === nombre);
+function recetaDe(c) {
+  if (c.receta && c.receta.tipo) return c.receta;
+  const ex = c.extras || [];
+  const jalDe = () => {
+    for (const e of ex) {
+      const m = /^(.*?)(?: ×\d+)?$/.exec(e);
+      const k = m && clavePorNombre(NOM_JAL, m[1]);
+      if (k) return k;
+    }
+    return "ninguna";
+  };
+  const qty = Number(c.qty) || 1;
+  if (c.modulo === "Gabinete") {
+    const t = clavePorNombre(NOM_TIPO, c.desc);
+    if (!t) return null;
+    let etp = "ninguno", etpQty = 1;
+    for (const e of ex) {
+      const m = /^(.*) ×(\d+)$/.exec(e);
+      const k = m && clavePorNombre(NOM_ENTREP, m[1]);
+      if (k) { etp = k; etpQty = Number(m[2]) || 1; }
+    }
+    return { tipo: "gabinete", data: { tipo: t, jaladera: jalDe(), etp, etpQty, qty } };
+  }
+  if (c.modulo === "Cajones") return { tipo: "cajones", data: { num: qty, jaladera: jalDe() } };
+  if (c.modulo === "Puerta gabinete") return { tipo: "puerta_gabinete", data: { jaladera: jalDe(), qty } };
+  if (c.modulo === "Puerta closet") {
+    const t = String(c.desc || "").replace(/^Puerta /, "");
+    if (!t) return null;
+    return { tipo: "puerta", data: { tipo: t, jaladera: jalDe(), qty } };
+  }
+  if (c.modulo === "Entrepaño" || c.modulo === "Poste") {
+    const d = String(c.desc || "");
+    const fo = /Fondo (\S+)/.exec(d), mc = /([\d.]+)ml × (\d+)/.exec(d);
+    const fondo = fo && clavePorNombre(NOM_FONDO, fo[1]);
+    if (!fondo || !mc) return null;
+    const formato = d.includes("Tambor 6") ? "tambor6" : d.includes("Tambor 4") ? "tambor4" : "18mm";
+    const data = { fondo, formato, grupos: [{ ml: Number(mc[1]), cant: Number(mc[2]), led: tieneLed(c) }] };
+    // Tambor sobre prelaminado: el material se escogió aparte y se respeta.
+    const tag = (c.tags || [])[0] || "";
+    if (/\(tambor\)$/.test(tag)) {
+      const [acab, resto] = tag.replace(/ \(tambor\)$/, "").split(" · ");
+      const ka = clavePorNombre(NOM_ACABADO, acab);
+      if (!ka) return null;
+      data.acabadoOverride = ka;
+      if (resto) data.chapaOverride = clavePorNombre(NOM_CHAPA, resto) || null;
+    }
+    return { tipo: c.modulo === "Entrepaño" ? "entrepano" : "poste", data };
+  }
+  return null;
+}
+/** El mismo componente con otros materiales: se rearma con su receta y se
+ *  queda con lo suyo —su lugar en el plano, su número, su cantidad y su
+ *  LED—. Si no hay cómo rearmarlo, se queda igual. */
+function conMateriales(c, pi, pf) {
+  const receta = recetaDe(c);
+  if (!receta || !["gabinete", "cajones", "puerta_gabinete", "puerta", "entrepano", "poste"].includes(receta.tipo)) return c;
+  const data = JSON.parse(JSON.stringify(receta.data));
+  if (receta.tipo === "entrepano" || receta.tipo === "poste") data.grupos = [{ ...(data.grupos || [])[0], led: tieneLed(c) }];
+  let nuevo;
+  try { nuevo = armarComponentes(receta.tipo, data, pi, pf)[0]; } catch (e) { return c; }
+  if (!nuevo) return c;
+  const qty = Number(c.qty) || 1;
+  const led = nuevo.ledUnitario || 0;
+  const unitario = nuevo.unitario;
+  return {
+    ...c, tags: nuevo.tags, extras: nuevo.extras, desc: nuevo.desc, unitario,
+    ledUnitario: led, ledSubtotal: led * qty, qty,
+    subtotal: unitario * qty + led * qty,
+    receta: { tipo: receta.tipo, data }
+  };
+}
+
+/** Los materiales del mueble, arriba de la pantalla de componentes (Mike,
+ *  25-sep): cambiar uno recalcula en ese momento cada componente y su costo. */
+function SelectoresMateriales({ perfil, piOpts, pfOpts, onCambiar, deshabilitado }) {
+  const h = React.createElement;
+  const sel = (clave, valor, opciones, alCambiar) => h("select", {
+    "data-material": clave, value: valor || "", disabled: deshabilitado,
+    onChange: e => alCambiar(e.target.value),
+    style: { font: "inherit", fontSize: 12, padding: "3px 6px", border: "1px solid #D8D4CD", borderRadius: 3, background: "#fff" }
+  }, opciones.map(o => h("option", { key: o.v, value: o.v }, o.l)));
+  const zona = (titulo, cosas) => h("div", { style: { display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" } },
+    h("span", { style: { fontSize: 10, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.08em", minWidth: 64 } }, titulo), ...cosas);
+  const pi = perfil.int || {}, pf = perfil.fre || {};
+  // Chapa sólo cuando el acabado es chapa; al escoger chapa se propone la primera.
+  const conAcabado = (zonaP, acabado) => ({ ...zonaP, acabado, chapa: acabado === "chapa" ? zonaP.chapa || "pino" : null });
+  return h("div", { "data-armador": "materiales", style: { display: "grid", gap: 6, marginTop: 8, paddingTop: 8, borderTop: "1px solid #EAE7E1" } },
+    zona("Interiores", [
+      sel("int-formato", pi.formato, piOpts.fmt, v => onCambiar({ ...perfil, int: { ...pi, formato: v } })),
+      sel("int-acabado", pi.acabado, piOpts.acab, v => onCambiar({ ...perfil, int: conAcabado(pi, v) })),
+      pi.acabado === "chapa" && sel("int-chapa", pi.chapa, piOpts.chapa, v => onCambiar({ ...perfil, int: { ...pi, chapa: v } }))
+    ].filter(Boolean)),
+    zona("Frentes", [
+      h("span", { key: "f", style: { fontSize: 12, color: "#888" } }, "18mm"),
+      sel("fre-acabado", pf.acabado, pfOpts.acab, v => onCambiar({ ...perfil, fre: conAcabado({ formato: "18mm", ...pf }, v) })),
+      pf.acabado === "chapa" && sel("fre-chapa", pf.chapa, pfOpts.chapa, v => onCambiar({ ...perfil, fre: { ...pf, chapa: v } }))
+    ].filter(Boolean)));
+}
+
 /** Un archivo sirve de plano si es imagen o PDF. */
 const esArchivoPlano = f => !!f && (/^image\//.test(f.type || "") || f.type === "application/pdf" || /\.pdf$/i.test(f.name || ""));
 /** El primer paso de «Agregar mueble»: subir un plano o una foto, o seguir
@@ -6448,6 +6761,19 @@ function Cotizador({
   // componente al configurarlo (`c.marca`), no depende de su lugar en la lista.
   const numRef = useRef(1);
   const [selComp, setSelComp] = useState(null);
+  /* Con qué materiales están calculados los componentes que hay. Se
+   * recalcula SÓLO cuando los materiales cambian de verdad: abrir un mueble y
+   * pasar por su perfil sin tocar nada no debe mover precios viejos. */
+  const perfilDeComps = useRef(null);
+  const mismosMateriales = (a, b) => {
+    const n = z => ({ formato: (z && z.formato) || "18mm", acabado: (z && z.acabado) || null, chapa: (z && z.chapa) || null });
+    return !!a && !!b && JSON.stringify([n(a.int), n(a.fre)]) === JSON.stringify([n(b.int), n(b.fre)]);
+  };
+  const aplicarMateriales = nuevo => {
+    setPerfil(nuevo);
+    if (!mismosMateriales(perfilDeComps.current, nuevo)) setComps(p => p.map(c => conMateriales(c, nuevo.int, nuevo.fre)));
+    perfilDeComps.current = nuevo;
+  };
   // El componente que se está editando, y el que se va a reemplazar.
   const [editComp, setEditComp] = useState(null);
   const [reemplazo, setReemplazo] = useState(null);
@@ -6601,6 +6927,7 @@ function Cotizador({
     setMarcas([]);
     setMarcaSel(null);
     numRef.current = 1;
+    perfilDeComps.current = null;
     setSelComp(null);
     setEditComp(null);
     setReemplazo(null);
@@ -6655,6 +6982,7 @@ function Cotizador({
       }
     })));
     setPs("int-formato");
+    perfilDeComps.current = m.perfil || null;
     setNomMueble(m.nombre);
     setNomOk(true);
     // Se abren TODOS sus componentes, no una lista vacía para agregar: así
@@ -6703,208 +7031,8 @@ function Cotizador({
         setModK(k => k + 1);
         return;
       }
-      const pi = perfil.int,
-        pf = perfil.fre;
-      // Entrepaños y postes: múltiples componentes, manejar separado
-      if (tipo === "entrepano" || tipo === "poste") {
-        const isE = tipo === "entrepano";
-        const acAcabado = data.acabadoOverride || pf.acabado;
-        const acChapa = data.chapaOverride || pf.chapa;
-        const p = isE ? getE(data.fondo, data.formato || "18mm", acAcabado, acChapa) : getPO(data.fondo, data.formato || "18mm", acAcabado, acChapa);
-        const tag = (NOM_ACABADO[acAcabado] || "") + (acChapa ? " · " + NOM_CHAPA[acChapa] : "") + (data.acabadoOverride ? " (tambor)" : "");
-        const fmtLabel = {
-          "18mm": "18mm",
-          "tambor4": "Tambor 4cm",
-          "tambor6": "Tambor 6cm"
-        }[data.formato || "18mm"] || "18mm";
-        const modulo = isE ? "Entrepaño" : "Poste";
-        const nuevos = (data.grupos || []).map(g => {
-          const totalML = +(g.ml * g.cant).toFixed(2);
-          const sub = p * totalML;
-          const ledSub = g.led ? LED_ML * totalML : 0;
-          const extras = g.led ? ["💡 LED"] : [];
-          return {
-            id: uid(),
-            modulo,
-            desc: "Fondo " + NOM_FONDO[data.fondo] + " · " + fmtLabel + " · " + g.ml + "ml × " + g.cant,
-            tags: [tag],
-            extras,
-            unitario: p,
-            ledUnitario: g.led ? LED_ML : 0,
-            ledSubtotal: ledSub,
-            qty: totalML,
-            subtotal: sub + ledSub
-          };
-        });
-        setComps(prev => [...prev, ...nuevos]);
-        setMod(null);
-        setModK(k => k + 1);
-        return;
-      }
-      let c = {
-        id: uid()
-      };
-      if (tipo === "gabinete") {
-        const base = calcPG(data.tipo, pi, pf);
-        const jP = (JALADERAS[data.jaladera] || 0) * (JAL_COUNT[data.tipo] || 0);
-        const eP = data.etp && data.etp !== "ninguno" ? ENTREP_P[data.etp] * (data.etpQty || 1) : 0;
-        const tot = base + jP + eP;
-        const ex = [];
-        if (data.jaladera && data.jaladera !== "ninguna") ex.push(NOM_JAL[data.jaladera] + " ×" + (JAL_COUNT[data.tipo] || 0));
-        if (data.etp && data.etp !== "ninguno") ex.push(NOM_ENTREP[data.etp] + " ×" + (data.etpQty || 1));
-        c = {
-          ...c,
-          modulo: "Gabinete",
-          desc: NOM_TIPO[data.tipo],
-          tags: ["Interior " + NOM_FORMATO[pi.formato] + " " + NOM_ACABADO[pi.acabado] + (pi.chapa ? " " + NOM_CHAPA[pi.chapa] : ""), "Frentes 18mm " + NOM_ACABADO[pf.acabado] + (pf.chapa ? " " + NOM_CHAPA[pf.chapa] : "")],
-          extras: ex,
-          unitario: tot,
-          qty: data.qty || 1,
-          subtotal: tot * (data.qty || 1)
-        };
-      } else if (tipo === "cajones") {
-        const n = data.num || 1;
-        const cuerpo = getPC(pf.acabado, pf.chapa);
-        const frente = getPFAcabado("frenteCajon", pf.acabado, pf.chapa);
-        const pu = cuerpo + frente;
-        const jP = (JALADERAS[data.jaladera] || 0) * n;
-        const tot = pu * n + jP;
-        const ex = data.jaladera && data.jaladera !== "ninguna" ? [NOM_JAL[data.jaladera]] : [];
-        c = {
-          ...c,
-          modulo: "Cajones",
-          desc: "Cajón",
-          tags: [NOM_ACABADO[pf.acabado] + (pf.chapa ? " · " + NOM_CHAPA[pf.chapa] : "")],
-          extras: ex,
-          unitario: pu + (JALADERAS[data.jaladera] || 0),
-          qty: n,
-          subtotal: tot
-        };
-      } else if (tipo === "lambrin") {
-        const pu = PL[data.acabado] || 0;
-        const tot = pu * (data.m2 || 1);
-        c = {
-          ...c,
-          modulo: "Lambrín",
-          desc: "Lambrín " + ({
-            formaica: "Formaica",
-            pino: "Chapa pino/caobilla",
-            encino: "Chapa comercial",
-            premium: "Premium",
-            traceless: "Traceless/Highgloss",
-            laca2k: "Laca 2K"
-          }[data.acabado] || ""),
-          tags: [],
-          extras: [],
-          unitario: pu,
-          qty: +(data.m2 || 1).toFixed(2),
-          subtotal: tot
-        };
-      } else if (tipo === "puerta_gabinete") {
-        const pu = getPPG(pf.acabado, pf.chapa);
-        const jP = JALADERAS[data.jaladera] || 0;
-        const tot = pu + jP;
-        const tag = NOM_ACABADO[pf.acabado] + (pf.chapa ? " · " + NOM_CHAPA[pf.chapa] : "");
-        const ex = data.jaladera && data.jaladera !== "ninguna" ? [NOM_JAL[data.jaladera]] : [];
-        c = {
-          ...c,
-          modulo: "Puerta gabinete",
-          desc: "Puerta gabinete",
-          tags: [tag],
-          extras: ex,
-          unitario: tot,
-          qty: data.qty || 1,
-          subtotal: tot * (data.qty || 1)
-        };
-      } else if (tipo === "puerta") {
-        const p = getP(data.tipo, "18mm", pf.acabado, pf.chapa);
-        const jV = data.tipo === "corrediza" ? "normal" : data.jaladera;
-        const tot = p + (JALADERAS[jV] || 0);
-        const jl = data.tipo === "corrediza" ? "Jaladera incluida" : data.jaladera && data.jaladera !== "ninguna" ? NOM_JAL[data.jaladera] : null;
-        c = {
-          ...c,
-          modulo: "Puerta closet",
-          desc: "Puerta " + data.tipo,
-          tags: [NOM_ACABADO[pf.acabado] + (pf.chapa ? " · " + NOM_CHAPA[pf.chapa] : "")],
-          extras: jl ? [jl] : [],
-          unitario: tot,
-          qty: data.qty || 1,
-          subtotal: tot * (data.qty || 1)
-        };
-      } else if (tipo === "cubierta") {
-        var _PCUB$data$material;
-        const pB = ((_PCUB$data$material = PCUB[data.material]) === null || _PCUB$data$material === void 0 ? void 0 : _PCUB$data$material[data.tipo]) || 0;
-        const fondoMult = { "30cm": 0.5, "40cm": 0.7, "50-60cm": 1.0, "mas60cm": 1.3 };
-        const fm = fondoMult[data.fondo] || 1.0;
-        const pBf = Math.round(pB * fm / 10) * 10;
-        const pN = data.nariz ? Math.ceil(pB * 0.15 / 10) * 10 : 0;
-        const tot = pBf + pN;
-        const fondoLbl = { "30cm": "Fondo 30cm", "40cm": "Fondo 40cm", "50-60cm": "Fondo 50-60cm", "mas60cm": "Fondo +60cm" };
-        c = {
-          ...c,
-          modulo: "Cubierta",
-          desc: NOM_CUB_MATERIAL[data.material] + " — " + NOM_CUB_TIPO[data.tipo],
-          tags: data.fondo ? [fondoLbl[data.fondo]] : [],
-          extras: data.nariz ? ["Nariz $" + pN.toLocaleString("es-MX") + "/ml"] : [],
-          unitario: tot,
-          qty: data.qty || 1,
-          subtotal: tot * (data.qty || 1)
-        };
-      } else if (tipo === "puerta_com") {
-        const lMat = {
-          formaica: "Formaica",
-          chapa_comercial: "Chapa comercial",
-          chapa_premium: "Chapa premium"
-        };
-        const lDis = {
-          sencillo: "Sencillo",
-          cortes: "Cortes chapa/forro",
-          molduras: "Molduras especiales"
-        };
-        const lBis = {
-          libro: "Libro",
-          ocultas: "Ocultas",
-          simonwerks: "Simonwerks"
-        };
-        const base = PDC_MAT[data.mat] || 0;
-        const dis = PDC_DISENO[data.diseno] || 0;
-        let cerr = 0,
-          lCerr = "Sin cerradura";
-        if (data.cerr === "americano") {
-          cerr = PDC_CERR_AM[data.cerrTipo] || 0;
-          lCerr = "Americano · " + (data.cerrTipo === "comercial" ? "Chapa comercial" : "Especial");
-        }
-        if (data.cerr === "europeo") {
-          cerr = PDC_CERR_EU[data.cerrTipo] || 0;
-          lCerr = "Europeo · " + (data.cerrTipo === "comercial" ? "Manija comercial" : "Manija especial");
-        }
-        const bisB = PDC_BIS[data.bis];
-        const bisTotal = bisB ? bisB.precio * data.bisQty : 0;
-        const extras = (data.burlete ? PDC_EXTRAS.burlete : 0) + (data.acustico ? PDC_EXTRAS.acustico : 0);
-        const tot = base + dis + cerr + bisTotal + extras;
-        const tags = [lMat[data.mat], lDis[data.diseno], lCerr];
-        const ex = [lBis[data.bis] + " ×" + data.bisQty, ...(data.burlete ? ["Burlete"] : []), data.acustico ? ["Aislante acústico"] : []].flat();
-        c = {
-          ...c,
-          modulo: "Puerta comunicación",
-          desc: "Puerta de comunicación",
-          tags,
-          extras: ex,
-          unitario: tot,
-          qty: data.qty || 1,
-          subtotal: tot * (data.qty || 1)
-        };
-      } else if (tipo === "especial") {
-        c = {
-          ...c,
-          modulo: "Especial",
-          desc: data.nombre || "Concepto especial",
-          tags: [],
-          extras: [],
-          unitario: data.costo || 0,
-          qty: data.qty || 1,
-          subtotal: (data.costo || 0) * (data.qty || 1)
-        };
+      const nuevos = armarComponentes(tipo, data, perfil.int, perfil.fre);
+      if (tipo === "especial") {
         // Guardar este especial en config global para autocompletar después
         try {
           if (typeof onSaveEspecial === "function" && (data.nombre || "").trim() && (data.costo || 0) > 0) {
@@ -6912,7 +7040,7 @@ function Cotizador({
           }
         } catch (e) { console.warn("Save especial err:", e); }
       }
-      setComps(p => [...p, c]);
+      setComps(p => [...p, ...nuevos]);
       setMod(null);
       setModK(k => k + 1);
     } catch (e) {
@@ -6932,6 +7060,9 @@ function Cotizador({
         componentes: [...comps],
         total: tot,
         imagenes: imgs.length ? imgs : m.imagenes,
+        // Los materiales también: si no, el mueble queda con los de antes
+        // y los componentes con los nuevos.
+        perfil: JSON.parse(JSON.stringify(perfil)),
         plano
       } : m));
     } else {
@@ -8242,7 +8373,11 @@ ${rowHTML}
     style: {
       width: "100%"
     },
-    onClick: () => setFase("componentes")
+    onClick: () => {
+      // Lo que se cambió en el perfil llega a los componentes que ya estaban.
+      aplicarMateriales(perfil);
+      setFase("componentes");
+    }
   }, "Continuar a componentes \u2192"))));
   const pinesArmador = comps.map((c, i) => c.pos ? { i, n: c.marca || i + 1, x: c.pos.x, y: c.pos.y, titulo: (c.modulo || "") + " " + (c.desc || "") } : null).filter(Boolean);
   // El marcador que se está configurando: el escogido o, si no, el primero.
@@ -8354,12 +8489,7 @@ ${rowHTML}
       fontSize: 14,
       fontWeight: 700
     }
-  }, nomMueble), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: "#888"
-    }
-  }, perfil.int.formato && NOM_FORMATO[perfil.int.formato], " \xB7 ", perfil.int.acabado && NOM_ACABADO[perfil.int.acabado], perfil.int.chapa ? " · " + NOM_CHAPA[perfil.int.chapa] : "", " \xA0|\xA0 Frentes: ", NOM_ACABADO[perfil.fre.acabado], perfil.fre.chapa ? " · " + NOM_CHAPA[perfil.fre.chapa] : "")), /*#__PURE__*/React.createElement(BtnD, {
+  }, nomMueble)), /*#__PURE__*/React.createElement(BtnD, {
     onClick: () => setFase("perfil"),
     style: {
       color: "#0080C1",
@@ -8367,7 +8497,7 @@ ${rowHTML}
       fontWeight: 600,
       flexShrink: 0
     }
-  }, "\u270E Editar"))), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(PhaseLbl, {
+  }, "\u270E Editar")), React.createElement(SelectoresMateriales, { perfil, piOpts, pfOpts, onCambiar: aplicarMateriales, deshabilitado: readonly })), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(PhaseLbl, {
     num: "3"
   }, "Componentes"), reemplazo !== null && comps[reemplazo] && React.createElement("div", {
     "data-reemplazando": reemplazo + 1,
