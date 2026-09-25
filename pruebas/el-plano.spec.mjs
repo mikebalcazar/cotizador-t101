@@ -608,8 +608,12 @@ test('arriba de los componentes se cambian los materiales y cada costo se actual
       const pi = { formato: '18mm', acabado: 'laminado', chapa: null }, pf = { formato: '18mm', acabado: 'chapa', chapa: 'premium' };
       return armarComponentes('gabinete', { tipo: '1puerta', jaladera: 'normal', etp: 'ninguno', etpQty: 1, qty: 2 }, pi, pf)[0];
     });
+    // Se espera a que el renglón lo diga, no al reloj: bajo carga el
+    // repintado llega después de que el selector cambió.
+    const dice = '$' + Math.round(esperado.subtotal).toLocaleString('es-MX');
+    await p.waitForFunction((t) => (document.querySelector('[data-componente="1"]')?.innerText || '').includes(t), dice, { timeout: 10000 }).catch(() => {});
     const renglon = await p.locator('[data-componente="1"]').innerText();
-    assert.ok(renglon.includes('$' + Math.round(esperado.subtotal).toLocaleString('es-MX')), `el gabinete ya vale con frentes de chapa premium (${esperado.subtotal}): ${renglon}`);
+    assert.ok(renglon.includes(dice), `el gabinete ya vale con frentes de chapa premium (${esperado.subtotal}): ${renglon}`);
     // Interior también.
     await p.locator('[data-material="int-acabado"]').selectOption('formaica');
     await p.getByRole('button', { name: /Guardar mueble →/ }).click();
@@ -692,11 +696,39 @@ test('el plano se puede pegar del portapapeles (Ctrl-V)', async () => {
     await p.getByRole('button', { name: /Continuar con este plano/ }).click();
     await perfilComun(p, 'Closet');
     await p.waitForSelector('[data-armador="con-plano"]', { timeout: 10000 });
-    // Ya en el armador, pegar no cambia el plano (el paso del plano ya se fue).
+    /* Ya en el armador, pegar CAMBIA el plano, igual que «Cambiar» (Mike,
+     * 25-sep: «si quiero cambiar de plano en los componentes […] quiero que
+     * funcione igual que cuando lo agrego por primera vez»). */
     const antes = await p.locator('[data-armador="lienzo"] img').getAttribute('src');
-    await pegar(p, { nombre: 'otra.png', tipo: 'image/png', base64: PNG.toString('base64') });
-    await p.waitForTimeout(300);
+    await pegar(p, { nombre: 'otra.png', tipo: 'image/png', base64: PLANO_GRIS.split(',')[1] });
+    await p.waitForFunction((a) => document.querySelector('[data-armador="lienzo"] img').getAttribute('src') !== a, antes, { timeout: 10000 });
+    assert.ok(/otra\.png/.test(await p.locator('[data-armador="con-plano"] .arm-cab b').innerText()), 'el armador ya tiene el plano pegado');
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
+test('en el armador, el plano se cambia arrastrando el nuevo encima, sin ir a la carpeta', async () => {
+  /* Mike, 25-sep: «Si quiero cambiar de plano en los componentes, le pongo
+   * cambiar, pero a fuerzas necesito seleccionarlo de la carpeta». */
+  const { ctx, p, errores, escrituras } = await abrirApp({ cotizacion: cotCon(ARMADO) });
+  try {
+    await alArmadorDe(p, ARMADO);
+    const antes = await p.locator('[data-armador="lienzo"] img').getAttribute('src');
+    assert.equal(await p.locator('[data-armador="con-plano"] [data-armador="zona-plano"]').count(), 1, 'el lado del plano recibe lo que se suelte');
+    // Algo que no es plano: se avisa y el plano se queda.
+    await soltar(p, '[data-armador="con-plano"] .arm-cab b', { nombre: 'notas.txt', tipo: 'text/plain', base64: btoa('hola') });
+    await p.waitForSelector('[data-armador="aviso-plano"]', { timeout: 5000 });
     assert.equal(await p.locator('[data-armador="lienzo"] img').getAttribute('src'), antes);
+    // El plano nuevo, soltado encima del viejo.
+    await soltar(p, '[data-armador="lienzo"] img', { nombre: 'plano-v2.png', tipo: 'image/png', base64: PLANO_GRIS.split(',')[1] });
+    await p.waitForFunction((a) => document.querySelector('[data-armador="lienzo"] img').getAttribute('src') !== a, antes, { timeout: 10000 });
+    assert.equal(await p.locator('[data-armador="aviso-plano"]').count(), 0, 'el aviso se va');
+    assert.equal(await p.locator('[data-pin]').count(), 2, 'los componentes siguen en el plano, en su lugar');
+    await p.getByRole('button', { name: /Guardar mueble →/ }).click();
+    await p.waitForSelector('[data-pantalla="hoja"]');
+    const m = await esperarMueble(escrituras, 0, (x) => x.plano?.nombre === 'plano-v2.png');
+    assert.equal(m.plano.nombre, 'plano-v2.png');
+    assert.equal(m.componentes.length, 2);
     assert.deepEqual(errores, [], 'sin errores de JavaScript');
   } finally { await ctx.close(); }
 });
