@@ -12,6 +12,14 @@ name = "quote101"
 main = "worker/index.js"
 compatibility_date = "2026-09-01"
 
+# Desde el 25-sep-2026 quote101 vive también en quote101.taller101.com: el DNS
+# de taller101.com está en Cloudflare (Mike lo movió ese día) y el Worker se
+# cuelga del dominio como *custom domain*: Cloudflare pone el registro y el
+# certificado; aquí no hay IPs. La dirección en workers.dev sigue viva.
+routes = [
+  { pattern = "quote101.taller101.com", custom_domain = true }
+]
+
 # Lo que se publica lo arma `scripts/armar.mjs` con una lista explícita:
 # `index.html`, `fonts/` y la página del 404. **No es la raíz del
 # repositorio.** El 12-sep, servir la raíz en Netlify dejó las notas de trabajo
@@ -47,6 +55,8 @@ enabled = true
 
 [env.staging]
 name = "quote101-staging"
+# `routes` se hereda del nivel de arriba; staging NO se cuelga del dominio.
+routes = []
 
 [env.staging.assets]
 directory = "./publicar"
