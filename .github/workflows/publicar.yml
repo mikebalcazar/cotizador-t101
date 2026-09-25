@@ -118,7 +118,9 @@ jobs:
       - name: Medir producción
         id: medir_prod
         continue-on-error: true   # para que el comentario del commit se escriba igual
-        run: node scripts/medir.mjs https://quote101.mike-929.workers.dev produccion 2>&1 | tee -a /tmp/salida.txt
+        # Producción se mide en su dominio: workers.dev manda para allá desde el
+        # 25-sep (DOMINIO_PROPIO en wrangler.toml).
+        run: node scripts/medir.mjs https://quote101.taller101.com produccion 2>&1 | tee -a /tmp/salida.txt
 
       # El canal de vuelta (OPERAR §6): el chat no alcanza el log de Actions,
       # pero sí api.github.com.

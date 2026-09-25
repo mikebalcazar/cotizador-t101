@@ -2,7 +2,7 @@
  * internet y sí alcanza `*.workers.dev`.
  *
  *   node scripts/medir.mjs https://quote101-staging.mike-929.workers.dev staging
- *   node scripts/medir.mjs https://quote101.mike-929.workers.dev produccion
+ *   node scripts/medir.mjs https://quote101.taller101.com produccion
  *
  * Qué comprueba, y por qué cada cosa:
  *
