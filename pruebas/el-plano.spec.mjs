@@ -477,6 +477,75 @@ test('tocar junto a un círculo lo abre, no pone otro encima', async () => {
   } finally { await ctx.close(); }
 });
 
+test('«Guardar cambios» guarda el plano nuevo y los componentes, y el PDF enseña el plano nuevo', async () => {
+  /* Mike, 24-sep: «cuando cambio el plano donde se ubican los componentes por
+   * uno más actual no se cambia en el PDF que exporta». «✓ Guardar cambios»
+   * guardaba sólo nombre, fotos y perfil. */
+  const { ctx, p, errores, escrituras } = await abrirApp({ cotizacion: cotCon(ARMADO) });
+  try {
+    await alArmadorDe(p, ARMADO);
+    const antes = await p.locator('[data-armador="lienzo"] img').getAttribute('src');
+    await p.locator('[data-armador="subir-plano"]').setInputFiles({ name: 'plano-nuevo.png', mimeType: 'image/png', buffer: Buffer.from(PLANO_GRIS.split(',')[1], 'base64') });
+    await p.waitForFunction((a) => document.querySelector('[data-armador="lienzo"] img').getAttribute('src') !== a, antes, { timeout: 10000 });
+    // Y de paso un cambio de componente, que también se perdía: el LED fuera.
+    await p.locator('[data-pin="2"]').click();
+    await p.locator('[data-editor-componente="2"] [data-editor="led"]').uncheck();
+    await p.getByRole('button', { name: /Guardar cambios/ }).click();
+    await p.waitForSelector('[data-pantalla="hoja"]');
+    const m = await esperarMueble(escrituras, 0, (x) => x.plano?.nombre === 'plano-nuevo.png');
+    assert.equal(m.plano.nombre, 'plano-nuevo.png', 'se guardó el plano nuevo');
+    assert.notEqual(m.plano.src, antes, 'con su propia dirección');
+    assert.deepEqual(m.componentes[1].extras, [], 'y el LED quitado');
+    assert.equal(m.componentes.length, 2);
+    const [pdf] = await Promise.all([ctx.waitForEvent('page'), p.getByRole('button', { name: 'PDF cliente con condiciones' }).click()]);
+    await pdf.waitForLoadState('domcontentloaded');
+    const enPdf = await pdf.locator('[data-plano-cliente] img').getAttribute('src');
+    assert.notEqual(enPdf, antes, 'el PDF ya no enseña el plano viejo');
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
+test('los círculos se arrastran a otro lugar del plano', async () => {
+  /* Mike, 24-sep: «quiero poder mover los iconos de número de los
+   * componentes de ubicación». */
+  const { ctx, p, errores, escrituras } = await abrirApp({ cotizacion: cotCon(ARMADO) });
+  try {
+    await alArmadorDe(p, ARMADO);
+    const img = await p.locator('[data-armador="lienzo"] img').boundingBox();
+    const pin = await p.locator('[data-pin="2"]').boundingBox();
+    const a = [img.x + img.width * 0.3, img.y + img.height * 0.6];
+    await p.mouse.move(pin.x + pin.width / 2, pin.y + pin.height / 2);
+    await p.mouse.down();
+    await p.mouse.move(a[0], a[1], { steps: 8 });
+    await p.mouse.up();
+    assert.equal(await p.locator('[data-marca]').count(), 0, 'arrastrar no deja un marcador');
+    assert.equal(await p.locator('[data-editor-componente]').count(), 0, 'ni abre el editor');
+    const ahora = await p.locator('[data-pin="2"]').boundingBox();
+    assert.ok(Math.abs(ahora.x + ahora.width / 2 - a[0]) < 3 && Math.abs(ahora.y + ahora.height / 2 - a[1]) < 3, 'el círculo quedó donde se soltó');
+    // Un toque sigue abriendo el editor.
+    await p.locator('[data-pin="2"]').click();
+    assert.equal(await p.locator('[data-editor-componente="2"]').count(), 1, 'un toque sin mover abre el editor como siempre');
+    // Un marcador rojo también se mueve.
+    await p.mouse.click(img.x + img.width * 0.9, img.y + img.height * 0.9);
+    const rojo = await p.locator('[data-marca="3"]').boundingBox();
+    const b = [img.x + img.width * 0.5, img.y + img.height * 0.2];
+    await p.mouse.move(rojo.x + rojo.width / 2, rojo.y + rojo.height / 2);
+    await p.mouse.down();
+    await p.mouse.move(b[0], b[1], { steps: 8 });
+    await p.mouse.up();
+    const rojo2 = await p.locator('[data-marca="3"]').boundingBox();
+    assert.ok(Math.abs(rojo2.x + rojo2.width / 2 - b[0]) < 3 && Math.abs(rojo2.y + rojo2.height / 2 - b[1]) < 3, 'el marcador rojo también');
+    assert.equal(await p.locator('[data-marca]').count(), 1, 'sin marcadores de más');
+    p.on('dialog', (d) => d.accept());
+    await p.getByRole('button', { name: /Guardar mueble →/ }).click();
+    await p.waitForSelector('[data-pantalla="hoja"]');
+    const m = await esperarMueble(escrituras, 0, (x) => Math.abs(x.componentes[1].pos.x - 0.3) < 0.02);
+    assert.ok(Math.abs(m.componentes[1].pos.x - 0.3) < 0.02 && Math.abs(m.componentes[1].pos.y - 0.6) < 0.02, `se guardó el lugar nuevo (${JSON.stringify(m.componentes[1].pos)})`);
+    assert.equal(m.componentes[1].marca, 2, 'con su mismo número');
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
 /** Suelta o pega un archivo en la página como lo haría el navegador. */
 async function soltar(p, sel, { nombre, tipo, base64 }) {
   await p.locator(sel).evaluate((el, a) => {

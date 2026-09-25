@@ -4156,7 +4156,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G92";
+const APP_VERSION = "G93";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -6091,7 +6091,8 @@ const PLANO_CSS = `
 .arm-visor{overflow:auto;max-height:72vh;border:1px solid #EAE7E1;background:#f7f7f7;touch-action:pan-x pan-y}
 .arm-lienzo{position:relative;cursor:crosshair}
 .arm-lienzo img{display:block;width:100%;height:auto;user-select:none;-webkit-user-drag:none}
-.arm-pin{position:absolute;transform:translate(-50%,-50%);width:24px;height:24px;border-radius:50%;background:#0080C1;color:#fff;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);font:700 11px/20px Raleway,sans-serif;text-align:center;cursor:pointer;overflow:hidden}
+.arm-pin{position:absolute;transform:translate(-50%,-50%);width:24px;height:24px;border-radius:50%;background:#0080C1;color:#fff;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);font:700 11px/20px Raleway,sans-serif;text-align:center;cursor:grab;overflow:hidden;touch-action:none;user-select:none}
+.arm-pin.moviendo{cursor:grabbing;z-index:5;box-shadow:0 4px 12px rgba(0,0,0,.45)}
 .arm-pin.sel{background:#C6FF3D;color:#1d1f20;transform:translate(-50%,-50%) scale(1.25)}
 .arm-pin.marca{background:#d93025}
 .arm-pin.marca.activa{box-shadow:0 0 0 4px rgba(217,48,37,.3);animation:arm-late 1s ease-in-out infinite}
@@ -6112,7 +6113,7 @@ const PLANO_CSS = `
 /** El plano con sus componentes: circulito azul con número si ya está
  *  configurado, rojo si todavía no. Tocar el plano pone uno nuevo; tocar un
  *  circulito lo escoge. */
-function VisorPlano({ plano, pines, marcas, activa, sel, onTocar, onPin, onMarca }) {
+function VisorPlano({ plano, pines, marcas, activa, sel, onTocar, onPin, onMarca, onMoverPin, onMoverMarca }) {
   /* Mike, 23-sep: «en el plano, necesito poder hacer zoom con el scroll y
    * panear con click central». La rueda acerca y aleja con el punto bajo el
    * cursor quieto; el botón de en medio arrastra. El clic normal queda para
@@ -6167,7 +6168,46 @@ function VisorPlano({ plano, pines, marcas, activa, sel, onTocar, onPin, onMarca
     window.addEventListener("mousemove", mover);
     window.addEventListener("mouseup", soltar);
   };
+  /* Mike, 24-sep: «quiero poder mover los iconos de número de los
+   * componentes». Un círculo se arrastra: se aprieta, se lleva y se suelta. Si
+   * no se movió (menos de 4 px), fue un toque y hace lo de siempre. Mientras
+   * se arrastra se mueve el elemento directo, sin pasar por React; al soltar
+   * se guarda el lugar nuevo. El clic que el navegador manda después de
+   * soltar se traga: si no, abriría el editor o pondría un marcador nuevo. */
+  const recienMovido = useRef(false);
+  const arrastrar = (e, alSoltar) => {
+    if (e.button !== 0 || !alSoltar) return;
+    e.stopPropagation();
+    const el = e.currentTarget, img = imgRef.current;
+    if (!img) return;
+    const x0 = e.clientX, y0 = e.clientY;
+    let movido = false, punto = null;
+    const dentro = v => Math.min(1, Math.max(0, v));
+    const mover = ev => {
+      if (!movido && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 4) return;
+      movido = true;
+      const r = img.getBoundingClientRect();
+      punto = { x: dentro((ev.clientX - r.left) / r.width), y: dentro((ev.clientY - r.top) / r.height) };
+      el.style.left = punto.x * 100 + "%";
+      el.style.top = punto.y * 100 + "%";
+      el.classList.add("moviendo");
+    };
+    const soltar = () => {
+      window.removeEventListener("pointermove", mover);
+      window.removeEventListener("pointerup", soltar);
+      window.removeEventListener("pointercancel", soltar);
+      el.classList.remove("moviendo");
+      if (!movido || !punto) return;
+      recienMovido.current = true;
+      setTimeout(() => { recienMovido.current = false; }, 0);
+      alSoltar({ x: Math.round(punto.x * 10000) / 10000, y: Math.round(punto.y * 10000) / 10000 });
+    };
+    window.addEventListener("pointermove", mover);
+    window.addEventListener("pointerup", soltar);
+    window.addEventListener("pointercancel", soltar);
+  };
   const tocar = e => {
+    if (recienMovido.current) return;
     if (e.button !== 0) return;
     if (e.target.closest && e.target.closest(".arm-pin")) return;
     const r = imgRef.current && imgRef.current.getBoundingClientRect();
@@ -6194,7 +6234,8 @@ function VisorPlano({ plano, pines, marcas, activa, sel, onTocar, onPin, onMarca
           "data-pin": p.n,
           title: p.titulo,
           style: { left: p.x * 100 + "%", top: p.y * 100 + "%" },
-          onClick: e => { e.stopPropagation(); onPin(p.i); }
+          onPointerDown: e => arrastrar(e, onMoverPin && (pt => onMoverPin(p.i, pt))),
+          onClick: e => { e.stopPropagation(); if (!recienMovido.current) onPin(p.i); }
         }, p.n)),
         marcas.map(m => h("div", {
           key: "m" + m.id,
@@ -6202,7 +6243,8 @@ function VisorPlano({ plano, pines, marcas, activa, sel, onTocar, onPin, onMarca
           "data-marca": m.n,
           title: "Componente " + m.n + ": falta configurarlo",
           style: { left: m.x * 100 + "%", top: m.y * 100 + "%" },
-          onClick: e => { e.stopPropagation(); onMarca(m.id); }
+          onPointerDown: e => arrastrar(e, onMoverMarca && (pt => onMoverMarca(m.id, pt))),
+          onClick: e => { e.stopPropagation(); if (!recienMovido.current) onMarca(m.id); }
         }, m.n)))),
     h("div", { className: "arm-cab", style: { marginTop: 8, marginBottom: 0 } },
       h("span", { style: { fontSize: 11, color: "#888", marginRight: "auto" } }, "Rueda: acercar · botón central: mover"),
@@ -6327,7 +6369,7 @@ function PasoPlano({ plano, setPlano, onSeguir, onCancelar }) {
 /** El paso de componentes con plano: el plano a la izquierda y, a la derecha,
  *  lo de siempre —el menú de componentes, lo que se va armando y los
  *  botones—. Sin plano, es exactamente la pantalla de antes. */
-function ArmadorSobrePlano({ plano, pines, marcas, activa, sel, onTocar, onPin, onMarca, onQuitarMarca, onPlano, onQuitarPlano, children }) {
+function ArmadorSobrePlano({ plano, pines, marcas, activa, sel, onTocar, onPin, onMarca, onMoverPin, onMoverMarca, onQuitarMarca, onPlano, onQuitarPlano, children }) {
   const h = React.createElement;
   if (!plano) {
     return h("div", null,
@@ -6354,8 +6396,8 @@ function ArmadorSobrePlano({ plano, pines, marcas, activa, sel, onTocar, onPin, 
         h("div", { className: "arm-aviso" + (marcaActiva ? " listo" : ""), "data-armador": "aviso" },
           marcaActiva
             ? "Configurando el componente " + marcaActiva.n + ": escógelo a la derecha →"
-            : "Toca el plano para poner cada componente. Puedes poner todos y configurarlos al final."),
-        h(VisorPlano, { plano, pines, marcas, activa, sel, onTocar, onPin, onMarca })),
+            : "Toca el plano para poner cada componente. Puedes poner todos y configurarlos al final. Arrastra un círculo para moverlo."),
+        h(VisorPlano, { plano, pines, marcas, activa, sel, onTocar, onPin, onMarca, onMoverPin, onMoverMarca })),
       h("div", { className: "arm-der" },
         marcas.length > 0 && h("div", { className: "arm-marcas", "data-armador": "por-configurar" },
           h("b", null, marcas.length === 1 ? "1 componente sin configurar:" : marcas.length + " componentes sin configurar:"),
@@ -7974,16 +8016,27 @@ ${rowHTML}
       console.error(e);
     }
   };
+  /* «✓ Guardar cambios», arriba del armador. Hasta el 24-sep guardaba sólo
+   * nombre, fotos y perfil: el plano nuevo y los cambios a los componentes
+   * (el LED que se quitó, uno que se movió) se perdían sin aviso —Mike:
+   * «cuando cambio el plano […] no se cambia en el PDF»—. Ahora guarda lo
+   * mismo que «Guardar mueble →». Si la lista de componentes está vacía (el
+   * mueble se abrió y todavía no se cargan), se quedan los que tenía. */
   const guardarEdicion = () => {
     if (editIdx === null) {
       setFase("nav");
       return;
     }
+    if (marcas.length && !window.confirm("Quedan " + marcas.length + (marcas.length === 1 ? " componente" : " componentes") + " sin configurar en el plano (" + marcas.map(m => m.n).join(", ") + "). Si sigues, se descartan. ¿Guardar el mueble así?")) return;
+    setMarcas([]);
+    setMarcaSel(null);
     setMuebles(p => p.map((m, i) => i === editIdx ? {
       ...m,
       nombre: nomMueble || m.nombre,
       imagenes: imgs.length ? imgs : m.imagenes,
-      perfil: JSON.parse(JSON.stringify(perfil))
+      perfil: JSON.parse(JSON.stringify(perfil)),
+      ...(comps.length ? { componentes: [...comps], total: comps.reduce((s, c) => s + c.subtotal, 0) } : {}),
+      plano
     } : m));
     setComps([]);
     setMod(null);
@@ -8243,6 +8296,8 @@ ${rowHTML}
       setMarcas(p => p.filter(x => x.id !== id));
       if (marcaSel === id) setMarcaSel(null);
     },
+    onMoverPin: (i, pt) => setComps(p => p.map((c, j) => j === i ? { ...c, pos: pt } : c)),
+    onMoverMarca: (id, pt) => setMarcas(p => p.map(m => m.id === id ? { ...m, x: pt.x, y: pt.y } : m)),
     onPin: i => {
       setSelComp(i);
       setEditComp(i);
