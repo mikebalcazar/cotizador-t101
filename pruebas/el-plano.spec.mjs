@@ -213,9 +213,18 @@ test('al volver a abrir un mueble están todos sus componentes, en su lugar, y s
     await abrirCotizacion(p);
     await p.getByRole('button', { name: /Editar cotización/ }).click();
     await p.getByRole('button', { name: 'abrir el armador' }).click();
-    await perfilComun(p, null);
-    await p.waitForSelector('[data-armador="con-plano"]');
+    // Mike, 25-sep: editar abre directo en los componentes, sin pasar por
+    // nombre y acabados. Si apareciera el perfil, esta espera se vence.
+    await p.waitForSelector('[data-armador="con-plano"]', { timeout: 10000 });
+    assert.equal(await p.getByRole('button', { name: 'Prelaminado', exact: true }).count(), 0, 'no pasó por la pantalla de acabados');
     assert.equal(await p.locator('[data-componente]').count(), 2, 'los dos componentes que ya tenía');
+    // «✎ Editar» sigue llevando al nombre y las fotos: abre el perfil ya
+    // lleno (con «Continuar»), no el recorrido de acabados desde cero.
+    await p.getByRole('button', { name: /✎ Editar/ }).click();
+    await p.getByRole('button', { name: /Continuar a componentes/ }).waitFor({ timeout: 5000 }).catch(() => {});
+    assert.equal(await p.getByRole('button', { name: /Continuar a componentes/ }).count(), 1, 'el perfil se abre lleno');
+    await p.getByRole('button', { name: /Continuar a componentes/ }).click();
+    await p.waitForSelector('[data-armador="con-plano"]');
     assert.equal(await p.locator('[data-pin="1"]').count(), 1, 'el ubicado, en el plano');
     await p.locator('[data-pin="1"]').click();
     assert.equal(await p.locator('[data-componente="1"].arm-sel').count(), 1, 'tocar el punto señala su componente');
@@ -400,9 +409,13 @@ async function alArmadorDe(p, mueble) {
   await abrirCotizacion(p);
   await p.getByRole('button', { name: /Editar cotización/ }).click();
   await p.getByRole('button', { name: 'abrir el armador' }).click();
-  await perfilComun(p, null);
-  await p.waitForSelector('[data-armador="con-plano"]');
+  await p.waitForSelector('[data-armador="con-plano"]', { timeout: 10000 });
   await p.waitForFunction(() => { const i = document.querySelector('[data-armador="lienzo"] img'); return i && i.complete && i.naturalWidth > 0; }, null, { timeout: 10000 });
+  // Al abrir a editar, el autoguardado sube el plano y cambia su dirección
+  // (de `data:` a `/s101/…/archivos/…`). Se espera a que eso pase: una prueba
+  // que tome la dirección antes la ve cambiar sola y culpa a la app (1 de 8
+  // corridas en paralelo, 25-sep).
+  await p.waitForFunction(() => !(document.querySelector('[data-armador="lienzo"] img')?.getAttribute('src') || '').startsWith('data:'), null, { timeout: 15000 }).catch(() => {});
 }
 const cotCon = (mueble) => ({ ...COTIZACION, datos: { ...COTIZACION.datos, versiones: [{ ...VERSION, muebles: [mueble] }] } });
 
