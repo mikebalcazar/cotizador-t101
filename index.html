@@ -4156,7 +4156,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G94";
+const APP_VERSION = "G95";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -6252,7 +6252,7 @@ function VisorPlano({ plano, pines, marcas, activa, sel, onTocar, onPin, onMarca
       h("button", { onClick: () => acercar(1.5), disabled: zoom >= ZOOM_MAX, title: "Acercar" }, "+"),
       h("button", { onClick: () => setZoom(1), title: "Ver completo" }, "Completo")));
 }
-function BotonPlano({ etiqueta, onPlano, estilo }) {
+function BotonPlano({ etiqueta, onPlano, estilo, titulo }) {
   const h = React.createElement;
   const [leyendo, setLeyendo] = useState(false);
   const [error, setError] = useState("");
@@ -6265,7 +6265,7 @@ function BotonPlano({ etiqueta, onPlano, estilo }) {
     try { onPlano(await leerPlano(f)); } catch (err) { setError("No se pudo leer «" + f.name + "»: " + (err && err.message || err)); } finally { setLeyendo(false); }
   };
   return h("span", { style: { display: "inline-flex", flexDirection: "column", gap: 4 } },
-    h("label", { style: { ...(estilo || {}), cursor: leyendo ? "wait" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" } },
+    h("label", { title: titulo, style: { ...(estilo || {}), cursor: leyendo ? "wait" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" } },
       leyendo ? "Leyendo el plano…" : etiqueta,
       h("input", { type: "file", accept: "image/*,application/pdf", "data-armador": "subir-plano", onChange: elegir, disabled: leyendo, style: { display: "none" } })),
     error && h("span", { style: { color: "#c0392b", fontSize: 12 } }, error));
@@ -6623,13 +6623,15 @@ function SelectoresMateriales({ perfil, piOpts, pfOpts, onCambiar, deshabilitado
 
 /** Un archivo sirve de plano si es imagen o PDF. */
 const esArchivoPlano = f => !!f && (/^image\//.test(f.type || "") || f.type === "application/pdf" || /\.pdf$/i.test(f.name || ""));
-/** El primer paso de «Agregar mueble»: subir un plano o una foto, o seguir
- *  como siempre. Mike, 24-sep: «quiero poder arrastrar la imagen o plano […]
- *  o pegar la imagen o plano que está en el portapapeles». Toda la tarjeta
- *  recibe lo que se suelte, y Ctrl-V / Cmd-V pega mientras este paso está a
- *  la vista (en este paso no hay otra cosa que reciba lo pegado). */
-function PasoPlano({ plano, setPlano, onSeguir, onCancelar }) {
-  const h = React.createElement;
+/** Recibir un plano que se suelta encima o se pega con Ctrl-V / Cmd-V.
+ *  Mike, 24-sep: «quiero poder arrastrar la imagen o plano […] o pegar la
+ *  imagen o plano que está en el portapapeles»; 25-sep: «si quiero cambiar
+ *  de plano en los componentes […] quiero que funcione igual que cuando lo
+ *  agrego por primera vez». Lo usan el paso del plano y el armador: nunca
+ *  están a la vista al mismo tiempo, así que el `paste` de la ventana tiene
+ *  un solo dueño. Devuelve las props de la zona donde se suelta y el estado
+ *  para enseñar. */
+function usePlanoSuelto(onPlano) {
   const [arrastrando, setArrastrando] = useState(false);
   const [leyendo, setLeyendo] = useState(false);
   const [aviso, setAviso] = useState("");
@@ -6638,7 +6640,7 @@ function PasoPlano({ plano, setPlano, onSeguir, onCancelar }) {
     if (!f) { setAviso("Eso no es una imagen ni un PDF."); return; }
     setAviso("");
     setLeyendo(true);
-    try { setPlano(await leerPlano(f)); } catch (err) { setAviso("No se pudo leer «" + (f.name || "lo pegado") + "»: " + (err && err.message || err)); } finally { setLeyendo(false); }
+    try { onPlano(await leerPlano(f)); } catch (err) { setAviso("No se pudo leer «" + (f.name || "lo pegado") + "»: " + (err && err.message || err)); } finally { setLeyendo(false); }
   };
   const usarRef = useRef(usar);
   usarRef.current = usar;
@@ -6653,24 +6655,39 @@ function PasoPlano({ plano, setPlano, onSeguir, onCancelar }) {
     window.addEventListener("paste", alPegar);
     return () => window.removeEventListener("paste", alPegar);
   }, []);
-  return h("div", {
-      "data-armador": "zona-plano",
-      "data-arrastrando": arrastrando ? "si" : null,
-      onDragOver: e => { e.preventDefault(); setArrastrando(true); },
-      // `dragleave` también salta al pasar sobre un hijo: sólo cuenta si de
-      // veras se salió de la tarjeta.
-      onDragLeave: e => { if (!e.currentTarget.contains(e.relatedTarget)) setArrastrando(false); },
-      onDrop: e => { e.preventDefault(); setArrastrando(false); usar(e.dataTransfer && e.dataTransfer.files); },
-      style: { borderRadius: 8, outline: arrastrando ? "2px dashed #0080C1" : "2px dashed transparent", outlineOffset: 2, background: arrastrando ? "rgba(0,128,193,0.06)" : "transparent", transition: "background 120ms" }
-    },
+  const zona = {
+    "data-armador": "zona-plano",
+    "data-arrastrando": arrastrando ? "si" : null,
+    onDragOver: e => { e.preventDefault(); setArrastrando(true); },
+    // `dragleave` también salta al pasar sobre un hijo: sólo cuenta si de
+    // veras se salió de la zona.
+    onDragLeave: e => { if (!e.currentTarget.contains(e.relatedTarget)) setArrastrando(false); },
+    onDrop: e => { e.preventDefault(); setArrastrando(false); usar(e.dataTransfer && e.dataTransfer.files); },
+    style: { borderRadius: 8, outline: arrastrando ? "2px dashed #0080C1" : "2px dashed transparent", outlineOffset: 2, background: arrastrando ? "rgba(0,128,193,0.06)" : "transparent", transition: "background 120ms" }
+  };
+  return { zona, arrastrando, leyendo, aviso };
+}
+/** Lo que se enseña mientras se arrastra, se lee o algo salió mal. */
+function EstadoPlanoSuelto({ arrastrando, leyendo, aviso, compacto }) {
+  const h = React.createElement;
+  const mb = compacto ? 6 : 14;
+  return h(React.Fragment, null,
+    arrastrando && h("div", { style: { marginBottom: mb, padding: compacto ? 8 : 18, textAlign: "center", fontWeight: 700, color: "#0080C1", border: "2px dashed #0080C1", borderRadius: 6 } }, "Suéltalo aquí"),
+    leyendo && h("div", { style: { marginBottom: mb, fontSize: 13, color: "#0080C1" }, "data-armador": "leyendo" }, "Leyendo el plano…"),
+    aviso && h("div", { style: { marginBottom: mb, fontSize: 12, color: "#c0392b" }, "data-armador": "aviso-plano" }, aviso));
+}
+/** El primer paso de «Agregar mueble»: subir un plano o una foto, o seguir
+ *  como siempre. Toda la tarjeta recibe lo que se suelte o se pegue. */
+function PasoPlano({ plano, setPlano, onSeguir, onCancelar }) {
+  const h = React.createElement;
+  const { zona, arrastrando, leyendo, aviso } = usePlanoSuelto(setPlano);
+  return h("div", zona,
     h(Card, null,
       h(PhaseLbl, { num: "1" }, "Plano o imagen del mueble"),
       h("div", { style: { fontSize: 13, color: "#666", marginBottom: 14, fontFamily: "Raleway,sans-serif" } },
         "Sube el plano o una foto y vas a poner cada componente sobre ella. Puede ser una imagen o un PDF (se usa su primera página). ",
         h("b", null, "También puedes arrastrarlo aquí o pegarlo con Ctrl-V.")),
-      arrastrando && h("div", { style: { marginBottom: 14, padding: 18, textAlign: "center", fontWeight: 700, color: "#0080C1", border: "2px dashed #0080C1", borderRadius: 6 } }, "Suéltalo aquí"),
-      leyendo && h("div", { style: { marginBottom: 14, fontSize: 13, color: "#0080C1" }, "data-armador": "leyendo" }, "Leyendo el plano…"),
-      aviso && h("div", { style: { marginBottom: 14, fontSize: 12, color: "#c0392b" }, "data-armador": "aviso-plano" }, aviso),
+      h(EstadoPlanoSuelto, { arrastrando, leyendo, aviso }),
       plano && h("div", { style: { marginBottom: 14, border: "1px solid #D8D4CD", borderRadius: 6, padding: 8, background: "#fff" } },
         h("img", { src: plano.src, alt: plano.nombre, "data-armador": "vista-previa", style: { display: "block", maxWidth: "100%", maxHeight: 280, margin: "0 auto" } }),
         h("div", { style: { fontSize: 11, color: "#888", marginTop: 6, textAlign: "center" } }, plano.nombre)),
@@ -6684,10 +6701,15 @@ function PasoPlano({ plano, setPlano, onSeguir, onCancelar }) {
  *  botones—. Sin plano, es exactamente la pantalla de antes. */
 function ArmadorSobrePlano({ plano, pines, marcas, activa, sel, onTocar, onPin, onMarca, onMoverPin, onMoverMarca, onQuitarMarca, onPlano, onQuitarPlano, children }) {
   const h = React.createElement;
+  // Cambiar el plano funciona igual que ponerlo la primera vez: se suelta
+  // encima del plano o se pega (Mike, 25-sep).
+  const suelto = usePlanoSuelto(onPlano);
   if (!plano) {
-    return h("div", null,
-      h("div", { style: { marginBottom: 8, display: "flex", justifyContent: "flex-end" } },
+    return h("div", suelto.zona,
+      h("div", { style: { marginBottom: 8, display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8 } },
+        h("span", { style: { fontSize: 11, color: "#888" } }, "o arrástralo aquí, o pégalo con Ctrl-V"),
         h(BotonPlano, { etiqueta: "📄 Subir plano o imagen", onPlano, estilo: { ...st.btn, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: "#0080C1", borderColor: "#0080C1" } })),
+      h(EstadoPlanoSuelto, { ...suelto, compacto: true }),
       children);
   }
   const marcaActiva = marcas.find(m => m.id === activa);
@@ -6701,11 +6723,12 @@ function ArmadorSobrePlano({ plano, pines, marcas, activa, sel, onTocar, onPin, 
   return h("div", { className: "arm-plano", "data-armador": "con-plano" },
     h("style", null, PLANO_CSS),
     h("div", { className: "arm-grid" },
-      h("div", { className: "arm-izq" },
+      h("div", { className: "arm-izq", ...suelto.zona },
         h("div", { className: "arm-cab" },
           h("b", { title: plano.nombre }, plano.nombre || "Plano"),
-          h(BotonPlano, { etiqueta: "Cambiar", onPlano, estilo: { font: "inherit", fontSize: 12, fontWeight: 600, border: "1px solid #D8D4CD", background: "#fff", borderRadius: 3, padding: "4px 9px" } }),
+          h(BotonPlano, { etiqueta: "Cambiar", onPlano, estilo: { font: "inherit", fontSize: 12, fontWeight: 600, border: "1px solid #D8D4CD", background: "#fff", borderRadius: 3, padding: "4px 9px" }, titulo: "O arrastra el plano nuevo encima de éste, o pégalo con Ctrl-V" }),
           h("button", { onClick: onQuitarPlano, title: "Quitar el plano (los componentes se quedan)" }, "Quitar")),
+        h(EstadoPlanoSuelto, { ...suelto, compacto: true }),
         h("div", { className: "arm-aviso" + (marcaActiva ? " listo" : ""), "data-armador": "aviso" },
           marcaActiva
             ? "Configurando el componente " + marcaActiva.n + ": escógelo a la derecha →"
