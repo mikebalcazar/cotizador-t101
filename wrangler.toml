@@ -16,6 +16,10 @@ compatibility_date = "2026-09-01"
 # de taller101.com está en Cloudflare (Mike lo movió ese día) y el Worker se
 # cuelga del dominio como *custom domain*: Cloudflare pone el registro y el
 # certificado; aquí no hay IPs. La dirección en workers.dev sigue viva.
+# Con `routes` puesto, wrangler APAGA el subdominio workers.dev si no se le
+# dice lo contrario (peek101 se quedó sin su dirección vieja un minuto el
+# 25-sep: «error code: 1042»). Las dos direcciones se quedan.
+workers_dev = true
 routes = [
   { pattern = "quote101.taller101.com", custom_domain = true }
 ]
