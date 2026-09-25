@@ -4156,7 +4156,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G95";
+const APP_VERSION = "G96";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -7024,7 +7024,13 @@ function Cotizador({
     setMod(null);
     setEditIdx(i);
     setImgs(m.imagenes || []);
-    setFase("perfil");
+    /* Mike, 25-sep: «cuando quiera editar los componentes, ya no me pases
+     * por la pantalla de nombre de mueble y selección de acabados. Mándame
+     * directo a la de editar componentes». Los materiales se cambian ahí
+     * arriba (G94); nombre y fotos siguen en «✎ Editar», que abre el perfil
+     * ya lleno, no el recorrido desde cero. */
+    setPs("done");
+    setFase("componentes");
   };
 
   const isFirstAutosave = useRef(true);
