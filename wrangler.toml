@@ -24,6 +24,11 @@ routes = [
   { pattern = "quote101.taller101.com", custom_domain = true }
 ]
 
+# La dirección de workers.dev manda al dominio (Mike, 25-sep: «redirigir, no
+# apagar»). Sólo producción: `vars` no se hereda y staging no lleva esto.
+[vars]
+DOMINIO_PROPIO = "quote101.taller101.com"
+
 # Lo que se publica lo arma `scripts/armar.mjs` con una lista explícita:
 # `index.html`, `fonts/` y la página del 404. **No es la raíz del
 # repositorio.** El 12-sep, servir la raíz en Netlify dejó las notas de trabajo
