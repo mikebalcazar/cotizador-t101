@@ -546,6 +546,89 @@ test('los círculos se arrastran a otro lugar del plano', async () => {
   } finally { await ctx.close(); }
 });
 
+/* Mike, 25-sep: «si quiero cambiar el material de los interiores o el
+ * material de los frentes, NO me lo cambia y queda el mismo costo. Debería
+ * poder configurar eso hasta arriba de la pantalla de componentes […] y que
+ * se actualicen en automático en cada componente y sus costos». */
+test('recalcular con otros materiales da lo mismo que agregarlo de nuevo con ellos, también en los viejos', async () => {
+  const { ctx, p, errores } = await abrirApp();
+  try {
+    const r = await p.evaluate(() => {
+      const A = { int: { formato: '18mm', acabado: 'laminado', chapa: null }, fre: { formato: '18mm', acabado: 'laminado', chapa: null } };
+      const B = { int: { formato: '15mm', acabado: 'chapa', chapa: 'encino' }, fre: { formato: '18mm', acabado: 'chapa', chapa: 'premium' } };
+      const C = { int: { formato: '18mm', acabado: 'formaica', chapa: null }, fre: { formato: '18mm', acabado: 'traceless', chapa: null } };
+      const casos = [
+        ['gabinete', { tipo: '2puertas', jaladera: 'push', etp: 'doble', etpQty: 2, qty: 3 }],
+        ['gabinete', { tipo: 'nicho', jaladera: 'ninguna', etp: 'ninguno', qty: 1 }],
+        ['cajones', { num: 4, jaladera: 'unero' }],
+        ['puerta_gabinete', { jaladera: 'normal', qty: 2 }],
+        ['puerta', { tipo: 'corrediza', jaladera: 'ninguna', qty: 2 }],
+        ['puerta', { tipo: 'abatible', jaladera: 'push', qty: 1 }],
+        ['entrepano', { fondo: '40cm', formato: '18mm', grupos: [{ ml: 1.2, cant: 2, led: true }] }],
+        ['poste', { fondo: 'mas60cm', formato: 'tambor4', grupos: [{ ml: 0.9, cant: 1, led: false }] }],
+      ];
+      const campos = (c) => JSON.stringify([c.modulo, c.desc, c.tags, c.extras, c.unitario, c.qty, c.subtotal, c.ledUnitario || 0]);
+      const fallas = [];
+      let distintos = 0;
+      for (const [tipo, data] of casos) {
+        for (const [de, a] of [[A, B], [B, C], [C, A]]) {
+          const directo = armarComponentes(tipo, data, a.int, a.fre)[0];
+          const conReceta = conMateriales(armarComponentes(tipo, data, de.int, de.fre)[0], a.int, a.fre);
+          const { receta, ...sinReceta } = armarComponentes(tipo, data, de.int, de.fre)[0];
+          const viejo = conMateriales(sinReceta, a.int, a.fre);
+          if (campos(conReceta) !== campos(directo)) fallas.push(['con receta', tipo, campos(conReceta), campos(directo)]);
+          if (campos(viejo) !== campos(directo)) fallas.push(['viejo', tipo, campos(viejo), campos(directo)]);
+          if (campos(armarComponentes(tipo, data, de.int, de.fre)[0]) !== campos(directo)) distintos++;
+        }
+      }
+      // Lo que no depende de los materiales no se toca.
+      const cub = armarComponentes('cubierta', { material: 'laminado', tipo: 'formaica', fondo: '50-60cm', qty: 2 }, A.int, A.fre)[0];
+      const cubB = conMateriales(cub, B.int, B.fre);
+      return { fallas, distintos, cubierta: campos(cub) === campos(cubB) };
+    });
+    assert.deepEqual(r.fallas, [], 'recalculado = agregado de nuevo');
+    assert.ok(r.distintos >= 10, `y los materiales sí mueven el precio (${r.distintos} casos distintos)`);
+    assert.ok(r.cubierta, 'la cubierta no depende de los materiales del mueble');
+    assert.deepEqual(errores, []);
+  } finally { await ctx.close(); }
+});
+
+test('arriba de los componentes se cambian los materiales y cada costo se actualiza', async () => {
+  // Un gabinete de antes (sin receta) con un costo viejo, y la jaladera de siempre.
+  const gab = { id: 'c-g', marca: 1, modulo: 'Gabinete', desc: 'Gabinete 1 puerta', tags: ['Interior 18mm Prelaminado', 'Frentes 18mm Prelaminado'], extras: ['Jaladera ×1'], unitario: 999, qty: 2, subtotal: 1998, pos: { x: 0.3, y: 0.3 } };
+  const mueble = { ...ARMADO, componentes: [gab, ARMADO.componentes[1]] };
+  const { ctx, p, errores, escrituras } = await abrirApp({ cotizacion: cotCon(mueble) });
+  try {
+    await alArmadorDe(p, mueble);
+    assert.equal(await p.locator('[data-armador="materiales"]').count(), 1, 'los materiales están arriba de los componentes');
+    assert.ok((await p.locator('[data-componente="1"]').innerText()).includes('$1,998'), 'pasar por el perfil sin cambiar nada no mueve precios');
+    await p.locator('[data-material="fre-acabado"]').selectOption('chapa');
+    await p.locator('[data-material="fre-chapa"]').selectOption('premium');
+    const esperado = await p.evaluate(() => {
+      const pi = { formato: '18mm', acabado: 'laminado', chapa: null }, pf = { formato: '18mm', acabado: 'chapa', chapa: 'premium' };
+      return armarComponentes('gabinete', { tipo: '1puerta', jaladera: 'normal', etp: 'ninguno', etpQty: 1, qty: 2 }, pi, pf)[0];
+    });
+    const renglon = await p.locator('[data-componente="1"]').innerText();
+    assert.ok(renglon.includes('$' + Math.round(esperado.subtotal).toLocaleString('es-MX')), `el gabinete ya vale con frentes de chapa premium (${esperado.subtotal}): ${renglon}`);
+    // Interior también.
+    await p.locator('[data-material="int-acabado"]').selectOption('formaica');
+    await p.getByRole('button', { name: /Guardar mueble →/ }).click();
+    await p.waitForSelector('[data-pantalla="hoja"]');
+    const m = await esperarMueble(escrituras, 0, (x) => x.perfil?.int?.acabado === 'formaica');
+    assert.deepEqual([m.perfil.int.acabado, m.perfil.fre.acabado, m.perfil.fre.chapa], ['formaica', 'chapa', 'premium'], 'se guardan los materiales del mueble');
+    const g = m.componentes[0];
+    const final = await p.evaluate(() => armarComponentes('gabinete', { tipo: '1puerta', jaladera: 'normal', etp: 'ninguno', etpQty: 1, qty: 2 },
+      { formato: '18mm', acabado: 'formaica', chapa: null }, { formato: '18mm', acabado: 'chapa', chapa: 'premium' })[0]);
+    assert.equal(g.subtotal, final.subtotal, 'y el gabinete se guarda con su costo nuevo');
+    assert.deepEqual(g.tags, final.tags, 'y sus materiales escritos');
+    assert.deepEqual([g.marca, g.pos], [1, { x: 0.3, y: 0.3 }], 'en su lugar, con su número');
+    const e = m.componentes[1];
+    assert.ok(e.unitario !== 1000 && e.ledSubtotal > 0, 'el entrepaño también se recalculó, y conservó su LED');
+    assert.equal(m.total, m.componentes.reduce((s, c) => s + c.subtotal, 0), 'el costo del mueble es la suma');
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
 /** Suelta o pega un archivo en la página como lo haría el navegador. */
 async function soltar(p, sel, { nombre, tipo, base64 }) {
   await p.locator(sel).evaluate((el, a) => {
