@@ -4156,7 +4156,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G96";
+const APP_VERSION = "G97";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -5943,8 +5943,9 @@ function HojaCotizacion({
           cargo("flete", "Flete", d.flete, usaF, setUsaF),
           cargo("arq", "Comisión profesionista " + pct("comisionArq"), d.arq, usaA, setUsaA),
           cargo("tdc", "Comisión TDC " + pct("comisionTDC"), d.tdc, usaT, setUsaT),
-          cargo("redondeo", "Redondeo a $" + REDONDEO, d.redondeo),
-          cargo("armados", "Precio de los armados", d.armados)));
+          cargo("redondeo", "Redondeo a $" + REDONDEO, d.redondeo)));
+      /* La cajita «Precio de los armados» (la suma de todas) se quitó el
+       * 26-sep: Mike, «no debería estar ahí». Repetía el Subtotal. */
     })());
 
   const pie = h("div", { className: "h-pie" },
