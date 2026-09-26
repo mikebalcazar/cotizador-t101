@@ -646,6 +646,78 @@ test('arriba de los componentes se cambian los materiales y cada costo se actual
   } finally { await ctx.close(); }
 });
 
+test('una sola pieza puede llevar otros materiales, y los de arriba ya no la tocan', async () => {
+  /* Mike, 26-sep: «quiero poder modificar el material de solo 1 componente.
+   * No de todo el mueble […] si todo el mueble es en formaica, quiero que
+   * una pieza poder ponerle que el frente es en nogal, solo a un componente». */
+  const gab = { id: 'c-g', marca: 1, modulo: 'Gabinete', desc: 'Gabinete 1 puerta', tags: ['Interior 18mm Prelaminado', 'Frentes 18mm Prelaminado'], extras: ['Jaladera ×1'], unitario: 999, qty: 2, subtotal: 1998, pos: { x: 0.3, y: 0.3 } };
+  const mueble = { ...ARMADO, componentes: [gab, ARMADO.componentes[1]] };
+  const { ctx, p, errores, escrituras } = await abrirApp({ cotizacion: cotCon(mueble) });
+  try {
+    await alArmadorDe(p, mueble);
+    // Sin pedir nada, la función lo dice: con materiales propios, mandan los propios.
+    const r = await p.evaluate(() => {
+      const A = { int: { formato: '18mm', acabado: 'laminado', chapa: null }, fre: { formato: '18mm', acabado: 'laminado', chapa: null } };
+      const B = { int: { formato: '18mm', acabado: 'formaica', chapa: null }, fre: { formato: '18mm', acabado: 'chapa', chapa: 'premium' } };
+      const data = { tipo: '1puerta', jaladera: 'normal', etp: 'ninguno', etpQty: 1, qty: 2 };
+      const conA = armarComponentes('gabinete', data, A.int, A.fre)[0];
+      const conB = armarComponentes('gabinete', data, B.int, B.fre)[0];
+      const propio = conMateriales({ ...conA, materiales: B }, A.int, A.fre);
+      const sigue = conMateriales(conA, B.int, B.fre);
+      return { conA: conA.subtotal, conB: conB.subtotal, propio: propio.subtotal, propioTags: propio.tags, sigue: sigue.subtotal, tagsB: conB.tags };
+    });
+    assert.notEqual(r.conA, r.conB, 'los dos juegos de materiales dan precios distintos');
+    assert.equal(r.propio, r.conB, 'con materiales propios, la pieza vale con los propios aunque el mueble diga otros');
+    assert.deepEqual(r.propioTags, r.tagsB, 'y lo escribe');
+    assert.equal(r.sigue, r.conB, 'sin materiales propios sigue al mueble');
+
+    // En pantalla: al componente 1 se le ponen frentes de chapa premium; el 2 no se mueve.
+    const antes2 = await p.locator('[data-componente="2"]').innerText();
+    await p.locator('[data-editar="1"]').click();
+    await p.locator('[data-editor-componente="1"] [data-editor="materiales-propios"]').click();
+    assert.equal(await p.locator('[data-armador="materiales-pieza"]').count(), 1, 'aparecen los selectores de la pieza');
+    assert.equal(await p.locator('[data-armador="materiales"]').count(), 1, 'y los del mueble siguen siendo uno');
+    await p.locator('[data-armador="materiales-pieza"] [data-material="fre-acabado"]').selectOption('chapa');
+    await p.locator('[data-armador="materiales-pieza"] [data-material="fre-chapa"]').selectOption('premium');
+    const esperado = await p.evaluate(() => armarComponentes('gabinete', { tipo: '1puerta', jaladera: 'normal', etp: 'ninguno', etpQty: 1, qty: 2 },
+      { formato: '18mm', acabado: 'laminado', chapa: null }, { formato: '18mm', acabado: 'chapa', chapa: 'premium' })[0]);
+    const dice = '$' + Math.round(esperado.subtotal).toLocaleString('es-MX');
+    await p.waitForFunction((t) => (document.querySelector('[data-componente="1"]')?.innerText || '').includes(t), dice, { timeout: 10000 }).catch(() => {});
+    assert.ok((await p.locator('[data-componente="1"]').innerText()).includes(dice), 'el gabinete vale con sus frentes de chapa premium');
+    assert.equal(await p.locator('[data-materiales-propios="1"]').count(), 1, 'y el renglón lo dice');
+    assert.equal(await p.locator('[data-componente="2"]').innerText(), antes2, 'el entrepaño no se movió');
+
+    // Cambiar los materiales del MUEBLE ya no toca la pieza con los suyos.
+    await p.locator('[data-armador="materiales"] [data-material="int-acabado"]').selectOption('formaica');
+    await p.waitForFunction(() => (document.querySelector('[data-componente="2"]')?.innerText || '') !== '', null, { timeout: 5000 });
+    assert.ok((await p.locator('[data-componente="1"]').innerText()).includes(dice), 'el gabinete sigue con lo suyo');
+    // Se guarda con sus materiales.
+    await p.getByRole('button', { name: /Guardar mueble →/ }).click();
+    await p.waitForSelector('[data-pantalla="hoja"]');
+    const m = await esperarMueble(escrituras, 0, (x) => x.componentes?.[0]?.materiales?.fre?.chapa === 'premium');
+    assert.deepEqual([m.componentes[0].materiales.int.acabado, m.componentes[0].materiales.fre.acabado, m.componentes[0].materiales.fre.chapa], ['laminado', 'chapa', 'premium'], 'la pieza guarda sus materiales');
+    assert.equal(m.componentes[0].subtotal, esperado.subtotal, 'y su costo');
+    assert.equal(m.perfil.int.acabado, 'formaica', 'el mueble guarda los suyos');
+    assert.ok(!m.componentes[1].materiales, 'el entrepaño no lleva materiales propios');
+
+    // Volver a los del mueble: se recalcula con los de arriba. Tras guardar
+    // el mueble la hoja sigue en edición: se abre el armador directo.
+    const editar = p.getByRole('button', { name: /Editar cotización/ });
+    if (await editar.count()) await editar.click();
+    await p.getByRole('button', { name: 'abrir el armador' }).first().click();
+    await p.waitForSelector('[data-armador="con-plano"]', { timeout: 10000 });
+    await p.locator('[data-editar="1"]').click();
+    await p.locator('[data-editor-componente="1"] [data-editor="materiales-del-mueble"]').click();
+    const delMueble = await p.evaluate(() => armarComponentes('gabinete', { tipo: '1puerta', jaladera: 'normal', etp: 'ninguno', etpQty: 1, qty: 2 },
+      { formato: '18mm', acabado: 'formaica', chapa: null }, { formato: '18mm', acabado: 'laminado', chapa: null })[0]);
+    const dice2 = '$' + Math.round(delMueble.subtotal).toLocaleString('es-MX');
+    await p.waitForFunction((t) => (document.querySelector('[data-componente="1"]')?.innerText || '').includes(t), dice2, { timeout: 10000 }).catch(() => {});
+    assert.ok((await p.locator('[data-componente="1"]').innerText()).includes(dice2), 'vuelve a valer con los materiales del mueble');
+    assert.equal(await p.locator('[data-materiales-propios="1"]').count(), 0, 'y ya no lleva la etiqueta');
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
 /** Suelta o pega un archivo en la página como lo haría el navegador. */
 async function soltar(p, sel, { nombre, tipo, base64 }) {
   await p.locator(sel).evaluate((el, a) => {

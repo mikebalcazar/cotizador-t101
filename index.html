@@ -4156,7 +4156,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G97";
+const APP_VERSION = "G98";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -6295,14 +6295,26 @@ function conLed(c, si) {
     ? { ...c, ledUnitario: LED_ML, ledSubtotal: LED_ML * q, extras: [...extras, "💡 LED"], subtotal: (c.unitario || 0) * q + LED_ML * q }
     : { ...c, ledUnitario: 0, ledSubtotal: 0, extras, subtotal: (c.unitario || 0) * q };
 }
-function EditorComponente({ c, n, onLed, onReemplazar, onCerrar }) {
+function EditorComponente({ c, n, onLed, onReemplazar, onCerrar, perfil, piOpts, pfOpts, onMateriales }) {
   const h = React.createElement;
   const boton = { font: "inherit", fontSize: 12, fontWeight: 700, border: "1px solid #0080C1", color: "#0080C1", background: "#fff", borderRadius: 3, padding: "5px 10px", cursor: "pointer" };
+  const propios = !!(c.materiales && c.materiales.int && c.materiales.fre);
   return h("div", { "data-editor-componente": n, onClick: e => e.stopPropagation(), style: { background: "#F4F2EE", border: "1px solid #D8D4CD", borderRadius: 4, padding: "10px 12px", margin: "2px 0 8px", fontSize: 12.5, fontFamily: "Raleway,sans-serif" } },
     h("div", { style: { fontWeight: 700, marginBottom: 8 } }, "Editar el componente " + n + " · " + (c.modulo || "")),
     aceptaLed(c) && h("label", { style: { display: "flex", gap: 6, alignItems: "center", marginBottom: 8, cursor: "pointer" } },
       h("input", { type: "checkbox", "data-editor": "led", checked: tieneLed(c), onChange: e => onLed(e.target.checked) }),
       "💡 LED (" + $(LED_ML) + " por metro)"),
+    /* Materiales de SÓLO esta pieza (Mike, 26-sep). Mientras no se piden, la
+     * pieza sigue a los materiales de arriba; al pedirlos, arranca con una
+     * copia de los del mueble y de ahí se cambia lo que sea. */
+    onMateriales && dependeDeMateriales(c) && h("div", { "data-editor": "materiales", style: { marginBottom: 8, padding: "6px 8px", background: "#fff", border: "1px solid #E4E0D8", borderRadius: 3 } },
+      h("div", { style: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" } },
+        h("span", { style: { fontWeight: 700 } }, propios ? "Esta pieza lleva sus propios materiales" : "Esta pieza lleva los materiales del mueble"),
+        propios
+          ? h("button", { style: { ...boton, borderColor: "#D8D4CD", color: "#555" }, "data-editor": "materiales-del-mueble", onClick: () => onMateriales(null) }, "Volver a los del mueble")
+          : h("button", { style: boton, "data-editor": "materiales-propios", onClick: () => onMateriales(JSON.parse(JSON.stringify({ int: perfil.int, fre: perfil.fre }))) }, "Otros materiales para esta pieza…")),
+      propios && h(SelectoresMateriales, { perfil: c.materiales, piOpts, pfOpts, onCambiar: onMateriales, marca: "materiales-pieza" }),
+      propios && h("div", { style: { color: "#666", marginTop: 6 } }, "Cambiar los materiales de arriba ya no toca esta pieza.")),
     h("div", { style: { color: "#666", marginBottom: 8 } }, "La cantidad se cambia con − y + en su renglón. Para cambiar medidas, acabado o tipo, reemplázalo: lo configuras de nuevo y queda en el mismo lugar del plano, con el mismo número."),
     h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
       h("button", { style: boton, "data-editor": "reemplazar", onClick: onReemplazar }, "Reemplazar por otro…"),
@@ -6576,9 +6588,19 @@ function recetaDe(c) {
 /** El mismo componente con otros materiales: se rearma con su receta y se
  *  queda con lo suyo —su lugar en el plano, su número, su cantidad y su
  *  LED—. Si no hay cómo rearmarlo, se queda igual. */
+/** Los tipos cuyo precio depende de los materiales del mueble. */
+const TIPOS_CON_MATERIALES = ["gabinete", "cajones", "puerta_gabinete", "puerta", "entrepano", "poste"];
+const dependeDeMateriales = c => { const r = recetaDe(c); return !!r && TIPOS_CON_MATERIALES.includes(r.tipo); };
+/* Una pieza puede llevar SUS materiales (Mike, 26-sep: «quiero poder
+ * modificar el material de solo 1 componente. No de todo el mueble […] si
+ * todo el mueble es en formaica, quiero que una pieza poder ponerle que el
+ * frente es en nogal»). Van en `c.materiales = { int, fre }` y mandan sobre
+ * los del mueble: cambiar los de arriba ya no toca esa pieza. Sin
+ * `materiales`, la pieza sigue a su mueble como siempre. */
 function conMateriales(c, pi, pf) {
   const receta = recetaDe(c);
-  if (!receta || !["gabinete", "cajones", "puerta_gabinete", "puerta", "entrepano", "poste"].includes(receta.tipo)) return c;
+  if (!receta || !TIPOS_CON_MATERIALES.includes(receta.tipo)) return c;
+  if (c.materiales && c.materiales.int && c.materiales.fre) { pi = c.materiales.int; pf = c.materiales.fre; }
   const data = JSON.parse(JSON.stringify(receta.data));
   if (receta.tipo === "entrepano" || receta.tipo === "poste") data.grupos = [{ ...(data.grupos || [])[0], led: tieneLed(c) }];
   let nuevo;
@@ -6597,7 +6619,7 @@ function conMateriales(c, pi, pf) {
 
 /** Los materiales del mueble, arriba de la pantalla de componentes (Mike,
  *  25-sep): cambiar uno recalcula en ese momento cada componente y su costo. */
-function SelectoresMateriales({ perfil, piOpts, pfOpts, onCambiar, deshabilitado }) {
+function SelectoresMateriales({ perfil, piOpts, pfOpts, onCambiar, deshabilitado, marca = "materiales" }) {
   const h = React.createElement;
   const sel = (clave, valor, opciones, alCambiar) => h("select", {
     "data-material": clave, value: valor || "", disabled: deshabilitado,
@@ -6609,7 +6631,7 @@ function SelectoresMateriales({ perfil, piOpts, pfOpts, onCambiar, deshabilitado
   const pi = perfil.int || {}, pf = perfil.fre || {};
   // Chapa sólo cuando el acabado es chapa; al escoger chapa se propone la primera.
   const conAcabado = (zonaP, acabado) => ({ ...zonaP, acabado, chapa: acabado === "chapa" ? zonaP.chapa || "pino" : null });
-  return h("div", { "data-armador": "materiales", style: { display: "grid", gap: 6, marginTop: 8, paddingTop: 8, borderTop: "1px solid #EAE7E1" } },
+  return h("div", { "data-armador": marca, style: { display: "grid", gap: 6, marginTop: 8, paddingTop: 8, borderTop: "1px solid #EAE7E1" } },
     zona("Interiores", [
       sel("int-formato", pi.formato, piOpts.fmt, v => onCambiar({ ...perfil, int: { ...pi, formato: v } })),
       sel("int-acabado", pi.acabado, piOpts.acab, v => onCambiar({ ...perfil, int: conAcabado(pi, v) })),
@@ -8592,7 +8614,11 @@ ${rowHTML}
   }, c.pos && /*#__PURE__*/React.createElement("span", {
     className: "arm-num",
     title: "Su lugar en el plano"
-  }, c.marca || i + 1), c.modulo), /*#__PURE__*/React.createElement("div", {
+  }, c.marca || i + 1), c.modulo, c.materiales && c.materiales.int && c.materiales.fre && React.createElement("span", {
+    "data-materiales-propios": i + 1,
+    title: "Esta pieza lleva sus propios materiales; los de arriba no la tocan",
+    style: { marginLeft: 6, padding: "1px 5px", borderRadius: 3, background: "#FFF3C4", color: "#7A5A00", fontSize: 9, letterSpacing: "0.04em" }
+  }, "sus materiales")), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
       fontWeight: 600
@@ -8665,7 +8691,14 @@ ${rowHTML}
       setModK(k => k + 1);
       setTimeout(() => { const d = document.querySelector("[data-reemplazando]"); d && d.scrollIntoView && d.scrollIntoView({ behavior: "smooth", block: "start" }); }, 50);
     },
-    onCerrar: () => { setEditComp(null); setSelComp(null); }
+    onCerrar: () => { setEditComp(null); setSelComp(null); },
+    perfil, piOpts, pfOpts,
+    onMateriales: nuevo => setComps(p => p.map((x, j) => {
+      if (j !== i) return x;
+      if (nuevo) return conMateriales({ ...x, materiales: nuevo }, nuevo.int, nuevo.fre);
+      const { materiales, ...sin } = x;
+      return conMateriales(sin, perfil.int, perfil.fre);
+    }))
   }))), /*#__PURE__*/React.createElement(HR, null), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
