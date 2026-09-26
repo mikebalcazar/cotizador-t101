@@ -338,11 +338,13 @@ test('una cotización aprobada se ve aprobada, en el menú y en la hoja, y no se
   } finally { await ctx.close(); }
 });
 
-test('debajo de cada cargo, su monto: los indirectos y los demás suman el precio de los armados', async () => {
+test('debajo de cada cargo, su monto: los indirectos y los demás suman el subtotal de la hoja', async () => {
   /* Mike, 23-sep: «Quitaste el monto de los indirectos de la suma al final
    * […] necesito ese monto. Y en el flete, la comisión profesionista y la
    * comisión TDC me pongas abajo qué monto representa». Los porcentajes son
-   * los de ⚙ (aquí, los de fábrica: 7.5, 3.5, 2, 10 y 4.5). */
+   * los de ⚙ (aquí, los de fábrica: 7.5, 3.5, 2, 10 y 4.5).
+   * 26-sep: la cajita «Precio de los armados» se quitó (Mike: «no debería
+   * estar ahí»); repetía el Subtotal, y contra ése se cuadra. */
   const { ctx, p, errores } = await abrirApp();
   try {
     await abrirCotizacion(p);
@@ -360,16 +362,15 @@ test('debajo de cada cargo, su monto: los indirectos y los demás suman el preci
     assert.equal(await cargo('flete'), 1500, 'el flete mínimo');
     const partes = ['costo', 'indirectos', 'ingenieria', 'embalaje', 'arq', 'tdc', 'flete', 'redondeo'];
     const suma = async () => { let t = 0; for (const k of partes) t += (await p.locator(`[data-cargo="${k}"]`).innerText()) === '—' ? 0 : await cargo(k); return Math.round(t * 100) / 100; };
-    assert.equal(await suma(), await cargo('armados'), 'las partes suman el precio de los armados');
-    assert.equal(await cargo('armados'), await leer(p, '[data-hoja="subtotal"]'), 'que es lo que dice la hoja');
+    assert.equal(await p.locator('[data-cargo="armados"]').count(), 0, 'la cajita «Precio de los armados» ya no está');
+    assert.equal(await suma(), await leer(p, '[data-hoja="subtotal"]'), 'las partes suman el subtotal de la hoja');
     const red = await cargo('redondeo');
     assert.ok(red >= 0 && red < 50 * 2, `el redondeo es hacia arriba y de menos de $50 por pieza (${red})`);
 
     // Apagar el flete: su monto se va y el resto sigue cuadrando.
     await p.locator('[data-hoja="cargos"] label', { hasText: 'Flete' }).locator('input').uncheck();
     await p.waitForFunction(() => document.querySelector('[data-cargo="flete"]').innerText === '—', null, { timeout: 5000 });
-    assert.equal(await suma(), await cargo('armados'));
-    assert.equal(await cargo('armados'), await leer(p, '[data-hoja="subtotal"]'));
+    assert.equal(await suma(), await leer(p, '[data-hoja="subtotal"]'));
     assert.equal(await p.locator('[data-hoja="cargos"]').evaluate((e) => e.classList.contains('no-print')), true, 'no sale impreso');
     assert.deepEqual(errores, [], 'sin errores de JavaScript');
   } finally { await ctx.close(); }
