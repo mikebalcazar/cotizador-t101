@@ -21,6 +21,7 @@ import { existsSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { editarCotizacion } from './editar.mjs';
 
 const PUBLICAR = fileURLToPath(new URL('../publicar/', import.meta.url));
 const TIPOS = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.woff2': 'font/woff2', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
@@ -157,7 +158,7 @@ test('agregar mueble: se sube el plano y cada componente queda donde se tocó', 
   const { ctx, p, errores, escrituras } = await abrirApp();
   try {
     await abrirCotizacion(p);
-    await p.getByRole('button', { name: /Editar cotización/ }).click();
+    await editarCotizacion(p);
     await p.getByRole('button', { name: '+ Agregar mueble' }).first().click();
     await p.locator('[data-armador="subir-plano"]').waitFor({ state: 'attached' });
     assert.ok(/Plano o imagen del mueble/i.test(await p.locator('body').innerText()), 'lo primero es ofrecer el plano');
@@ -211,7 +212,7 @@ test('al volver a abrir un mueble están todos sus componentes, en su lugar, y s
   const { ctx, p, errores, escrituras } = await abrirApp({ cotizacion: cot });
   try {
     await abrirCotizacion(p);
-    await p.getByRole('button', { name: /Editar cotización/ }).click();
+    await editarCotizacion(p);
     await p.getByRole('button', { name: 'abrir el armador' }).click();
     // Mike, 25-sep: editar abre directo en los componentes, sin pasar por
     // nombre y acabados. Si apareciera el perfil, esta espera se vence.
@@ -245,7 +246,7 @@ test('sin plano, el armador es el de siempre y el plano se puede subir después'
   const { ctx, p, errores } = await abrirApp();
   try {
     await abrirCotizacion(p);
-    await p.getByRole('button', { name: /Editar cotización/ }).click();
+    await editarCotizacion(p);
     await p.getByRole('button', { name: '+ Agregar mueble' }).first().click();
     await p.getByRole('button', { name: /Seguir sin plano/ }).click();
     await perfilComun(p, 'Repisa');
@@ -269,7 +270,7 @@ test('se ponen todos los componentes primero y se configuran al final: rojo sin 
   p.on('dialog', (d) => { dialogos.push(d.message()); d.accept(); });
   try {
     await abrirCotizacion(p);
-    await p.getByRole('button', { name: /Editar cotización/ }).click();
+    await editarCotizacion(p);
     await p.getByRole('button', { name: '+ Agregar mueble' }).first().click();
     await p.locator('[data-armador="subir-plano"]').setInputFiles({ name: 'cocina.png', mimeType: 'image/png', buffer: PNG });
     await p.getByRole('button', { name: /Continuar con este plano/ }).click();
@@ -353,7 +354,7 @@ test('la rueda acerca donde está el cursor, y el botón central mueve el plano'
   const { ctx, p, errores } = await abrirApp();
   try {
     await abrirCotizacion(p);
-    await p.getByRole('button', { name: /Editar cotización/ }).click();
+    await editarCotizacion(p);
     await p.getByRole('button', { name: '+ Agregar mueble' }).first().click();
     await p.locator('[data-armador="subir-plano"]').setInputFiles({ name: 'cocina.png', mimeType: 'image/png', buffer: PNG });
     await p.getByRole('button', { name: /Continuar con este plano/ }).click();
@@ -407,7 +408,7 @@ const ARMADO = {
 ARMADO.total = 500 + 6720;
 async function alArmadorDe(p, mueble) {
   await abrirCotizacion(p);
-  await p.getByRole('button', { name: /Editar cotización/ }).click();
+  await editarCotizacion(p);
   await p.getByRole('button', { name: 'abrir el armador' }).click();
   await p.waitForSelector('[data-armador="con-plano"]', { timeout: 10000 });
   await p.waitForFunction(() => { const i = document.querySelector('[data-armador="lienzo"] img'); return i && i.complete && i.naturalWidth > 0; }, null, { timeout: 10000 });
@@ -737,7 +738,7 @@ async function pegar(p, { nombre, tipo, base64, texto }) {
 }
 async function alPasoPlano(p) {
   await abrirCotizacion(p);
-  await p.getByRole('button', { name: /Editar cotización/ }).click();
+  await editarCotizacion(p);
   await p.getByRole('button', { name: '+ Agregar mueble' }).first().click();
   await p.locator('[data-armador="zona-plano"]').waitFor({ timeout: 10000 }).catch(() => {});
 }
@@ -826,7 +827,7 @@ test('un plano en PDF se lee de su primera página', async () => {
   const { ctx, p, errores } = await abrirApp();
   try {
     await abrirCotizacion(p);
-    await p.getByRole('button', { name: /Editar cotización/ }).click();
+    await editarCotizacion(p);
     await p.getByRole('button', { name: '+ Agregar mueble' }).first().click();
     await p.locator('[data-armador="subir-plano"]').setInputFiles({ name: 'plano.pdf', mimeType: 'application/pdf', buffer: PDF });
     const resultado = await Promise.race([
