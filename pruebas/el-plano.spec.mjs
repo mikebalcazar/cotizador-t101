@@ -560,6 +560,88 @@ test('los círculos se arrastran a otro lugar del plano', async () => {
   } finally { await ctx.close(); }
 });
 
+test('sin plano los componentes pierden su lugar; con plano nuevo se vuelven a poner uno por uno', async () => {
+  /* Mike, 29-sep-2026: «cuando quito un plano los componentes pierden su
+   * ubicación en el plano. Cuando meto un plano nuevo, necesito que me dé la
+   * opción de reubicar los componentes en el plano». */
+  const { ctx, p, errores, escrituras } = await abrirApp({ cotizacion: cotCon(ARMADO) });
+  try {
+    await alArmadorDe(p, ARMADO);
+    assert.equal(await p.locator('[data-pin]').count(), 2, 'los dos círculos en su lugar');
+    assert.equal(await p.locator('[data-armador="sin-lugar"]').count(), 0, 'nada que reubicar');
+    p.on('dialog', (d) => d.accept());
+    await p.getByRole('button', { name: 'Quitar' }).click();
+    await p.waitForSelector('[data-armador="subir-plano"]', { state: 'attached' });
+    assert.equal(await p.locator('[data-armador="con-plano"]').count(), 0, 'ya no hay plano');
+    // Sube otro plano: los dos componentes están, pero sin lugar.
+    await p.locator('[data-armador="subir-plano"]').first().setInputFiles({ name: 'plano-nuevo.png', mimeType: 'image/png', buffer: Buffer.from(PLANO_GRIS.split(',')[1], 'base64') });
+    await p.waitForSelector('[data-armador="con-plano"]', { timeout: 10000 });
+    await p.waitForFunction(() => { const i = document.querySelector('[data-armador="lienzo"] img'); return i && i.complete && i.naturalWidth > 0; }, null, { timeout: 10000 });
+    assert.equal(await p.locator('[data-pin]').count(), 0, 'sin plano viejo no hay lugares');
+    assert.equal(await p.locator('[data-armador="plano-nuevo"]').count(), 0, 'no se ofrece «mismo lugar»: no tenían lugar');
+    assert.ok(/2 componentes sin lugar en el plano/.test(await p.locator('[data-armador="sin-lugar"]').innerText()), 'la tira dice cuántos faltan');
+    assert.equal(await p.locator('[data-sin-lugar]').count(), 2);
+    await p.locator('[data-armador="reubicar"]').click();
+    assert.ok(/Reubicando el componente 1/.test(await p.locator('[data-armador="aviso"]').innerText()), 'arranca por el 1');
+    const img = await p.locator('[data-armador="lienzo"] img').boundingBox();
+    await p.mouse.click(img.x + img.width * 0.25, img.y + img.height * 0.75);
+    assert.equal(await p.locator('[data-marca]').count(), 0, 'el toque no pone un marcador rojo');
+    assert.equal(await p.locator('[data-pin="1"]').count(), 1, 'el 1 ya tiene su lugar');
+    assert.ok(/Reubicando el componente 2/.test(await p.locator('[data-armador="aviso"]').innerText()), 'y pasa solo al 2');
+    assert.ok(/1 componente sin lugar/.test(await p.locator('[data-armador="sin-lugar"]').innerText()));
+    const img1 = await p.locator('[data-armador="lienzo"] img').boundingBox();
+    await p.mouse.click(img1.x + img1.width * 0.8, img1.y + img1.height * 0.2);
+    assert.equal(await p.locator('[data-pin]').count(), 2, 'los dos en el plano');
+    assert.equal(await p.locator('[data-armador="sin-lugar"]').count(), 0, 'la tira se va cuando ya no falta nadie');
+    assert.ok(/Toca el plano/.test(await p.locator('[data-armador="aviso"]').innerText()), 'el aviso vuelve al de siempre');
+    // La tira se fue y el plano subió: se mide otra vez dónde quedó la imagen.
+    const img2 = await p.locator('[data-armador="lienzo"] img').boundingBox();
+    const uno = await p.locator('[data-pin="1"]').boundingBox();
+    assert.ok(Math.abs(uno.x + uno.width / 2 - (img2.x + img2.width * 0.25)) < 3 && Math.abs(uno.y + uno.height / 2 - (img2.y + img2.height * 0.75)) < 3, 'el 1 quedó donde se tocó');
+    await p.getByRole('button', { name: /Guardar mueble →/ }).click();
+    await p.waitForSelector('[data-pantalla="hoja"]');
+    const m = await esperarMueble(escrituras, 0, (x) => x.plano?.nombre === 'plano-nuevo.png' && x.componentes[0].pos && Math.abs(x.componentes[0].pos.x - 0.25) < 0.02);
+    assert.ok(Math.abs(m.componentes[0].pos.y - 0.75) < 0.02 && Math.abs(m.componentes[1].pos.x - 0.8) < 0.02, `se guardaron los lugares nuevos (${JSON.stringify(m.componentes.map((c) => c.pos))})`);
+    assert.equal(m.componentes[0].marca, 1, 'con sus mismos números');
+    assert.equal(m.componentes[1].marca, 2);
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
+test('al cambiar el plano se ofrece reubicar los componentes, o dejarlos donde están', async () => {
+  const { ctx, p, errores } = await abrirApp({ cotizacion: cotCon(ARMADO) });
+  try {
+    await alArmadorDe(p, ARMADO);
+    const antes = await p.locator('[data-armador="lienzo"] img').getAttribute('src');
+    const subir = () => p.locator('[data-armador="subir-plano"]').setInputFiles({ name: 'plano-nuevo.png', mimeType: 'image/png', buffer: Buffer.from(PLANO_GRIS.split(',')[1], 'base64') });
+    await subir();
+    await p.waitForFunction((a) => document.querySelector('[data-armador="lienzo"] img').getAttribute('src') !== a, antes, { timeout: 10000 });
+    assert.ok(/Plano nuevo/.test(await p.locator('[data-armador="plano-nuevo"]').innerText()), 'se ofrece');
+    assert.equal(await p.locator('[data-pin]').count(), 2, 'mientras, los círculos siguen donde estaban');
+    await p.getByRole('button', { name: 'Se quedan donde están' }).click();
+    assert.equal(await p.locator('[data-armador="plano-nuevo"]').count(), 0, 'la oferta se va');
+    assert.equal(await p.locator('[data-pin]').count(), 2, 'y los círculos se quedan');
+    // Otra vez, y ahora sí a reubicar.
+    await subir();
+    await p.waitForSelector('[data-armador="plano-nuevo"]', { timeout: 10000 });
+    await p.getByRole('button', { name: 'Reubicarlos uno por uno' }).click();
+    assert.equal(await p.locator('[data-pin]').count(), 0, 'los círculos se quitan');
+    assert.ok(/Reubicando el componente 1/.test(await p.locator('[data-armador="aviso"]').innerText()), 'y empieza por el 1');
+    // Con «Dejar así» se para: los que faltan siguen en la tira.
+    await p.locator('[data-armador="dejar-reubicar"]').click();
+    assert.ok(/Toca el plano/.test(await p.locator('[data-armador="aviso"]').innerText()));
+    assert.equal(await p.locator('[data-sin-lugar]').count(), 2, 'los dos siguen sin lugar');
+    // Y se puede escoger uno directo de la tira (el 2), sin pasar por el 1.
+    await p.locator('[data-sin-lugar="2"]').click();
+    assert.ok(/Reubicando el componente 2/.test(await p.locator('[data-armador="aviso"]').innerText()));
+    const img = await p.locator('[data-armador="lienzo"] img').boundingBox();
+    await p.mouse.click(img.x + img.width * 0.5, img.y + img.height * 0.5);
+    assert.equal(await p.locator('[data-pin="2"]').count(), 1, 'el 2 en su lugar');
+    assert.ok(/Reubicando el componente 1/.test(await p.locator('[data-armador="aviso"]').innerText()), 'sigue con el que falta');
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
 /* Mike, 25-sep: «si quiero cambiar el material de los interiores o el
  * material de los frentes, NO me lo cambia y queda el mismo costo. Debería
  * poder configurar eso hasta arriba de la pantalla de componentes […] y que
