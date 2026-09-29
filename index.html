@@ -4156,7 +4156,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G98";
+const APP_VERSION = "G99";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -5606,6 +5606,8 @@ const HOJA_CSS = `
 .hoja .h-bar{position:sticky;top:-20px;z-index:20;display:flex;flex-wrap:wrap;align-items:center;gap:6.8px;padding:10px 0;margin-bottom:14px;background:var(--h-bg);border-bottom:1px solid var(--h-divider)}
 .hoja .h-marca{font-weight:500;font-size:18px;letter-spacing:.02em;margin-right:auto}
 .hoja .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;font:inherit;font-weight:500;font-size:14px;line-height:1.2;color:var(--h-text);background:transparent;border:1px solid var(--h-divider);border-radius:0;padding:6.8px 12px}
+.hoja .desglose-casilla{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--h-text);padding:6.8px 8px;border:1px dashed var(--h-divider);cursor:pointer}
+.hoja .desglose-casilla input{margin:0}
 .hoja .btn:disabled{opacity:.45;cursor:not-allowed}
 .hoja .btn:hover:not(:disabled){background:color-mix(in srgb,var(--h-text) 7%,transparent)}
 .hoja .btn-primary{background:var(--h-accent);border-color:var(--h-accent);color:var(--h-bg)}
@@ -5741,6 +5743,8 @@ function HojaCotizacion({
   setUsaA,
   usaT,
   setUsaT,
+  desglosar = true,
+  setDesglosar,
   cotNombre,
   setCotNombre,
   folio,
@@ -5966,6 +5970,11 @@ function HojaCotizacion({
   const exportes = !soloVer || modoVer ? h("div", { className: "no-print", style: { display: "flex", gap: 6.8, flexWrap: "wrap", justifyContent: "flex-end", marginTop: 13.6 } },
     h("span", { className: "h-aviso", style: { marginRight: "auto" } }, "Otros documentos:"),
     h("button", { className: "btn", onClick: exportClientePDF, title: "El PDF de siempre, con las condiciones de contratación y la firma" }, "PDF cliente con condiciones"),
+    /* Pegada al botón del PDF y no en Configuración: es una decisión por
+       cliente y se toma al momento de mandarlo. Marcada, es lo de siempre. */
+    h("label", { className: "desglose-casilla", title: "Marcada: el PDF trae la tabla de componentes de cada mueble y las páginas del plano. Sin marcar: sólo la lista de muebles con su precio, subtotal, IVA y total." },
+      h("input", { type: "checkbox", "data-campo": "desglosar", checked: !!desglosar, disabled: !setDesglosar, onChange: e => setDesglosar && setDesglosar(e.target.checked) }),
+      " Desglosar componentes"),
     h("button", { className: "btn", onClick: exportPDF }, "PDF interno"),
     h("button", { className: "btn", onClick: exportPresupuestoPDF }, "Presupuesto"),
     h("button", { className: "btn", onClick: exportClienteExcel }, "Excel arq")) : null;
@@ -6831,6 +6840,13 @@ function Cotizador({
   const [usaF, setUsaF] = useState((cotIni === null || cotIni === void 0 ? void 0 : cotIni.usaFlete) !== undefined ? cotIni.usaFlete : true);
   const [usaA, setUsaA] = useState((cotIni === null || cotIni === void 0 ? void 0 : cotIni.usaArq) !== undefined ? cotIni.usaArq : true);
   const [usaT, setUsaT] = useState((cotIni === null || cotIni === void 0 ? void 0 : cotIni.usaTDC) !== undefined ? cotIni.usaTDC : true);
+  /* «Desglosar componentes» en el PDF del cliente (Mike, 28-sep-2026): el PDF
+   * de siempre, con la tabla de componentes y las páginas del plano, o sólo
+   * la lista de muebles con su precio, subtotal, IVA y total. Viaja CON la
+   * cotización, no como preferencia de la máquina: a un cliente se le manda
+   * desglosado y a otro no. Una cotización guardada antes de que existiera
+   * la opción se sigue imprimiendo desglosada, que es como se mandó. */
+  const [desglosar, setDesglosar] = useState((cotIni === null || cotIni === void 0 ? void 0 : cotIni.desglosar) !== undefined ? cotIni.desglosar : true);
   const [descuento, setDescuento] = useState((cotIni === null || cotIni === void 0 ? void 0 : cotIni.descuento) || 0); // %
   const [cotNombre, setCotNombre] = useState((cotIni === null || cotIni === void 0 ? void 0 : cotIni.nombre) || "Cotización");
   const [materiales, setMateriales] = useState((cotIni === null || cotIni === void 0 ? void 0 : cotIni.materiales) || {});
@@ -7005,6 +7021,7 @@ function Cotizador({
           usaFlete: usaF,
           usaArq: usaA,
           usaTDC: usaT,
+          desglosar,
           descuento,
           nombre: cotNombre,
           materiales,
@@ -7065,14 +7082,14 @@ function Cotizador({
       try {
         onGuardar({
           muebles, totalFinal: tF,
-          usaFlete: usaF, usaArq: usaA, usaTDC: usaT,
+          usaFlete: usaF, usaArq: usaA, usaTDC: usaT, desglosar,
           descuento, nombre: cotNombre, materiales, hoja,
           fecha: new Date().toISOString(), silent: true
         });
       } catch (e) { console.warn("Autosave error:", e); }
     }, 400);
     return () => clearTimeout(handle);
-  }, [muebles, materiales, descuento, usaF, usaA, usaT, hoja, cotNombre]);
+  }, [muebles, materiales, descuento, usaF, usaA, usaT, desglosar, hoja, cotNombre]);
 
   const agregar = (tipo, data) => {
     try {
@@ -7923,7 +7940,7 @@ function Cotizador({
         const p = precios && precios[k];
         return '<tr data-comp>' + '<td style="text-align:center" data-comp-num>' + circulo(numComp(c, k)) + '</td>' + '<td><div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#0080C1">' + c.modulo + '</div><div style="font-weight:600;font-size:12px">' + c.desc + '</div></td>' + '<td style="color:#666;font-size:11px">' + spec + '</td>' + '<td class="num" data-comp-unit style="text-align:right;white-space:nowrap">' + (p ? $(p.unit) : "") + '</td>' + '<td class="num" data-comp-cant style="text-align:center">' + (p ? cant(p.cant) : "") + '</td>' + '<td class="num" data-comp-sub style="text-align:right;font-weight:700;white-space:nowrap">' + (p ? $(p.subtotal) : "") + '</td></tr>';
       }).join("");
-      const tabla = compRows ? '<table><thead><tr><th style="width:6%;text-align:center">#</th><th style="width:26%">Componente</th><th style="width:32%">Descripción</th><th style="width:13%;text-align:right">P. unitario</th><th style="width:8%;text-align:center">Cant.</th><th style="width:15%;text-align:right">Subtotal</th></tr></thead>' + '<tbody>' + compRows + '</tbody></table>' : (m.descripcion ? '<div style="font-size:11px;color:#666">' + m.descripcion + '</div>' : "");
+      const tabla = !desglosar ? (m.descripcion ? '<div style="font-size:11px;color:#666">' + m.descripcion + '</div>' : "") : compRows ? '<table><thead><tr><th style="width:6%;text-align:center">#</th><th style="width:26%">Componente</th><th style="width:32%">Descripción</th><th style="width:13%;text-align:right">P. unitario</th><th style="width:8%;text-align:center">Cant.</th><th style="width:15%;text-align:right">Subtotal</th></tr></thead>' + '<tbody>' + compRows + '</tbody></table>' : (m.descripcion ? '<div style="font-size:11px;color:#666">' + m.descripcion + '</div>' : "");
       return '<div class="mb">' + '<div class="mbh">' + '<div style="display:flex;align-items:center;flex:1;min-width:0">' + imgTag + '<div style="font-size:14px;font-weight:700;flex:1;min-width:0">' + m.nombre + '</div>' + '</div>' + '<div style="display:flex;align-items:center;gap:14px;font-size:11px;color:#888;flex-shrink:0">' + '<span class="num">' + $(precioNeto) + '/u</span>' + '<span class="num">× ' + q + '</span>' + '<span class="num" style="font-size:14px;font-weight:700;color:#0080C1">' + $(subtotalNeto) + '</span>' + '</div>' + '</div>' + tabla + '</div>';
     }).join("");
     const baseConFlete = PH.subtotal;
@@ -7932,7 +7949,9 @@ function Cotizador({
      * numerados (Mike, 23-sep): el número es el mismo de la tabla, para que
      * el cliente relacione lo que se cobra con su lugar. */
     const planos = muebles.map((m, i) => {
-      if (esManual(m) || !m.plano || !m.plano.src) return "";
+      // Sin desglose tampoco van los planos: sus números remiten a la tabla
+      // de componentes, que no está.
+      if (!desglosar || esManual(m) || !m.plano || !m.plano.src) return "";
       const comps = m.componentes || [];
       const pines = comps.map((c, k) => c.pos ? '<span class="nc pin" style="left:' + (c.pos.x * 100).toFixed(3) + '%;top:' + (c.pos.y * 100).toFixed(3) + '%">' + numComp(c, k) + '</span>' : "").join("");
       const lista = comps.map((c, k) => '<div style="display:flex;gap:8px;align-items:center;font-size:11px;padding:3px 0">' + circulo(numComp(c, k)) + '<span><b>' + c.modulo + '</b> ' + c.desc + '</span></div>').join("");
@@ -8754,6 +8773,8 @@ ${rowHTML}
     setUsaA,
     usaT,
     setUsaT,
+    desglosar,
+    setDesglosar,
     cotNombre,
     setCotNombre,
     folio: cotIni === null || cotIni === void 0 ? void 0 : cotIni.folio,
@@ -8769,6 +8790,7 @@ ${rowHTML}
       usaFlete: usaF,
       usaArq: usaA,
       usaTDC: usaT,
+      desglosar,
       descuento,
       nombre: cotNombre,
       materiales,
@@ -8782,6 +8804,7 @@ ${rowHTML}
       usaFlete: usaF,
       usaArq: usaA,
       usaTDC: usaT,
+      desglosar,
       descuento,
       nombre: cotNombre,
       materiales,
@@ -10663,6 +10686,9 @@ function App() {
     usaFlete: (_nav$cot$versiones2 = nav.cot.versiones) === null || _nav$cot$versiones2 === void 0 || (_nav$cot$versiones2 = _nav$cot$versiones2[0]) === null || _nav$cot$versiones2 === void 0 ? void 0 : _nav$cot$versiones2.usaFlete,
     usaArq: (_nav$cot$versiones3 = nav.cot.versiones) === null || _nav$cot$versiones3 === void 0 || (_nav$cot$versiones3 = _nav$cot$versiones3[0]) === null || _nav$cot$versiones3 === void 0 ? void 0 : _nav$cot$versiones3.usaArq,
     usaTDC: (_nav$cot$versiones4 = nav.cot.versiones) === null || _nav$cot$versiones4 === void 0 || (_nav$cot$versiones4 = _nav$cot$versiones4[0]) === null || _nav$cot$versiones4 === void 0 ? void 0 : _nav$cot$versiones4.usaTDC,
+    // Sin el campo (cotizaciones de antes del 28-sep) queda undefined y la
+    // hoja lo toma como desglosado: se imprime como se mandó.
+    desglosar: nav.cot.versiones && nav.cot.versiones[0] ? nav.cot.versiones[0].desglosar : undefined,
     descuento: ((_nav$cot$versiones5 = nav.cot.versiones) === null || _nav$cot$versiones5 === void 0 || (_nav$cot$versiones5 = _nav$cot$versiones5[0]) === null || _nav$cot$versiones5 === void 0 ? void 0 : _nav$cot$versiones5.descuento) || 0,
     nombre: nav.cot.nombre || "Cotización",
     fecha: ((_nav$cot$versiones6 = nav.cot.versiones) === null || _nav$cot$versiones6 === void 0 || (_nav$cot$versiones6 = _nav$cot$versiones6[nav.ver ? nav.vi : 0]) === null || _nav$cot$versiones6 === void 0 ? void 0 : _nav$cot$versiones6.fecha) || null,
