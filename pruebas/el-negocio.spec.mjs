@@ -87,33 +87,30 @@ async function abrirApp({ negociosFallan = false, almacen = null } = {}) {
 
 const pintada = (p) => p.waitForFunction(() => document.querySelectorAll('#root *').length > 10, null, { timeout: 20000 });
 
-test('con varios negocios se puede escoger, y el escogido se recuerda', async () => {
+test('con varios negocios ya NO se ofrece cambiar: se abre el primero, o el recordado, sin desplegable', async () => {
+  /* 29-sep-2026, Mike: «borres de dash (y de todas las plataformas) la
+   * opción de agregar diferentes negocios (…) Todo es para un negocio nada
+   * más». Hasta G100 con dos negocios la barra traía un desplegable para
+   * cambiarlo; en G101 se quitó. Lo que se queda es lo que evita el defecto
+   * del 23-sep: si una empresa todavía tiene varios —antes de que quien
+   * dirige los junte en dash101—, se abre el recordado o el primero, y no
+   * se crea ninguno. */
   const { ctx, p, errores } = await abrirApp();
   try {
     await pintada(p);
-    // Abre el primero por nombre, como siempre; lo que cambia es que ahora se ve cuál.
-    const sel = p.locator('select[title*="negocio"]');
-    // «pintada» puede ser todavía la pantalla de carga: bajo carga el selector
-    // llegaba después y la prueba lo contaba en cero.
-    await sel.waitFor({ timeout: 15000 }).catch(() => {});
-    assert.equal(await sel.count(), 1, 'con dos negocios, la barra ofrece cambiarlo');
-    await p.waitForFunction(() => /Cliente de Alfa/.test(document.querySelector('#root').innerText), null, { timeout: 15000 }).catch(() => {});
-    assert.equal(await sel.inputValue(), ALFA.id, 'arranca en el primero por nombre');
-    assert.ok(/Cliente de Alfa/.test(await p.locator('#root').innerText()), 'y enseña los clientes de ése');
+    await p.waitForFunction(() => /Cliente de Alfa/.test(document.querySelector('#root').innerText), null, { timeout: 15000 });
+    assert.equal(await p.locator('select[title*="negocio"]').count(), 0, 'sin desplegable de negocio, aunque haya dos');
+    assert.ok(/Cliente de Alfa/.test(await p.locator('#root').innerText()), 'abre el primero por nombre y enseña lo suyo');
+    assert.ok(!/Cliente de Zeta/.test(await p.locator('#root').innerText()), 'y no mezcla los dos');
 
-    await sel.selectOption(ZETA.id);
-    await p.waitForFunction(() => /Cliente de Zeta/.test(document.querySelector('#root').innerText), null, { timeout: 15000 });
-    assert.ok(!/Cliente de Alfa/.test(await p.locator('#root').innerText()), 'cambiar de negocio trae el otro árbol completo, no los dos mezclados');
-
-    // Lo que importa: al volver a entrar se queda donde lo dejaron. Sin esto,
-    // quien tiene su trabajo en el segundo negocio lo «pierde» en cada visita.
-    const almacen = await ctx.storageState();
+    // El recordado se respeta: quien tenía su trabajo en Zeta lo sigue viendo.
+    const almacen = { cookies: [], origins: [{ origin: base, localStorage: [{ name: 'quote101:negocio', value: ZETA.id }] }] };
     const otra = await abrirApp({ almacen });
     try {
       await pintada(otra.p);
-      await otra.p.waitForFunction(() => /Cliente de (Zeta|Alfa)/.test(document.querySelector('#root').innerText), null, { timeout: 15000 }).catch(() => {});
-      assert.equal(await otra.p.locator('select[title*="negocio"]').inputValue(), ZETA.id, 'recuerda el negocio escogido');
-      assert.ok(/Cliente de Zeta/.test(await otra.p.locator('#root').innerText()), 'y abre con sus datos');
+      await otra.p.waitForFunction(() => /Cliente de Zeta/.test(document.querySelector('#root').innerText), null, { timeout: 15000 });
+      assert.equal(await otra.p.locator('select[title*="negocio"]').count(), 0, 'tampoco ahí hay desplegable');
+      assert.ok(/Cliente de Zeta/.test(await otra.p.locator('#root').innerText()), 'y abre con los datos del recordado');
     } finally { await otra.ctx.close(); }
 
     assert.deepEqual(errores, [], 'sin errores de JavaScript');
