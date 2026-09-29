@@ -1,0 +1,42 @@
+diff --git a/index.html b/index.html
+index 4f68af4..faaa454 100644
+--- a/index.html
++++ b/index.html
+@@ -8542,7 +8542,19 @@ ${rowHTML}
+       fontWeight: 700
+     }
+   }, "✎"), /*#__PURE__*/React.createElement(BtnD, {
+-    onClick: () => { setComps(p => p.filter((_, j) => j !== i)); setEditComp(null); setReemplazo(null); setSelComp(null); },
++    // Se pregunta antes de borrar · Mike, 29-sep-2026: «cuando le pongo X (para
++    // eliminar) a un componente, abre un cuadro de diálogo para confirmar. No
++    // sólo lo elimines sin preguntar.»
++    //
++    // La X está pegada al lápiz de editar y no hay deshacer en el armador: un
++    // clic de más borraba el componente y con él su precio, su posición en el
++    // plano y lo que se le hubiera configurado. El aviso dice CUÁL, porque
++    // «¿borrar el componente?» no ayuda a nadie cuando hay ocho en la lista.
++    onClick: () => {
++      const comoSeLlama = ((c.modulo || "") + (c.desc ? " " + c.desc : "")).trim() || ("el componente " + (i + 1));
++      if (!window.confirm("¿Quitar " + comoSeLlama + "?\n\nSe va también su lugar en el plano y lo que le hayas configurado.")) return;
++      setComps(p => p.filter((_, j) => j !== i)); setEditComp(null); setReemplazo(null); setSelComp(null);
++    },
+     style: {
+       color: "#c0392b"
+     }
+diff --git a/pruebas/el-plano.spec.mjs b/pruebas/el-plano.spec.mjs
+index 9ee2abf..428be04 100644
+--- a/pruebas/el-plano.spec.mjs
++++ b/pruebas/el-plano.spec.mjs
+@@ -230,6 +230,12 @@ test('al volver a abrir un mueble están todos sus componentes, en su lugar, y s
+     await p.locator('[data-pin="1"]').click();
+     assert.equal(await p.locator('[data-componente="1"].arm-sel').count(), 1, 'tocar el punto señala su componente');
+ 
++    // Desde el 29-sep-2026 la X pregunta antes de borrar (Mike: «no sólo lo
++    // elimines sin preguntar»). Playwright descarta los diálogos solo, así que
++    // sin aceptarlo a propósito el componente no se iría y esta prueba fallaría
++    // por el aviso, no por la app. Lo que mide esta prueba sigue siendo lo
++    // mismo: que al quitarlo se quita ESE y no se duplica lo demás.
++    p.once('dialog', (d) => d.accept());
+     await p.locator('[data-componente="2"]').getByRole('button', { name: '✕' }).click();
+     await p.getByRole('button', { name: /Guardar mueble →/ }).click();
+     await p.waitForSelector('[data-pantalla="hoja"]');
