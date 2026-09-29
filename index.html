@@ -900,7 +900,8 @@ const nombreEnEspejo = (huella) => { try { return JSON.parse(huella || '{}').nom
 const enPalabrasDeLaSuite = (r, que, nombre) => {
   if (r.error === 'tiene_dinero') {
     const n = r.detalle?.movimientos || 0;
-    return `«${nombre}» tiene ${n} movimiento${n === 1 ? '' : 's'} de dinero registrado${n === 1 ? '' : 's'}: no se borra. Si es un duplicado, fusiónalo con el otro cliente desde dash101 (Clientes → Fusionar con…); si ya terminó, cierra su proyecto.`;
+    const donde = que === 'el proyecto' ? 'con el otro proyecto desde dash101 (Proyectos → abrir el proyecto → ¿Está repetido?)' : 'con el otro cliente desde dash101 (Clientes → abrir el cliente → ¿Está repetido?)';
+    return `«${nombre}» tiene ${n} movimiento${n === 1 ? '' : 's'} de dinero registrado${n === 1 ? '' : 's'}: no se borra. Si es un duplicado, fusiónalo ${donde}; si ya terminó, ${que === 'el proyecto' ? 'ciérralo' : 'cierra su proyecto'}.`;
   }
   if (r.error === 'tiene_historia') {
     const items = (r.detalle?.items || []).map((i) => `${i.clave ? i.clave + ' ' : ''}${i.nombre} (${(i.porque || []).join(', ')})`);
@@ -3980,7 +3981,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G103";
+const APP_VERSION = "G104";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
