@@ -23,6 +23,7 @@ import { existsSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { editarCotizacion } from './editar.mjs';
 
 const PUBLICAR = fileURLToPath(new URL('../publicar/', import.meta.url));
 const TIPOS = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.woff2': 'font/woff2', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
@@ -136,7 +137,7 @@ test('la opción viaja con la cotización: se guarda al cambiarla', async () => 
   const { ctx, p, escrituras } = await abrirApp({ cotizacion: cotizacionCon(VERSION) });
   try {
     // Se abre para ver; para cambiar hay que pedirlo, como con todo lo demás.
-    await p.getByRole('button', { name: /Editar cotización/ }).click();
+    await editarCotizacion(p);
     await p.waitForTimeout(300);
     // El primer cambio tras abrir no se guarda solo (así está pensado el
     // autoguardado); se toca dos veces, como quien duda, y se deja sin marcar.

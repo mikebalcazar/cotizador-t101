@@ -26,6 +26,7 @@ import { existsSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { editarCotizacion } from './editar.mjs';
 
 const PUBLICAR = fileURLToPath(new URL('../publicar/', import.meta.url));
 const TIPOS = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.woff2': 'font/woff2', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
@@ -172,7 +173,7 @@ test('un renglón a mano se cobra tal cual: sin cargos, sin flete, y se guarda',
     await abrirCotizacion(p);
     // Se abre para ver; para cambiar hay que pedirlo, como antes.
     assert.equal(await p.locator('[data-campo="nombre-0"]').getAttribute('readonly'), '', 'se abre en modo ver');
-    await p.getByRole('button', { name: /Editar cotización/ }).click();
+    await editarCotizacion(p);
     await p.waitForTimeout(300);
     const antes = await leer(p, '[data-hoja="subtotal"]');
     const unitMueble = await leer(p, '[data-precio="0"]');
@@ -206,7 +207,7 @@ test('«Buscar en catálogo» trae los productos de la suite con su precio', asy
   const { ctx, p, errores, escrituras } = await abrirApp();
   try {
     await abrirCotizacion(p);
-    await p.getByRole('button', { name: /Editar cotización/ }).click();
+    await editarCotizacion(p);
     await p.getByRole('button', { name: 'Buscar en catálogo' }).first().click();
     await p.locator('.hoja-velo input').fill('tambor');
     /* El catálogo llega de la suite cuando llega: con un reloj fijo de 200 ms
@@ -285,7 +286,7 @@ test('«Aprobar» manda cada renglón con su cantidad y su precio con descuento,
   p.on('dialog', (d) => { dialogos.push(d.message()); d.accept(); });
   try {
     await abrirCotizacion(p);
-    await p.getByRole('button', { name: /Editar cotización/ }).click();
+    await editarCotizacion(p);
     await p.getByRole('button', { name: '+ A mano' }).click();
     await p.locator('[data-campo="nombre-1"]').fill('Instalación en sitio');
     await p.locator('[data-campo="precio-1"]').fill('1000');
@@ -348,7 +349,7 @@ test('debajo de cada cargo, su monto: los indirectos y los demás suman el subto
   const { ctx, p, errores } = await abrirApp();
   try {
     await abrirCotizacion(p);
-    await p.getByRole('button', { name: /Editar cotización/ }).click();
+    await editarCotizacion(p);
     const cargo = (k) => leer(p, `[data-cargo="${k}"]`);
     await p.locator('[data-cargo="indirectos"]').waitFor({ timeout: 10000 }).catch(() => {});
     assert.equal(await p.locator('[data-cargo="indirectos"]').count(), 1, 'el monto de los indirectos se ve en la hoja');

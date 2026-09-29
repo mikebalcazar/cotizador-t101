@@ -22,6 +22,7 @@ import { existsSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { editarCotizacion } from './editar.mjs';
 
 const PUBLICAR = fileURLToPath(new URL('../publicar/', import.meta.url));
 const TIPOS = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.woff2': 'font/woff2', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
@@ -102,7 +103,7 @@ test('el borrador de la obra se abre como cualquier cotización, y el requerimie
 test('al aprobar, el requerimiento viaja con su item_id, su tipo y su precio: se aprueba ése, no nace otro', async () => {
   const { ctx, p, errores, escrituras, dialogos } = await abrirApp();
   try {
-    await p.getByRole('button', { name: /Editar cotización/ }).click();
+    await editarCotizacion(p);
     await p.locator('[data-campo="precio-0"]').fill('1500');
     await p.locator('[data-campo="tipo-0"]').selectOption('puerta');
     await p.locator('[data-campo="tipo-1"]').selectOption('servicio');
@@ -129,7 +130,7 @@ test('al aprobar, el requerimiento viaja con su item_id, su tipo y su precio: se
 test('el tipo escogido se guarda con la cotización', async () => {
   const { ctx, p, escrituras } = await abrirApp();
   try {
-    await p.getByRole('button', { name: /Editar cotización/ }).click();
+    await editarCotizacion(p);
     await p.locator('[data-campo="tipo-1"]').selectOption('acabado');
     await p.waitForTimeout(900);
     const guardado = [...escrituras].reverse().find((e) => e.metodo === 'PATCH' && /\/cotizaciones\/q-1$/.test(e.ruta));
