@@ -322,6 +322,25 @@ describe('guardar: lo que se quitó de la pantalla se borra', () => {
     assert.equal(otra.ultimoError(), '');
   });
 
+  test('si es el PROYECTO el que tiene dinero, se dice con su nombre y se manda a juntar proyectos, no clientes', async () => {
+    /* Mike, 29-sep (captura): «No se guardó. “Sanje CC37” tiene 11 movimientos
+     * (…) fusiónalo con el otro cliente». Y dijo: «No puedo fusionar el
+     * proyecto, solo el cliente. Y quiero fusionar proyectos.» Desde el
+     * contrato 0.52.0 dash101 junta proyectos; el aviso tiene que mandar ahí. */
+    const { db } = levantar({
+      ...vacio(),
+      'POST /s101/orgs/:o/proyectos/:id/borrar': { estado: 409, cuerpo: { ok: false, error: 'tiene_dinero', detalle: { movimientos: 11 } } },
+    });
+    await db.cargar();
+    await db.guardar(arbolNuevo());
+    assert.equal(await db.guardar([]), false);
+    const razon = db.ultimoError();
+    assert.match(razon, /11 movimientos de dinero/, 'cuánto lo detiene');
+    assert.match(razon, /Proyectos/, 'manda a la pantalla de proyectos de dash101');
+    assert.doesNotMatch(razon, /otro cliente/, 'y no a la de clientes');
+    assert.match(razon, /ciérralo/, 'o a cerrarlo si ya terminó');
+  });
+
   test('si un ítem trae historia de obra, se dice cuál', async () => {
     const { db } = levantar({
       ...vacio(),
