@@ -3981,7 +3981,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G104";
+const APP_VERSION = "G105";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -5957,6 +5957,13 @@ const PLANO_CSS = `
 .arm-visor.paneando,.arm-visor.paneando .arm-lienzo{cursor:grabbing}
 .arm-marcas{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:10px 12px;margin-bottom:8px;border:1px dashed #d93025;border-radius:6px;background:#fff;font:12px Raleway,sans-serif}
 .arm-marcas b{margin-right:4px}
+.arm-sinlugar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:10px 12px;margin-bottom:8px;border:1px dashed #0080C1;border-radius:6px;background:#fff;font:12px Raleway,sans-serif}
+.arm-sinlugar b{margin-right:4px}
+.arm-sinlugar span{display:inline-flex;align-items:center;gap:2px;border:1px solid #0080C1;border-radius:12px;padding:1px 8px;cursor:pointer;font-weight:700;color:#0080C1}
+.arm-sinlugar span.activa{background:#0080C1;color:#fff}
+.arm-sinlugar button{font:inherit;font-weight:600;border:1px solid #0080C1;background:#0080C1;color:#fff;border-radius:3px;padding:3px 9px;cursor:pointer;margin-left:auto}
+.arm-sinlugar button.suave{background:#fff;color:#0080C1;margin-left:0}
+.arm-aviso.reubicando{border-color:#0080C1;color:#0080C1;background:#eef6fb}
 .arm-marcas span{display:inline-flex;align-items:center;gap:2px;border:1px solid #d93025;border-radius:12px;padding:1px 3px 1px 8px;cursor:pointer;font-weight:700;color:#d93025}
 .arm-marcas span.activa{background:#d93025;color:#fff}
 .arm-marcas span button{border:0;background:none;color:inherit;cursor:pointer;font-size:12px;padding:0 4px}
@@ -6579,7 +6586,7 @@ function PasoPlano({ plano, setPlano, onSeguir, onCancelar }) {
 /** El paso de componentes con plano: el plano a la izquierda y, a la derecha,
  *  lo de siempre —el menú de componentes, lo que se va armando y los
  *  botones—. Sin plano, es exactamente la pantalla de antes. */
-function ArmadorSobrePlano({ plano, pines, marcas, activa, sel, onTocar, onPin, onMarca, onMoverPin, onMoverMarca, onQuitarMarca, onPlano, onQuitarPlano, children }) {
+function ArmadorSobrePlano({ plano, pines, marcas, activa, sel, onTocar, onPin, onMarca, onMoverPin, onMoverMarca, onQuitarMarca, onPlano, onQuitarPlano, sinLugar, reubicando, onReubicar, ofrecer, onReubicarTodos, onQuedanIgual, children }) {
   const h = React.createElement;
   // Cambiar el plano funciona igual que ponerlo la primera vez: se suelta
   // encima del plano o se pega (Mike, 25-sep).
@@ -6609,8 +6616,27 @@ function ArmadorSobrePlano({ plano, pines, marcas, activa, sel, onTocar, onPin, 
           h(BotonPlano, { etiqueta: "Cambiar", onPlano, estilo: { font: "inherit", fontSize: 12, fontWeight: 600, border: "1px solid #D8D4CD", background: "#fff", borderRadius: 3, padding: "4px 9px" }, titulo: "O arrastra el plano nuevo encima de éste, o pégalo con Ctrl-V" }),
           h("button", { onClick: onQuitarPlano, title: "Quitar el plano (los componentes se quedan)" }, "Quitar")),
         h(EstadoPlanoSuelto, { ...suelto, compacto: true }),
-        h("div", { className: "arm-aviso" + (marcaActiva ? " listo" : ""), "data-armador": "aviso" },
-          marcaActiva
+        /* Mike, 29-sep-2026: «cuando quito un plano los componentes pierden
+         * su ubicación en el plano. Cuando meto un plano nuevo, necesito que
+         * me dé la opción de reubicar los componentes en el plano». Con plano
+         * nuevo se ofrece: reubicarlos uno por uno, o dejarlos donde están.
+         * Los que no tienen lugar (porque se quitó el plano, o se agregaron
+         * sin tocarlo) salen en una tira: se escoge uno y el siguiente toque
+         * en el plano es su lugar; luego pasa solo al que sigue. */
+        ofrecer && h("div", { className: "arm-sinlugar", "data-armador": "plano-nuevo" },
+          h("b", null, "Plano nuevo."), "¿Los componentes van en el mismo lugar?",
+          h("button", { onClick: onReubicarTodos, title: "Se quitan del plano y se vuelven a poner uno por uno, tocando dónde va cada uno" }, "Reubicarlos uno por uno"),
+          h("button", { className: "suave", onClick: onQuedanIgual }, "Se quedan donde están")),
+        sinLugar.length > 0 && h("div", { className: "arm-sinlugar", "data-armador": "sin-lugar" },
+          h("b", null, sinLugar.length === 1 ? "1 componente sin lugar en el plano:" : sinLugar.length + " componentes sin lugar en el plano:"),
+          sinLugar.map(c => h("span", { key: c.i, className: reubicando === c.i ? "activa" : "", "data-sin-lugar": c.n, onClick: () => onReubicar(reubicando === c.i ? null : c.i), title: (reubicando === c.i ? "Reubicando: toca el plano donde va. Toca aquí para dejarlo sin lugar" : "Ponerlo en el plano") + " · " + c.titulo }, c.n)),
+          reubicando === null
+            ? h("button", { onClick: () => onReubicar(sinLugar[0].i), "data-armador": "reubicar" }, sinLugar.length === 1 ? "Ponerlo en el plano" : "Ponerlos en el plano")
+            : h("button", { className: "suave", onClick: () => onReubicar(null), "data-armador": "dejar-reubicar", style: { marginLeft: "auto" } }, "Dejar así")),
+        h("div", { className: "arm-aviso" + (marcaActiva ? " listo" : "") + (reubicando !== null ? " reubicando" : ""), "data-armador": "aviso" },
+          reubicando !== null
+            ? "Reubicando el componente " + (sinLugar.find(c => c.i === reubicando) || { n: "?" }).n + ": toca el plano donde va."
+            : marcaActiva
             ? "Configurando el componente " + marcaActiva.n + ": escógelo a la derecha →"
             : "Toca el plano para poner cada componente. Puedes poner todos y configurarlos al final. Arrastra un círculo para moverlo."),
         h(VisorPlano, { plano, pines, marcas, activa, sel, onTocar, onPin, onMarca, onMoverPin, onMoverMarca })),
@@ -6664,6 +6690,11 @@ function Cotizador({
   // componente al configurarlo (`c.marca`), no depende de su lugar en la lista.
   const numRef = useRef(1);
   const [selComp, setSelComp] = useState(null);
+  // Reubicar en el plano (Mike, 29-sep-2026): el componente (por su lugar en
+  // `comps`) que toma el siguiente toque como su lugar, y si hay que ofrecer
+  // reubicar porque el plano acaba de cambiar.
+  const [reubicando, setReubicando] = useState(null);
+  const [ofrecerReubicar, setOfrecerReubicar] = useState(false);
   /* Con qué materiales están calculados los componentes que hay. Se
    * recalcula SÓLO cuando los materiales cambian de verdad: abrir un mueble y
    * pasar por su perfil sin tocar nada no debe mover precios viejos. */
@@ -8299,6 +8330,16 @@ ${rowHTML}
     }
   }, "Continuar a componentes \u2192"))));
   const pinesArmador = comps.map((c, i) => c.pos ? { i, n: c.marca || i + 1, x: c.pos.x, y: c.pos.y, titulo: (c.modulo || "") + " " + (c.desc || "") } : null).filter(Boolean);
+  const sinLugar = comps.map((c, i) => !c.pos ? { i, n: c.marca || i + 1, titulo: (c.modulo || "") + " " + (c.desc || "") } : null).filter(Boolean);
+  // Al reubicar, el toque en el plano le da su lugar al activo y pasa solo al
+  // siguiente sin lugar (después de él, o desde el principio); si ya no hay,
+  // se acaba.
+  const reubicarEn = pt => {
+    const i = reubicando;
+    const siguiente = sinLugar.map(c => c.i).filter(j => j !== i);
+    setComps(p => p.map((c, j) => j === i ? { ...c, pos: pt } : c));
+    setReubicando(siguiente.find(j => j > i) ?? siguiente[0] ?? null);
+  };
   // El marcador que se está configurando: el escogido o, si no, el primero.
   const marcaActiva = marcas.find(m => m.id === marcaSel) || marcas[0] || null;
   // Lo que se agrega mientras hay un marcador activo se queda en su lugar, y
@@ -8335,7 +8376,20 @@ ${rowHTML}
     marcas,
     activa: marcaActiva ? marcaActiva.id : null,
     sel: selComp,
+    sinLugar,
+    reubicando: reubicando !== null && comps[reubicando] && !comps[reubicando].pos ? reubicando : null,
+    onReubicar: i => { setReubicando(i); setMarcaSel(null); setSelComp(null); },
+    ofrecer: ofrecerReubicar && pinesArmador.length > 0,
+    onReubicarTodos: () => {
+      setOfrecerReubicar(false);
+      setComps(p => p.map(c => { const { pos, ...resto } = c; return resto; }));
+      setReubicando(comps.findIndex(() => true));
+      setMarcaSel(null);
+      setSelComp(null);
+    },
+    onQuedanIgual: () => setOfrecerReubicar(false),
     onTocar: pt => {
+      if (reubicando !== null && comps[reubicando] && !comps[reubicando].pos) { reubicarEn(pt); return; }
       const id = "mk" + Date.now() + Math.random().toString(36).slice(2, 6);
       setMarcas(p => [...p, { id, n: numRef.current++, x: pt.x, y: pt.y }]);
       setSelComp(null);
@@ -8361,12 +8415,17 @@ ${rowHTML}
       setPlano(pl);
       setMarcas([]);
       setMarcaSel(null);
+      setReubicando(null);
+      // Con plano nuevo y componentes ya puestos, se ofrece reubicarlos.
+      setOfrecerReubicar(comps.some(c => c.pos));
     },
     onQuitarPlano: () => {
-      if (!window.confirm("¿Quitar el plano? Los componentes se quedan, sin su lugar en el plano.")) return;
+      if (!window.confirm("¿Quitar el plano? Los componentes se quedan, sin su lugar en el plano. Al subir otro plano podrás volver a ponerlos.")) return;
       setPlano(null);
       setMarcas([]);
       setMarcaSel(null);
+      setReubicando(null);
+      setOfrecerReubicar(false);
       setComps(p => p.map(c => { const { pos, ...resto } = c; return resto; }));
     }
   }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(BtnGuardarCambios, null), /*#__PURE__*/React.createElement(Card, {
