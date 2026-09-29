@@ -1088,7 +1088,29 @@ const huellaCotizacion = (q, cliente_id, proyecto_id) => JSON.stringify({
 
 /* ─────────────── la interfaz que la app conoce ─────────────── */
 
+/* Por qué falló el último guardado, con palabras. Hasta G101 cualquier
+ * falla se tapaba con «Error al guardar. Verifica tu conexión», también
+ * cuando la suite contestaba con toda claridad que un cliente tiene dinero
+ * registrado y no se borra. Mike, 29-sep: «no puedo borrar clientes de
+ * quote101, me aparece este error». */
+let ULTIMO_ERROR = '';
+/** El espejo guarda huellas (JSON en texto); de ahí sale el nombre para el aviso. */
+const nombreEnEspejo = (huella) => { try { return JSON.parse(huella || '{}').nombre || ''; } catch { return ''; } };
+const enPalabrasDeLaSuite = (r, que, nombre) => {
+  if (r.error === 'tiene_dinero') {
+    const n = r.detalle?.movimientos || 0;
+    return `«${nombre}» tiene ${n} movimiento${n === 1 ? '' : 's'} de dinero registrado${n === 1 ? '' : 's'}: no se borra. Si es un duplicado, fusiónalo con el otro cliente desde dash101 (Clientes → Fusionar con…); si ya terminó, cierra su proyecto.`;
+  }
+  if (r.error === 'tiene_historia') {
+    const items = (r.detalle?.items || []).map((i) => `${i.clave ? i.clave + ' ' : ''}${i.nombre} (${(i.porque || []).join(', ')})`);
+    return `«${nombre}» trae historia de obra que no se borra sola: ${items.join('; ') || (r.detalle?.archivos ? r.detalle.archivos + ' archivos' : '')}. Cancela o mueve eso primero.`;
+  }
+  return `no se pudo borrar ${que} «${nombre}»: ${r.error || r.estado}`;
+};
+
 window.suiteDB = {
+  /** Por qué falló el último guardado, para decirlo en pantalla. */
+  ultimoError() { return ULTIMO_ERROR; },
   /** El árbol, armado de las tres tablas. */
   async cargar() {
     try {
@@ -1253,22 +1275,28 @@ window.suiteDB = {
         if (r.estado === 200 || r.estado === 404) espejo.cotizaciones.delete(id);
         else throw new Error('borrar cotización: ' + (r.error || r.estado));
       }
+      /* Proyectos y clientes se van CON TODO lo suyo (contrato 0.51.0): sus
+       * ítems le cuelgan al proyecto y el DELETE de siempre contestaba 409.
+       * La suite dice cuando no puede —dinero o historia de obra— y eso se
+       * guarda con palabras para la pantalla. Un 404 es que ya no estaba. */
       for (const id of [...espejo.proyectos.keys()]) {
         if (vistos.proyectos.has(id)) continue;
-        const r = await pedir(`/orgs/${ORG}/proyectos/${id}`, { method: 'DELETE' });
+        const r = await pedir(`/orgs/${ORG}/proyectos/${id}/borrar`, { method: 'POST', cuerpo: {} });
         if (r.estado === 200 || r.estado === 404) espejo.proyectos.delete(id);
-        else throw new Error('borrar proyecto: ' + (r.error || r.estado));
+        else throw new Error(enPalabrasDeLaSuite(r, 'el proyecto', nombreEnEspejo(espejo.proyectos.get(id)) || id));
       }
       for (const id of [...espejo.clientes.keys()]) {
         if (vistos.clientes.has(id)) continue;
-        const r = await pedir(`/orgs/${ORG}/clientes/${id}`, { method: 'DELETE' });
+        const r = await pedir(`/orgs/${ORG}/clientes/${id}/borrar`, { method: 'POST', cuerpo: {} });
         if (r.estado === 200 || r.estado === 404) espejo.clientes.delete(id);
-        else throw new Error('borrar cliente: ' + (r.error || r.estado));
+        else throw new Error(enPalabrasDeLaSuite(r, 'el cliente', nombreEnEspejo(espejo.clientes.get(id)) || id));
       }
 
+      ULTIMO_ERROR = '';
       return true;
     } catch (e) {
       console.error('guardar:', e);
+      ULTIMO_ERROR = e && e.message ? e.message : String(e);
       return false;
     }
   },
@@ -4165,7 +4193,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G101";
+const APP_VERSION = "G102";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -10366,7 +10394,7 @@ function App() {
     setGuardando(true);
     const ok = await window.suiteDB.guardar(data);
     setGuardando(false);
-    if (!ok) alert("❌ Error al guardar. Verifica tu conexión e intenta de nuevo.");else {
+    if (!ok) alert("❌ No se guardó. " + (window.suiteDB.ultimoError() || "Verifica tu conexión e intenta de nuevo."));else {
       arbolRef.current = data;
       setClientes(data);
     }
