@@ -2109,6 +2109,10 @@ const flete = t => Math.max(cfg("fleteMin"), Math.floor(t / cfg("fleteEscalon"))
  *     PDF interno) no vea un renglón en cero. */
 const MOSTRAR_HISTORIAL = false;
 const esManual = m => !!(m && m.manual);
+/* Los tipos de ítem de la suite, como los guarda `items.tipo`. El orden es
+ * el del selector; el prefijo del código (MW-, PT-, FX-, SV-) lo pone la
+ * suite al aprobar. */
+const TIPOS_DE_ITEM = { mueble: "Mueble", puerta: "Puerta", acabado: "Acabado", servicio: "Servicio", otro: "Otro" };
 const precioManual = m => Number(m.precio !== undefined ? m.precio : m.total) || 0;
 /* El precio al cliente se forma por componente (Mike, 23-sep): el precio
  * del mueble —costo × cargos y comisiones, con el flete repartido— se reparte
@@ -4156,7 +4160,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G99";
+const APP_VERSION = "G100";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -5785,6 +5789,8 @@ function HojaCotizacion({
   const renglonAMano = extra => setMuebles(p => [...p, {
     id: uid(),
     manual: true,
+    // El tipo del ítem que va a nacer en el proyecto al aprobar (G100).
+    tipo: "mueble",
     codigo: "",
     nombre: "",
     descripcion: "",
@@ -5837,16 +5843,25 @@ function HojaCotizacion({
   const aprobar = async () => {
     const sinNombre = muebles.findIndex(m => !String(m.nombre || "").trim());
     if (sinNombre >= 0) { window.alert("El renglón " + (sinNombre + 1) + " no tiene nombre. Ponle nombre antes de aprobar: así se va a llamar la pieza en la obra."); return; }
-    const piezas = muebles.reduce((s, m) => s + (m.qty || 1), 0);
-    if (!window.confirm("¿Aprobar la cotización?\n\nSe crean " + piezas + (piezas === 1 ? " pieza vendida" : " piezas vendidas") + " en el proyecto «" + (proyectoNombre || "") + "» por " + hojaDinero(base) + " más IVA.\n\nDespués ya no se puede editar: para cambiarla se hace otra corrida.")) return;
+    /* G100 · un renglón con `item_id` es un requerimiento que la obra dejó
+     * en este borrador: no se crea una pieza nueva, se aprueba ESA, con el
+     * tipo que se le escogió aquí y su precio. Lo dice la confirmación para
+     * que no parezca que se van a duplicar. */
+    const piezas = muebles.filter(m => !m.item_id).reduce((s, m) => s + (m.qty || 1), 0);
+    const requerimientos = muebles.filter(m => !!m.item_id).length;
+    const queSeHace = (piezas ? "Se crean " + piezas + (piezas === 1 ? " pieza vendida" : " piezas vendidas") : "")
+      + (piezas && requerimientos ? " y se " : (requerimientos ? "Se " : ""))
+      + (requerimientos ? (requerimientos === 1 ? "aprueba 1 requerimiento de la obra" : "aprueban " + requerimientos + " requerimientos de la obra") : "");
+    if (!window.confirm("¿Aprobar la cotización?\n\n" + queSeHace + " en el proyecto «" + (proyectoNombre || "") + "» por " + hojaDinero(base) + " más IVA.\n\nDespués ya no se puede editar: para cambiarla se hace otra corrida.")) return;
     const lineas = muebles.map((m, i) => ({
       nombre: String(m.nombre).trim(),
       descripcion: String(m.descripcion || "").trim() || (esManual(m) ? null : resumenArmado(m) || null),
       codigo: String(m.codigo || "").trim() || null,
-      tipo: "mueble",
+      tipo: esManual(m) && TIPOS_DE_ITEM[m.tipo] ? m.tipo : "mueble",
       cantidad: m.qty || 1,
       precio: Math.round((precios.unitarios[i] || 0) * (1 - desc / 100) * 100),
-      producto_id: m.producto_id || null
+      producto_id: m.producto_id || null,
+      item_id: m.item_id || null
     }));
     setAprobando(true);
     try { await onAprobar(lineas); } finally { setAprobando(false); }
@@ -5909,10 +5924,22 @@ function HojaCotizacion({
       const qty = m.qty || 1;
       const armado = manual ? "" : resumenArmado(m);
       return h("div", { key: m.id || i, className: "h-cols h-ren", "data-renglon": i, "data-tipo": manual ? "manual" : "mueble" },
-        h("input", { className: "input", "data-campo": "codigo-" + i, placeholder: manual ? "COD-001" : "MW-01", value: m.codigo || "", readOnly: soloVer, style: { fontFamily: "ui-monospace,monospace", fontSize: 12 }, onChange: e => ponRenglon(i, { codigo: e.target.value }) }),
+        h("div", null,
+          h("input", { className: "input", "data-campo": "codigo-" + i, placeholder: manual ? "COD-001" : "MW-01", value: m.codigo || "", readOnly: soloVer, style: { fontFamily: "ui-monospace,monospace", fontSize: 12 }, onChange: e => ponRenglon(i, { codigo: e.target.value }) }),
+          /* G100 · el tipo del ítem, sólo en los renglones a mano: los del
+             armador son muebles. Mike, 29-sep: «al aprobarse los
+             requerimientos cambia su código a alguno de mueble, puerta etc.»;
+             el tipo se escoge aquí, y la suite le pone el código al aprobar. */
+          manual && h("select", { className: "input", "data-campo": "tipo-" + i, value: TIPOS_DE_ITEM[m.tipo] ? m.tipo : "mueble", disabled: soloVer, title: "Qué tipo de ítem es: decide el prefijo de su código en la obra", style: { marginTop: 6.8, fontSize: 12 }, onChange: e => ponRenglon(i, { tipo: e.target.value }) },
+            Object.keys(TIPOS_DE_ITEM).map(t => h("option", { key: t, value: t }, TIPOS_DE_ITEM[t])))),
         h("div", null,
           h("input", { className: "input", "data-campo": "nombre-" + i, placeholder: "Nombre del producto o servicio", value: m.nombre || "", readOnly: soloVer, style: { fontWeight: 500 }, onChange: e => ponRenglon(i, { nombre: e.target.value }) }),
           h("textarea", { className: "input", "data-campo": "descripcion-" + i, rows: 2, placeholder: "Descripción, acabado, medidas, marca…", value: m.descripcion || "", readOnly: soloVer, style: { marginTop: 6.8, fontSize: 12.5, color: "color-mix(in srgb,var(--h-text) 75%,transparent)" }, onChange: e => ponRenglon(i, { descripcion: e.target.value }) }),
+          /* El renglón que la obra dejó aquí (requerimiento, G100): se dice
+             de dónde viene y qué va a pasar al aprobar, para que nadie lo
+             borre creyendo que sobra ni lo capture dos veces. */
+          m.item_id && h("div", { className: "h-arm", "data-requerimiento": m.item_id },
+            "Requerimiento de la obra" + (m.codigo ? " · " + m.codigo : "") + ". Al aprobar, este mismo ítem queda vendido con el tipo y el precio de aquí, y estrena código."),
           !manual && h("div", { className: "h-arm" },
             armado ? "Armado: " + armado : "Mueble sin componentes",
             !soloVer && h("span", { className: "no-print" }, " · ", h("button", { onClick: () => editarMueble(i) }, "abrir el armador")))),
