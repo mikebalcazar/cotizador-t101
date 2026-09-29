@@ -947,6 +947,11 @@ let NEGOCIOS = [];
  *
  * Ahora se recuerda el que se escogió y, cuando hay más de uno, la barra de
  * arriba deja cambiarlo. */
+/* 29-sep-2026, Mike: «borres de dash (y de todas las plataformas) la opción
+ * de agregar diferentes negocios (…) Todo es para un negocio nada más». El
+ * desplegable de la barra se quitó (G101). Lo de abajo se queda: si una
+ * empresa todavía tiene varios —antes de que quien dirige los junte en
+ * dash101— se abre el recordado o el primero, sin ofrecer cambiarlo. */
 const LLAVE_NEG = 'quote101:negocio';
 const guardarLocal = (k, v) => { try { localStorage.setItem(k, v); } catch { /* modo privado */ } };
 const leerLocal = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
@@ -4160,7 +4165,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G100";
+const APP_VERSION = "G101";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -10830,25 +10835,7 @@ function App() {
       fontSize: 11,
       color: "rgba(255,255,255,0.9)"
     }
-  }, "\u23F3 Guardando...")), negocios.length > 1 && /*#__PURE__*/React.createElement("select", {
-    value: negocio || "",
-    onChange: (e) => cambiarNegocio(e.target.value),
-    title: "El negocio cuyos clientes y cotizaciones est\xE1s viendo",
-    style: {
-      background: "rgba(255,255,255,0.15)",
-      border: "1px solid rgba(255,255,255,0.3)",
-      borderRadius: 8,
-      color: "#fff",
-      font: "500 12px Raleway,sans-serif",
-      padding: "6px 8px",
-      cursor: "pointer",
-      maxWidth: 190
-    }
-  }, negocios.map((n) => /*#__PURE__*/React.createElement("option", {
-    key: n.id,
-    value: n.id,
-    style: { color: "#16202a" }
-  }, n.nombre))), /*#__PURE__*/React.createElement("button", {
+  }, "\u23F3 Guardando...")), /*#__PURE__*/React.createElement("button", {
     onClick: () => setMostrarConfig(true),
     title: "Configuraci\xF3n",
     style: {
