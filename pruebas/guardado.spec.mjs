@@ -163,9 +163,10 @@ const vacio = () => base({
   'PATCH /s101/orgs/:o/clientes/:id': { data: {} },
   'PATCH /s101/orgs/:o/proyectos/:id': { data: {} },
   'PATCH /s101/orgs/:o/cotizaciones/:id': { data: {} },
-  'DELETE /s101/orgs/:o/clientes/:id': { data: { borrado: true } },
-  'DELETE /s101/orgs/:o/proyectos/:id': { data: { borrado: true } },
   'DELETE /s101/orgs/:o/cotizaciones/:id': { data: { borrado: true } },
+  // Proyectos y clientes se van CON TODO lo suyo (contrato 0.51.0).
+  'POST /s101/orgs/:o/proyectos/:id/borrar': { data: { ok: true, proyectos: 1, items: 0 } },
+  'POST /s101/orgs/:o/clientes/:id/borrar': { data: { ok: true, proyectos: 0, items: 0, cotizaciones: 0 } },
 });
 
 describe('guardar: lo nuevo se crea y los ids los pone la suite', () => {
@@ -281,17 +282,57 @@ describe('guardar: lo que se quitó de la pantalla se borra', () => {
     assert.ok(borradas[0].ruta.includes('/cotizaciones/COT'));
   });
 
-  test('borrar un cliente entero va de abajo hacia arriba', async () => {
-    // Al revés la suite contesta 409, porque quedan filas apuntando.
+  test('borrar un cliente entero va de abajo hacia arriba, y proyecto y cliente se van CON TODO lo suyo', async () => {
+    /* Mike, 29-sep: «no puedo borrar clientes de quote101». El DELETE de
+     * siempre contestaba 409 en el proyecto —sus ítems le cuelgan— y el
+     * cliente nunca llegaba a borrarse. Desde el contrato 0.51.0 el proyecto y
+     * el cliente se piden por su ruta «borrar», que se lleva lo que cuelga o
+     * explica por qué no. */
     const { db, pedidas } = levantar(vacio());
     await db.cargar();
     const arbol = arbolNuevo();
     await db.guardar(arbol);
     const antes = pedidas.length;
-    await db.guardar([]);
-    const orden = pedidas.slice(antes).filter((p) => p.metodo === 'DELETE')
-      .map((p) => p.ruta.split('/').slice(-2)[0]);
-    assert.deepEqual(orden, ['cotizaciones', 'proyectos', 'clientes']);
+    assert.equal(await db.guardar([]), true);
+    const orden = pedidas.slice(antes)
+      .filter((p) => p.metodo === 'DELETE' || p.ruta.endsWith('/borrar'))
+      .map((p) => `${p.metodo} ${p.ruta.replace(/^.*\/orgs\/[^/]+\//, '')}`);
+    assert.deepEqual(orden, ['DELETE cotizaciones/COT', 'POST proyectos/PRO/borrar', 'POST clientes/CLI/borrar']);
+  });
+
+  test('si la suite dice que el cliente tiene dinero, no se guarda y se dice POR QUÉ, con su nombre', async () => {
+    /* Hasta G101 esto era «Error al guardar. Verifica tu conexión» aunque la
+     * suite hubiera contestado con toda claridad. */
+    const { db } = levantar({
+      ...vacio(),
+      'POST /s101/orgs/:o/clientes/:id/borrar': { estado: 409, cuerpo: { ok: false, error: 'tiene_dinero', detalle: { movimientos: 2 } } },
+    });
+    await db.cargar();
+    const arbol = arbolNuevo();
+    await db.guardar(arbol);
+    assert.equal(await db.guardar([]), false);
+    const razon = db.ultimoError();
+    assert.match(razon, /«Casa Aurea»/, 'dice de quién');
+    assert.match(razon, /2 movimientos de dinero/, 'y cuánto lo detiene');
+    assert.match(razon, /dash101/, 'y qué hacer en su lugar (fusionar desde dash101)');
+    // Y con un guardado bueno, la razón se limpia.
+    const { db: otra } = levantar(vacio());
+    await otra.cargar();
+    assert.equal(await otra.guardar(arbolNuevo()), true);
+    assert.equal(otra.ultimoError(), '');
+  });
+
+  test('si un ítem trae historia de obra, se dice cuál', async () => {
+    const { db } = levantar({
+      ...vacio(),
+      'POST /s101/orgs/:o/proyectos/:id/borrar': { estado: 409, cuerpo: { ok: false, error: 'tiene_historia', detalle: { items: [{ clave: 'PT-01', nombre: 'Puerta', porque: ['2 avances de obra'] }], archivos: 0 } } },
+    });
+    await db.cargar();
+    const arbol = arbolNuevo();
+    await db.guardar(arbol);
+    arbol[0].proyectos = [];
+    assert.equal(await db.guardar(arbol), false);
+    assert.match(db.ultimoError(), /«Cocina».*PT-01 Puerta \(2 avances de obra\)/);
   });
 });
 
