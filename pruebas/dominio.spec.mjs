@@ -27,3 +27,10 @@ test('staging, sin DOMINIO_PROPIO, sirve tal cual', async () => {
   const r = await pide('https://quote101-staging.mike-929.workers.dev/entrar.html', staging);
   assert.equal(r.status, 200);
 });
+test('sin la «s»: http en el dominio propio manda a https con 301 (30-sep-2026)', async () => {
+  const r = await pide('http://quote101.taller101.com/?x=1', prod);
+  assert.equal(r.status, 301);
+  assert.equal(r.headers.get('location'), 'https://quote101.taller101.com/?x=1');
+  assert.notEqual((await pide('http://quote101.taller101.com/', prod, { method: 'POST' })).status, 301);
+  assert.notEqual((await pide('http://quote101-staging.mike-929.workers.dev/', staging)).status, 301);
+});
