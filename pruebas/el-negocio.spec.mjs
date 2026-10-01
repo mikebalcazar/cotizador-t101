@@ -1,21 +1,15 @@
-/* En qué negocio está parado el cotizador.
+/* El cotizador no sabe qué es un «negocio».
  *
- * EL DEFECTO DEL 23-SEP-2026. Mike: «desapareció mi info de quote».
+ * Mike, 1-oct-2026: «Ya no existe la opción de negocios en dash. Sólo es una
+ * empresa/negocio todo. Elimina todas las lógicas que involucran el concepto
+ * de "negocio"». Desde el contrato 0.61.0 la API cuelga sola cada cliente,
+ * proyecto y cotización del registro de la empresa.
  *
- * No se había perdido nada. La suite guarda clientes, proyectos y cotizaciones
- * POR NEGOCIO, y una empresa puede tener varios —Forespot tiene tres—. El
- * cotizador abría SIEMPRE el primero de la lista, que viene ordenada por
- * nombre, sin recordar nada y sin manera de cambiarlo. El día que aparece un
- * negocio cuyo nombre queda antes en el abecedario, el cotizador se cambia
- * solo y todo se ve vacío.
- *
- * El síntoma es raro y por eso vale reconocerlo: **los precios y la
- * configuración siguen ahí**, porque `ajustes` no se guarda por negocio. Sólo
- * desaparecen los clientes.
- *
- * Y había una segunda cosa, peor: si la lectura de la lista fallaba, el
- * cotizador lo leía como «esta empresa no tiene negocios» y CREABA UNO. Una
- * lectura que falla no puede terminar en una escritura que nadie pidió.
+ * Lo que se mide: al arrancar no se pide la lista de negocios, las listas se
+ * piden sin `negocio_id`, y una empresa recién hecha NO hace que el cotizador
+ * cree un negocio (hasta el 1-oct lo creaba él). Las dos cosas que había que
+ * cuidar antes —no cambiarse solo de negocio, no crear uno a partir de una
+ * lectura caída— dejan de existir con el concepto.
  *
  *     node --test pruebas/el-negocio.spec.mjs
  */
@@ -47,89 +41,47 @@ const CHROMIUM = process.env.CHROMIUM ?? '/opt/pw-browsers/chromium';
 const navegador = await chromium.launch(existsSync(CHROMIUM) ? { executablePath: CHROMIUM } : {});
 const ok = (data) => ({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, data }) });
 
-/* Dos negocios, y un cliente distinto en cada uno. «Alfa» va primero por
- * nombre; los datos de la prueba viven en «Zeta», que es justo el caso que se
- * rompía: el que abre solo no es donde está el trabajo. */
-const ALFA = { id: 'n-alfa', nombre: 'Alfa Muebles' };
-const ZETA = { id: 'n-zeta', nombre: 'Zeta Carpintería' };
-const CLIENTES = {
-  'n-alfa': [{ id: 'cl-a', nombre: 'Cliente de Alfa', negocio_id: 'n-alfa' }],
-  'n-zeta': [{ id: 'cl-z', nombre: 'Cliente de Zeta', negocio_id: 'n-zeta' }],
-};
+const CLIENTES = [{ id: 'cl-1', nombre: 'Cliente de la empresa' }];
 
-/** Abre la app con la suite de mentiras. `negociosFallan` devuelve 500 en la
- *  lista, para medir que eso NO termine creando un negocio. */
-async function abrirApp({ negociosFallan = false, almacen = null } = {}) {
-  const ctx = await navegador.newContext({ viewport: { width: 1280, height: 900 }, storageState: almacen ?? undefined });
+/** Abre la app con la suite de mentiras y anota cada petición que sale. */
+async function abrirApp() {
+  const ctx = await navegador.newContext({ viewport: { width: 1280, height: 900 } });
   const p = await ctx.newPage();
   const errores = [];
-  const escrituras = [];
+  const peticiones = [];
   p.on('pageerror', (e) => errores.push('excepción: ' + e));
   p.on('console', (m) => { if (m.type() === 'error' && !m.text().startsWith('Failed to load resource')) errores.push(m.text()); });
   await p.route('**/s101/**', (route) => {
     const u = new URL(route.request().url());
     const r = u.pathname.replace(/^\/s101/, '');
     const metodo = route.request().method();
-    if (metodo !== 'GET') escrituras.push(`${metodo} ${r}`);
+    peticiones.push(`${metodo} ${r}${u.search}`);
     if (r === '/yo') return route.fulfill(ok({ usuario: { correo: 'mike@ejemplo.mx' }, orgs: [{ id: 'org-1', nombre: 'Forespot' }] }));
-    if (r === '/orgs/org-1/negocios') {
-      if (negociosFallan) return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'se_cayo' }) });
-      return route.fulfill(ok({ filas: [ALFA, ZETA] }));
-    }
-    if (r === '/orgs/org-1/clientes') return route.fulfill(ok({ filas: CLIENTES[u.searchParams.get('negocio_id')] ?? [] }));
-    if (r === '/orgs/org-1/proyectos' || r === '/orgs/org-1/cotizaciones') return route.fulfill(ok({ filas: [] }));
-    if (r === '/orgs/org-1/ajustes') return route.fulfill(ok({ filas: [] }));
+    /* Si alguien pide negocios, se le contesta vacío a propósito: lo que se
+     * mide es que nadie lo pida y que nadie cree uno a raíz de eso. */
+    if (r === '/orgs/org-1/negocios') return route.fulfill(ok({ filas: [] }));
+    if (r === '/orgs/org-1/clientes') return route.fulfill(ok({ filas: CLIENTES }));
     return route.fulfill(ok({ filas: [] }));
   });
   await p.goto(base, { waitUntil: 'domcontentloaded' });
-  return { ctx, p, errores, escrituras };
+  return { ctx, p, errores, peticiones };
 }
 
 const pintada = (p) => p.waitForFunction(() => document.querySelectorAll('#root *').length > 10, null, { timeout: 20000 });
 
-test('con varios negocios ya NO se ofrece cambiar: se abre el primero, o el recordado, sin desplegable', async () => {
-  /* 29-sep-2026, Mike: «borres de dash (y de todas las plataformas) la
-   * opción de agregar diferentes negocios (…) Todo es para un negocio nada
-   * más». Hasta G100 con dos negocios la barra traía un desplegable para
-   * cambiarlo; en G101 se quitó. Lo que se queda es lo que evita el defecto
-   * del 23-sep: si una empresa todavía tiene varios —antes de que quien
-   * dirige los junte en dash101—, se abre el recordado o el primero, y no
-   * se crea ninguno. */
-  const { ctx, p, errores } = await abrirApp();
+test('arranca sin pedir negocios, lista sin negocio_id y no crea ninguno', async () => {
+  const { ctx, p, errores, peticiones } = await abrirApp();
   try {
     await pintada(p);
-    await p.waitForFunction(() => /Cliente de Alfa/.test(document.querySelector('#root').innerText), null, { timeout: 15000 });
-    assert.equal(await p.locator('select[title*="negocio"]').count(), 0, 'sin desplegable de negocio, aunque haya dos');
-    assert.ok(/Cliente de Alfa/.test(await p.locator('#root').innerText()), 'abre el primero por nombre y enseña lo suyo');
-    assert.ok(!/Cliente de Zeta/.test(await p.locator('#root').innerText()), 'y no mezcla los dos');
-
-    // El recordado se respeta: quien tenía su trabajo en Zeta lo sigue viendo.
-    const almacen = { cookies: [], origins: [{ origin: base, localStorage: [{ name: 'quote101:negocio', value: ZETA.id }] }] };
-    const otra = await abrirApp({ almacen });
-    try {
-      await pintada(otra.p);
-      await otra.p.waitForFunction(() => /Cliente de Zeta/.test(document.querySelector('#root').innerText), null, { timeout: 15000 });
-      assert.equal(await otra.p.locator('select[title*="negocio"]').count(), 0, 'tampoco ahí hay desplegable');
-      assert.ok(/Cliente de Zeta/.test(await otra.p.locator('#root').innerText()), 'y abre con los datos del recordado');
-    } finally { await otra.ctx.close(); }
-
+    await p.waitForFunction(() => /Cliente de la empresa/.test(document.querySelector('#root').innerText), null, { timeout: 15000 });
+    assert.deepEqual(peticiones.filter((x) => x.includes('/negocios')), [], 'no pide ni crea negocios');
+    const clientes = peticiones.find((x) => x.startsWith('GET /orgs/org-1/clientes'));
+    assert.ok(clientes, 'pidió los clientes');
+    assert.ok(!/negocio_id/.test(clientes), `y sin negocio_id: ${clientes}`);
+    assert.deepEqual(peticiones.filter((x) => /negocio_id/.test(x)), [], 'ninguna petición lleva negocio_id');
+    assert.equal(await p.locator('select[title*="negocio"]').count(), 0, 'sin desplegable de negocio');
+    assert.ok(!/[Nn]egocio/.test(await p.locator('#root').innerText()), 'y la pantalla no habla de negocios');
     assert.deepEqual(errores, [], 'sin errores de JavaScript');
-  } finally { await ctx.close(); }
-});
-
-test('si la lista de negocios falla, NO se crea un negocio', async () => {
-  /* Ésta es la que muerde callado: una lectura caída se leía como «no hay
-   * negocios» y el cotizador daba de alta uno. Ese negocio nuevo se queda en
-   * la empresa para siempre y, si su nombre queda antes en el abecedario, se
-   * vuelve el que la app abre sola. */
-  const { ctx, p, errores, escrituras } = await abrirApp({ negociosFallan: true });
-  try {
-    await p.waitForTimeout(2500);
-    assert.deepEqual(
-      escrituras.filter((e) => e.includes('/negocios')), [],
-      'no se da de alta ningún negocio a partir de una lectura que falló',
-    );
-    assert.ok(!errores.some((e) => /Cannot read|undefined is not/.test(e)), 'y no truena de una manera que nadie pueda leer');
   } finally { await ctx.close(); }
 });
 

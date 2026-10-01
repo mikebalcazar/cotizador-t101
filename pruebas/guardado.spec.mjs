@@ -108,27 +108,25 @@ describe('cargar: el árbol se arma de las tres tablas', () => {
   test('si algo falla se devuelve vacío, no a medias', async () => {
     // Enseñar la mitad del árbol y dejar que alguien guarde encima borraría lo
     // que no se alcanzó a leer.
-    const { db } = levantar({ ...YO, 'GET /s101/orgs/:o/negocios': { estado: 500, cuerpo: { error: 'trueno' } } });
+    const { db } = levantar({ ...YO, 'GET /s101/orgs/:o/clientes': { estado: 500, cuerpo: { error: 'trueno' } } });
     const r = await db.cargar();
     assert.deepEqual(r, { clientes: [], config: null, prices: null });
   });
 
-  test('si la empresa no tiene negocio, el cotizador crea el suyo', async () => {
-    // `cotizaciones.negocio_id` es obligatorio: sin negocio no se puede
-    // cotizar, y quedaría trabado esperando a otra app.
+  test('no sabe qué es un negocio: no lo pide, no lo manda y no lo crea (1-oct-2026)', async () => {
+    // Hasta el 1-oct una empresa nueva hacía que el cotizador creara su
+    // negocio. Desde el contrato 0.61.0 la API cuelga todo del registro de la
+    // empresa sola: aquí no hay nada que pedir ni que crear.
     const { db, pedidas } = levantar({
       ...YO,
-      'GET /s101/orgs/:o/negocios': { data: { filas: [] } },
-      'POST /s101/orgs/:o/negocios': { estado: 201, data: { id: 'neg-nuevo' } },
       'GET /s101/orgs/:o/clientes': { data: { filas: [] } },
       'GET /s101/orgs/:o/proyectos': { data: { filas: [] } },
       'GET /s101/orgs/:o/cotizaciones': { data: { filas: [] } },
       'GET /s101/orgs/:o/ajustes': { data: { filas: [] } },
     });
     await db.cargar();
-    const creado = pedidas.find((p) => p.metodo === 'POST' && p.ruta.endsWith('/negocios'));
-    assert.ok(creado, 'se creó el negocio');
-    assert.equal(creado.cuerpo.nombre, 'Taller 101');
+    assert.deepEqual(pedidas.filter((p) => p.ruta.includes('/negocios')), [], 'ni lista ni crea negocios');
+    assert.deepEqual(pedidas.filter((p) => /negocio_id/.test(p.ruta)), [], 'ninguna lista lleva negocio_id');
   });
 
   test('una sesión vencida manda a la puerta, no da vueltas', async () => {
@@ -530,7 +528,7 @@ describe('¿no te refieres a X?', () => {
     const llamada = pedidas.find((p) => p.ruta.includes('/clientes/parecidos'));
     assert.ok(llamada, 'no preguntó a la API');
     assert.match(llamada.ruta, /nombre=Muebles(\+|%20)Luna/);
-    assert.match(llamada.ruta, /negocio_id=neg-1/);
+    assert.doesNotMatch(llamada.ruta, /negocio_id/, 'sin negocio_id: la API busca en toda la empresa (0.61.0)');
   });
 
   test('si la API no contesta, se puede dar de alta igual (vacío, no error)', async () => {

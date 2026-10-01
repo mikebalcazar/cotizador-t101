@@ -728,37 +728,11 @@ async function pedir(ruta, opciones = {}) {
 /* ─────────────── quién soy y en qué empresa ─────────────── */
 
 let ORG = null;
-let NEGOCIO = null;
-let NEGOCIOS = [];
-
-/* EN QUÉ NEGOCIO. La suite guarda clientes, proyectos y cotizaciones POR
- * NEGOCIO, y una empresa puede tener varios. Hasta el 23-sep-2026 el cotizador
- * abría siempre el primero de la lista —que viene ordenada por nombre— sin
- * recordar nada y sin manera de cambiarlo.
- *
- * Eso quiere decir que el día que alguien da de alta un negocio cuyo nombre
- * queda antes en el abecedario, el cotizador se cambia solo de negocio y todo
- * se ve VACÍO. No se perdió nada: está en el otro. Pero desde la pantalla no
- * hay forma de saberlo, y se lee como «desapareció mi información». Mike lo
- * reportó así.
- *
- * Los precios y la configuración NO se mueven, porque `ajustes` no se guarda
- * por negocio: es de la empresa y de la app. Por eso el síntoma es tan raro
- * —los precios siguen ahí y los clientes no— y por eso sirve para reconocerlo.
- *
- * Ahora se recuerda el que se escogió y, cuando hay más de uno, la barra de
- * arriba deja cambiarlo. */
-/* 29-sep-2026, Mike: «borres de dash (y de todas las plataformas) la opción
- * de agregar diferentes negocios (…) Todo es para un negocio nada más». El
- * desplegable de la barra se quitó (G101). Lo de abajo se queda: si una
- * empresa todavía tiene varios —antes de que quien dirige los junte en
- * dash101— se abre el recordado o el primero, sin ofrecer cambiarlo. */
-const LLAVE_NEG = 'quote101:negocio';
 const guardarLocal = (k, v) => { try { localStorage.setItem(k, v); } catch { /* modo privado */ } };
 const leerLocal = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
 
 async function identidad() {
-  if (ORG && NEGOCIO) return true;
+  if (ORG) return true;
   const yo = await pedir('/yo');
   /* En qué empresa trabaja esta cuenta.
    *
@@ -781,35 +755,10 @@ async function identidad() {
     throw new Error('la cuenta no es miembro de ninguna empresa');
   }
 
-  const negs = await pedir(`/orgs/${ORG}/negocios`);
-  /* UN ERROR NO ES «NO HAY NEGOCIOS», y confundirlos sale caro: antes, si esta
-   * lectura fallaba por lo que fuera —la empresa sin pago, la app apagada, un
-   * 500, la red a medias—, `negs.data` venía vacío, el cotizador lo leía como
-   * «esta empresa no tiene negocios» y CREABA UNO. Una lectura que falla no
-   * puede terminar en una escritura que nadie pidió. */
-  if (negs.estado !== 200 || !Array.isArray(negs.data?.filas)) {
-    throw new Error('no se pudo leer la lista de negocios: ' + (negs.error || negs.estado));
-  }
-  NEGOCIOS = negs.data.filas;
-
-  if (!NEGOCIOS.length) {
-    // Una empresa recién hecha no tiene ninguno. El cotizador puede crear el
-    // suyo —sólo el nombre y la moneda— justo para no quedarse trabado
-    // esperando a otra app. Ahora sí: la lista llegó bien y venía vacía.
-    const nuevo = await pedir(`/orgs/${ORG}/negocios`, {
-      method: 'POST', cuerpo: { nombre: yo.data?.orgs?.[0]?.nombre || 'Taller 101', moneda: 'MXN' },
-    });
-    NEGOCIO = nuevo.data?.id || null;
-    if (!NEGOCIO) throw new Error('no se pudo crear el negocio: ' + (nuevo.error || nuevo.estado));
-    NEGOCIOS = [{ id: NEGOCIO, nombre: nuevo.data?.nombre ?? 'Taller 101' }];
-  } else {
-    /* El que se escogió la vez pasada. Si ya no existe —o nunca se escogió
-     * ninguno— se abre el primero, como siempre; lo que cambia es que a partir
-     * de ahí se queda donde la persona lo dejó. */
-    const recordado = NEGOCIOS.find((n) => n.id === leerLocal(LLAVE_NEG));
-    NEGOCIO = (recordado || NEGOCIOS[0]).id;
-  }
-  guardarLocal(LLAVE_NEG, NEGOCIO);
+  /* SIN «NEGOCIO» (Mike, 1-oct-2026): «Ya no existe la opción de negocios
+   * (…) Sólo es una empresa/negocio todo». Desde el contrato 0.61.0 la API
+   * cuelga sola cada cliente, proyecto y cotización del registro de la
+   * empresa: aquí ya no se lista, no se escoge, no se crea ni se recuerda. */
   return true;
 }
 
@@ -918,9 +867,9 @@ window.suiteDB = {
     try {
       await identidad();
       const [cls, prs, cots, ajs] = await Promise.all([
-        pedir(`/orgs/${ORG}/clientes?negocio_id=${encodeURIComponent(NEGOCIO)}`),
-        pedir(`/orgs/${ORG}/proyectos?negocio_id=${encodeURIComponent(NEGOCIO)}`),
-        pedir(`/orgs/${ORG}/cotizaciones?negocio_id=${encodeURIComponent(NEGOCIO)}`),
+        pedir(`/orgs/${ORG}/clientes`),
+        pedir(`/orgs/${ORG}/proyectos`),
+        pedir(`/orgs/${ORG}/cotizaciones`),
         pedir(`/orgs/${ORG}/ajustes`),
       ]);
 
@@ -987,7 +936,7 @@ window.suiteDB = {
          * tiene que ser el de la base, no el inventado en memoria. */
         if (!espejo.clientes.has(c.id)) {
           const r = await pedir(`/orgs/${ORG}/clientes`, {
-            method: 'POST', cuerpo: { nombre: c.nombre || 'Cliente', negocio_id: NEGOCIO },
+            method: 'POST', cuerpo: { nombre: c.nombre || 'Cliente' },
           });
           if (r.estado !== 201) throw new Error('cliente: ' + (r.error || r.estado));
           c.id = r.data.id;
@@ -1001,7 +950,7 @@ window.suiteDB = {
         for (const p of (c.proyectos || [])) {
           if (!espejo.proyectos.has(p.id)) {
             const r = await pedir(`/orgs/${ORG}/proyectos`, {
-              method: 'POST', cuerpo: { nombre: p.nombre || 'Proyecto', cliente_id: c.id, negocio_id: NEGOCIO },
+              method: 'POST', cuerpo: { nombre: p.nombre || 'Proyecto', cliente_id: c.id },
             });
             if (r.estado !== 201) throw new Error('proyecto: ' + (r.error || r.estado));
             p.id = r.data.id;
@@ -1043,7 +992,7 @@ window.suiteDB = {
               const r = await pedir(`/orgs/${ORG}/cotizaciones`, {
                 method: 'POST',
                 cuerpo: {
-                  negocio_id: NEGOCIO, cliente_id: c.id, total: totalDe(q), moneda: 'MXN',
+                  cliente_id: c.id, total: totalDe(q), moneda: 'MXN',
                   datos: { nombre: q.nombre || null, proyecto_id: p.id, versiones: q.versiones || [] },
                 },
               });
@@ -1134,28 +1083,11 @@ window.suiteDB = {
    *  La regla NO se escribe aquí: la contesta la API. quote101, dash101 y
    *  quell101 preguntan lo mismo, y tres copias de una regla son tres reglas
    *  —la que falle va a ser la que nadie probó—. Además, aquí sólo está el
-   *  árbol de ESTE negocio, y la API mira a toda la empresa.
+   *  árbol que ya se trajo, y la API mira a toda la empresa.
    *
    *  Si la API no contesta, se devuelve vacío a propósito: el aviso es una
    *  ayuda, y una ayuda que no carga no puede impedir dar de alta un cliente. */
-  /** Los negocios de la empresa, y en cuál está parado el cotizador.
-   *
-   *  La pantalla los necesita para poder ofrecer el cambio: sin eso, quien
-   *  tiene dos negocios no tiene manera de llegar al otro, y lo que hay ahí se
-   *  lee como perdido. */
-  negocios() { return NEGOCIOS.map((n) => ({ id: n.id, nombre: n.nombre })); },
-  negocioActual() { return NEGOCIO; },
-
-  /** Cambiar de negocio. No trae nada por su cuenta: quien lo llama vuelve a
-   *  pedir `cargar()`, porque el árbol entero es de un negocio. */
-  cambiarNegocio(id) {
-    if (!NEGOCIOS.some((n) => n.id === id)) return false;
-    NEGOCIO = id;
-    guardarLocal(LLAVE_NEG, id);
-    return true;
-  },
-
-  /** El catálogo de productos del negocio, para «Buscar en catálogo» en la
+  /** El catálogo de productos de la empresa, para «Buscar en catálogo» en la
    *  hoja. Es la misma tabla `productos` que usa dash101 (contrato 0.35.0).
    *  Aquí sólo se lee: guardar en el catálogo desde el cotizador llega con el
    *  catálogo de conceptos. Un error NO se vuelve «catálogo vacío»: la hoja
@@ -1163,7 +1095,7 @@ window.suiteDB = {
    *  preguntar. */
   async productos() {
     await identidad();
-    const r = await pedir(`/orgs/${ORG}/productos?negocio_id=${encodeURIComponent(NEGOCIO)}&limite=5000`);
+    const r = await pedir(`/orgs/${ORG}/productos?limite=5000`);
     if (r.estado !== 200 || !Array.isArray(r.data?.filas)) throw new Error(r.error || String(r.estado));
     return r.data.filas;
   },
@@ -1182,7 +1114,7 @@ window.suiteDB = {
   async clientesParecidos(nombre) {
     try {
       await identidad();
-      const r = await pedir(`/orgs/${ORG}/clientes/parecidos?nombre=${encodeURIComponent(nombre)}&negocio_id=${encodeURIComponent(NEGOCIO)}`);
+      const r = await pedir(`/orgs/${ORG}/clientes/parecidos?nombre=${encodeURIComponent(nombre)}`);
       return r.data?.parecidos || [];
     } catch (e) {
       console.error('clientesParecidos:', e);
@@ -10155,10 +10087,6 @@ function App() {
   });
   const [mostrarConfig, setMostrarConfig] = useState(false);
   const [mostrarRecibo, setMostrarRecibo] = useState(false);
-  /* En qué negocio está parado el cotizador, y cuáles hay. Con uno solo no se
-   * enseña nada; con varios, la barra de arriba deja cambiarlo. */
-  const [negocios, setNegocios] = useState([]);
-  const [negocio, setNegocio] = useState(null);
   // Configuración y recibo tapan la pantalla: «atrás» las cierra en vez de
   // sacar de la app.
   useEncima(mostrarConfig, () => setMostrarConfig(false));
@@ -10190,27 +10118,11 @@ function App() {
       if (data.prices) {
         hydratePrices(data.prices);
       }
-      setNegocios(window.suiteDB.negocios());
-      setNegocio(window.suiteDB.negocioActual());
       setLoading(false);
       if (window.splash101) window.splash101.ocultar();
     });
   }, []);
 
-  /* Cambiar de negocio recarga el árbol entero: clientes, proyectos y
-   * cotizaciones son de UN negocio. Se regresa a inicio a propósito — quedarse
-   * en una cotización que ya no es de este negocio enseñaría datos de un lado
-   * con el título del otro. */
-  const cambiarNegocio = async (id) => {
-    if (id === negocio || !window.suiteDB.cambiarNegocio(id)) return;
-    setNegocio(id);
-    setLoading(true);
-    setNav({ p: "inicio", cliente: null, proyecto: null, cot: null, ver: false, vi: 0 });
-    setExpandirEnInicio({ cliente: null, proyecto: null });
-    const data = await window.suiteDB.cargar();
-    setClientes(data.clientes || []);
-    setLoading(false);
-  };
   useEffect(() => {
     appConfig = {
       ...config
