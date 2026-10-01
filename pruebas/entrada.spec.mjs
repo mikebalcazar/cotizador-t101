@@ -41,7 +41,7 @@ test('entra con correo y contraseña, y con el código sólo para recuperar', ()
   assert.match(js, /pedir\('\/auth\/entrar', \{ correo, clave: v \}\)/);
   assert.match(js, /pedir\('\/auth\/entrar', \{ correo, codigo: v \}\)/);
   assert.match(js, /auth\/google/);
-  assert.match(htmlLimpio, /Olvid[ée] mi contrase/i);
+  assert.match(htmlLimpio, /No tengo contraseña o la olvidé/, 'Mike, 1-oct-2026: quien nunca tuvo contraseña tiene que ver el botón como suyo');
   assert.match(htmlLimpio, /type="password"/);
   assert.ok(/name="password"/.test(htmlLimpio) && /name="new-password"/.test(htmlLimpio),
     'los campos llevan name, para que el administrador del teléfono los guarde');
