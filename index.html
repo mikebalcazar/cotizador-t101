@@ -1100,6 +1100,18 @@ window.suiteDB = {
     return r.data.filas;
   },
 
+  /** Los ítems del proyecto que están FUERA DEL ALCANCE (contrato 0.64.0):
+   *  requerimientos sin aprobar y lo que se sacó. Mike, 2-oct: «cuando en un
+   *  proyecto hay ítems fuera de alcance, en quote debe aparecer (…) un botón
+   *  que diga "ítems pendientes"». Fuera es `estado = 'cotizado'`; se piden
+   *  todos de una vez (tope 5000) porque un proyecto grande pasa de 500. */
+  async itemsFuera(proyecto_id) {
+    await identidad();
+    const r = await pedir(`/orgs/${ORG}/items?proyecto_id=${encodeURIComponent(proyecto_id)}&estado=cotizado&limite=5000`);
+    if (r.estado !== 200 || !Array.isArray(r.data?.filas)) throw new Error(r.error || String(r.estado));
+    return r.data.filas;
+  },
+
   /** Aprueba la cotización: la suite crea sus piezas vendidas en el
    *  proyecto, una por unidad (contrato 0.46.0). `lineas[].precio` es el de
    *  UNA pieza en centavos, con el descuento ya repartido. Devuelve la
@@ -1876,6 +1888,65 @@ const flete = t => Math.max(cfg("fleteMin"), Math.floor(t / cfg("fleteEscalon"))
  *     PDF interno) no vea un renglón en cero. */
 const MOSTRAR_HISTORIAL = false;
 const esManual = m => !!(m && m.manual);
+
+/* ─────────────── agrupar renglones y aprobar por pieza (Mike, 2-oct) ───────────────
+ *
+ * «Dentro de la cotización, poder arrastrar un ítem sobre otro para
+ * agruparlos en un producto, para que solo se edite la descripción y el
+ * precio una vez. Sólo van sumando la cantidad de piezas (ítems) iguales en
+ * el mismo concepto de la cotización.»
+ *
+ * El que recibe se queda con su nombre, descripción, código, tipo y precio;
+ * la cantidad suma; y los ítems de la obra que traía cada uno (`item_id`) se
+ * juntan en `item_ids`, para que al aprobar cada pieza siga siendo la suya.
+ */
+
+/** Los ítems de la obra que lleva un renglón: uno, varios o ninguno. */
+const itemsDelRenglon = m => {
+  const ids = [];
+  for (const id of [m && m.item_id, ...((m && m.item_ids) || [])]) if (id && !ids.includes(id)) ids.push(id);
+  return ids;
+};
+
+/** Suelta el renglón `de` sobre el renglón `a`: uno solo, con la cantidad
+ *  sumada. Si son el mismo o alguno no existe, no cambia nada. */
+function agruparRenglones(muebles, de, a) {
+  if (de === a || !muebles[de] || !muebles[a]) return muebles;
+  const origen = muebles[de], destino = muebles[a];
+  const item_ids = [...itemsDelRenglon(destino), ...itemsDelRenglon(origen).filter(id => !itemsDelRenglon(destino).includes(id))];
+  const junto = {
+    ...destino,
+    qty: (Number(destino.qty) || 1) + (Number(origen.qty) || 1),
+    item_id: null,
+    item_ids,
+    imagenes: [...(destino.imagenes || []), ...(origen.imagenes || [])],
+  };
+  if (!item_ids.length) { delete junto.item_ids; junto.item_id = null; }
+  return muebles.map((m, i) => i === a ? junto : m).filter((_, i) => i !== de);
+}
+
+/** Las líneas que viajan a la suite al aprobar: un renglón con varios ítems
+ *  de la obra se vuelve una línea POR ÍTEM —cada pieza se aprueba a sí
+ *  misma, con el mismo precio y la misma descripción— y lo que sobre de la
+ *  cantidad nace como piezas nuevas. */
+function lineasParaAprobar(muebles, precioDe) {
+  const lineas = [];
+  muebles.forEach((m, i) => {
+    const base = {
+      nombre: String(m.nombre).trim(),
+      descripcion: String(m.descripcion || "").trim() || (esManual(m) ? null : resumenArmado(m) || null),
+      codigo: String(m.codigo || "").trim() || null,
+      tipo: esManual(m) && TIPOS_DE_ITEM[m.tipo] ? m.tipo : "mueble",
+      precio: precioDe(i),
+      producto_id: m.producto_id || null,
+    };
+    const ids = itemsDelRenglon(m);
+    const qty = Number(m.qty) || 1;
+    for (const id of ids) lineas.push({ ...base, cantidad: 1, item_id: id });
+    if (qty - ids.length > 0) lineas.push({ ...base, cantidad: qty - ids.length, item_id: null });
+  });
+  return lineas;
+}
 /* Los tipos de ítem de la suite, como los guarda `items.tipo`. El orden es
  * el del selector; el prefijo del código (MW-, PT-, FX-, SV-) lo pone la
  * suite al aprobar. */
@@ -2265,6 +2336,121 @@ function Done({
 }
 
 // ── PANTALLAS ──────────────────────────────────────────────────────────────
+/* ─────────────── los ítems pendientes de un proyecto (Mike, 2-oct) ───────────────
+ *
+ * «Cuando en un proyecto hay ítems fuera de alcance, en quote debe aparecer
+ * dentro del proyecto, abajo de nueva cotización, un botón que diga "ítems
+ * pendientes", y al darle click haya una lista completa de los ítems que
+ * están fuera de alcance, y que se puedan seleccionar varios para agregar a
+ * una cotización.»
+ *
+ * La liga sólo sale si hay: se pregunta a la suite al abrir el proyecto, y
+ * si no contesta no se inventa un cero —se queda callada—. */
+function ItemsPendientesLiga({ proyecto, onAbrir }) {
+  const [cuantos, setCuantos] = useState(null);
+  useEffect(() => {
+    let vivo = true;
+    setCuantos(null);
+    const suite = window.suiteDB;
+    if (!suite || typeof suite.itemsFuera !== "function") return undefined;
+    suite.itemsFuera(proyecto.id).then(filas => { if (vivo) setCuantos(filas.length); }).catch(() => { if (vivo) setCuantos(null); });
+    return () => { vivo = false; };
+  }, [proyecto.id]);
+  if (!cuantos) return null;
+  return /*#__PURE__*/React.createElement("div", {
+    "data-items-pendientes": proyecto.id,
+    role: "button",
+    tabIndex: 0,
+    onClick: e => { e.stopPropagation(); onAbrir(); },
+    onKeyDown: e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onAbrir(); } },
+    className: "anim-fadeInUp",
+    style: { padding: "8px 18px 10px 50px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#0080C1", fontWeight: 600 },
+    onMouseEnter: e => e.currentTarget.style.background = "rgba(0,128,193,0.1)",
+    onMouseLeave: e => e.currentTarget.style.background = "transparent"
+  }, /*#__PURE__*/React.createElement("span", { style: { fontSize: 14 } }, "☐"), " Ítems pendientes (", cuantos, ")");
+}
+
+/** El precio de UNA pieza, en pesos, de un ítem de la suite (monto en
+ *  centavos por `cantidad` piezas). */
+const pesosPorPieza = it => {
+  const n = Math.max(1, Number(it.cantidad) || 1);
+  return Math.round((Number(it.monto) || 0) / n) / 100;
+};
+
+/** De ítem de la suite a renglón «a mano» de la hoja, con su `item_id`:
+ *  al aprobar se aprueba ESE ítem, no nace otro. */
+function renglonDeItem(it) {
+  return {
+    id: uid(),
+    manual: true,
+    item_id: it.id,
+    tipo: TIPOS_DE_ITEM[String(it.tipo || "").toLowerCase()] ? String(it.tipo).toLowerCase() : "mueble",
+    codigo: it.clave || "",
+    nombre: it.nombre || "",
+    descripcion: it.descripcion || "",
+    qty: Math.max(1, Number(it.cantidad) || 1),
+    precio: pesosPorPieza(it),
+    total: pesosPorPieza(it),
+    componentes: [],
+    imagenes: []
+  };
+}
+
+function ItemsPendientesModal({ cliente, proyecto, items, cargando, error, onAgregar, onClose }) {
+  const [marcados, setMarcados] = useState(() => new Set());
+  const [destino, setDestino] = useState("nueva");
+  const borradores = (proyecto.cotizaciones || []).filter(c => c.estado !== "aceptada" && !c.aprobacion);
+  const alternar = id => setMarcados(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const todos = () => setMarcados(new Set(items.map(i => i.id)));
+  const ninguno = () => setMarcados(new Set());
+  const total = items.filter(i => marcados.has(i.id)).reduce((s, i) => s + pesosPorPieza(i) * Math.max(1, Number(i.cantidad) || 1), 0);
+  return /*#__PURE__*/React.createElement("div", {
+    className: "ov",
+    "data-modal": "items-pendientes",
+    onClick: e => e.target === e.currentTarget && onClose(),
+    style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }
+  }, /*#__PURE__*/React.createElement(Card, {
+    style: { width: "min(720px, 100%)", maxHeight: "90vh", display: "flex", flexDirection: "column", gap: 10 }
+  }, /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 } },
+    /*#__PURE__*/React.createElement("div", null,
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 16, fontWeight: 700 } }, "Ítems pendientes"),
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: "#888" } }, cliente.nombre, " · ", proyecto.nombre, " · fuera del alcance: requerimientos sin aprobar y lo que se sacó")),
+    /*#__PURE__*/React.createElement(BtnD, { onClick: onClose }, "✕")),
+  cargando && /*#__PURE__*/React.createElement("div", { style: { color: "#888", fontSize: 12 } }, "Preguntando a la suite…"),
+  error && /*#__PURE__*/React.createElement("div", { style: { color: "#b00", fontSize: 12 } }, error),
+  !cargando && !error && items.length === 0 && /*#__PURE__*/React.createElement("div", { style: { color: "#888", fontSize: 12 } }, "Este proyecto no tiene ítems fuera del alcance."),
+  items.length > 0 && /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, fontSize: 11 } },
+    /*#__PURE__*/React.createElement(BtnD, { onClick: todos }, "Marcar todos"),
+    /*#__PURE__*/React.createElement(BtnD, { onClick: ninguno }, "Ninguno"),
+    /*#__PURE__*/React.createElement("span", { style: { color: "#888", alignSelf: "center" } }, marcados.size, " de ", items.length, " · ", $(total))),
+  /*#__PURE__*/React.createElement("div", { style: { overflowY: "auto", flex: 1, border: "1px solid #eee", borderRadius: 8 } },
+    items.map(it => /*#__PURE__*/React.createElement("label", {
+      key: it.id,
+      "data-pendiente": it.id,
+      style: { display: "grid", gridTemplateColumns: "24px 1fr auto", gap: 8, padding: "8px 10px", borderBottom: "1px solid #f0f0f0", cursor: "pointer", fontSize: 12, alignItems: "start" }
+    }, /*#__PURE__*/React.createElement("input", { type: "checkbox", checked: marcados.has(it.id), onChange: () => alternar(it.id) }),
+    /*#__PURE__*/React.createElement("div", null,
+      /*#__PURE__*/React.createElement("div", { style: { fontWeight: 600 } }, it.clave ? /*#__PURE__*/React.createElement("span", { style: { color: "#888", fontWeight: 400 } }, it.clave, " · ") : null, it.nombre),
+      it.descripcion ? /*#__PURE__*/React.createElement("div", { style: { color: "#666", fontSize: 11 } }, it.descripcion) : null,
+      /*#__PURE__*/React.createElement("div", { style: { color: "#888", fontSize: 10 } },
+        it.cancelado_at ? "Se sacó del alcance" + (it.cancelado_motivo ? " · «" + it.cancelado_motivo + "»" : "") : "Requerimiento sin aprobar",
+        (Number(it.cantidad) || 1) > 1 ? " · " + it.cantidad + " piezas" : "")),
+    /*#__PURE__*/React.createElement("div", { className: "num", style: { fontSize: 12 } }, $(pesosPorPieza(it)))))),
+  items.length > 0 && /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" } },
+    /*#__PURE__*/React.createElement("select", {
+      "data-destino": "cotizacion",
+      value: destino,
+      onChange: e => setDestino(e.target.value),
+      style: { fontSize: 12, padding: "6px 8px", borderRadius: 8, border: "1px solid #ddd" }
+    }, /*#__PURE__*/React.createElement("option", { value: "nueva" }, "Nueva cotización"),
+    borradores.map(b => /*#__PURE__*/React.createElement("option", { key: b.id, value: b.id }, "Agregar a: " + (b.nombre || "Cotización")))),
+    /*#__PURE__*/React.createElement(Btn, {
+      primary: true,
+      disabled: marcados.size === 0,
+      onClick: () => onAgregar(items.filter(i => marcados.has(i.id)), destino)
+    }, "Agregar ", marcados.size || "", marcados.size === 1 ? " ítem" : " ítems", " a la cotización"))));
+}
+
 function PantallaInicio({
   clientes,
   loading,
@@ -2277,6 +2463,7 @@ function PantallaInicio({
   onNavCot,
   onNuevoProyecto,
   onNuevaCot,
+  onItemsPendientes,
   onDuplicarCot,
   onEliminarProyecto,
   onEliminarCot,
@@ -3375,7 +3562,10 @@ function PantallaInicio({
         style: {
           fontSize: 16
         }
-      }, "+"), " Nueva cotizaci\xF3n"))));
+      }, "+"), " Nueva cotizaci\xF3n"), !buscando && /*#__PURE__*/React.createElement(ItemsPendientesLiga, {
+        proyecto: p,
+        onAbrir: () => onItemsPendientes && onItemsPendientes(c, p)
+      }))));
     }), !buscando && (crProy === c.id ? /*#__PURE__*/React.createElement("div", {
       className: "anim-slideDown",
       style: {
@@ -5394,6 +5584,8 @@ const HOJA_CSS = `
 .hoja .h-cols{display:grid;grid-template-columns:76px minmax(0,1fr) 60px 110px 110px 44px;gap:10.2px}
 .hoja .h-cab{padding:0 0 6.8px;border-bottom:1px solid var(--h-divider)}
 .hoja .h-ren{align-items:start;padding:10.2px 0;border-bottom:1px solid var(--h-soft)}
+.hoja .h-ren[draggable="true"]{cursor:grab}
+.hoja .h-ren-sobre{outline:2px dashed #0080C1;outline-offset:-2px;background:rgba(0,128,193,0.06)}
 .hoja .h-arm{font-size:11.5px;color:var(--h-muted);margin-top:4px}
 .hoja .h-arm button{font:inherit;font-size:11.5px;color:var(--h-accent);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
 .hoja .h-acc{display:flex;flex-direction:column;gap:2px}
@@ -5539,6 +5731,14 @@ function HojaCotizacion({
     const n = parseFloat(String(v).replace(/[^0-9.\-]/g, ""));
     return isNaN(n) ? 0 : n;
   };
+  /* Arrastrar un renglón sobre otro los agrupa (Mike, 2-oct). `arrastre`
+   * lleva cuál se levantó y sobre cuál está, para pintar el destino. */
+  const [arrastre, setArrastre] = useState({ de: null, sobre: null });
+  const soltarSobre = (de, a) => {
+    setArrastre({ de: null, sobre: null });
+    if (de === null || de === undefined || de === a) return;
+    setMuebles(p => agruparRenglones(p, de, a));
+  };
   const renglonAMano = extra => setMuebles(p => [...p, {
     id: uid(),
     manual: true,
@@ -5600,22 +5800,14 @@ function HojaCotizacion({
      * en este borrador: no se crea una pieza nueva, se aprueba ESA, con el
      * tipo que se le escogió aquí y su precio. Lo dice la confirmación para
      * que no parezca que se van a duplicar. */
-    const piezas = muebles.filter(m => !m.item_id).reduce((s, m) => s + (m.qty || 1), 0);
-    const requerimientos = muebles.filter(m => !!m.item_id).length;
+    const lineasPrevias = lineasParaAprobar(muebles, i => Math.round((precios.unitarios[i] || 0) * (1 - desc / 100) * 100));
+    const piezas = lineasPrevias.filter(l => !l.item_id).reduce((s, l) => s + l.cantidad, 0);
+    const requerimientos = lineasPrevias.filter(l => !!l.item_id).length;
     const queSeHace = (piezas ? "Se crean " + piezas + (piezas === 1 ? " pieza vendida" : " piezas vendidas") : "")
       + (piezas && requerimientos ? " y se " : (requerimientos ? "Se " : ""))
       + (requerimientos ? (requerimientos === 1 ? "aprueba 1 requerimiento de la obra" : "aprueban " + requerimientos + " requerimientos de la obra") : "");
     if (!window.confirm("¿Aprobar la cotización?\n\n" + queSeHace + " en el proyecto «" + (proyectoNombre || "") + "» por " + hojaDinero(base) + " más IVA.\n\nDespués ya no se puede editar: para cambiarla se hace otra corrida.")) return;
-    const lineas = muebles.map((m, i) => ({
-      nombre: String(m.nombre).trim(),
-      descripcion: String(m.descripcion || "").trim() || (esManual(m) ? null : resumenArmado(m) || null),
-      codigo: String(m.codigo || "").trim() || null,
-      tipo: esManual(m) && TIPOS_DE_ITEM[m.tipo] ? m.tipo : "mueble",
-      cantidad: m.qty || 1,
-      precio: Math.round((precios.unitarios[i] || 0) * (1 - desc / 100) * 100),
-      producto_id: m.producto_id || null,
-      item_id: m.item_id || null
-    }));
+    const lineas = lineasPrevias;
     setAprobando(true);
     try { await onAprobar(lineas); } finally { setAprobando(false); }
   };
@@ -5676,7 +5868,18 @@ function HojaCotizacion({
       const unit = precios.unitarios[i] || 0;
       const qty = m.qty || 1;
       const armado = manual ? "" : resumenArmado(m);
-      return h("div", { key: m.id || i, className: "h-cols h-ren", "data-renglon": i, "data-tipo": manual ? "manual" : "mueble" },
+      const ids = itemsDelRenglon(m);
+      return h("div", {
+        key: m.id || i, className: "h-cols h-ren" + (arrastre.sobre === i && arrastre.de !== i ? " h-ren-sobre" : ""),
+        "data-renglon": i, "data-tipo": manual ? "manual" : "mueble", "data-agrupados": ids.length > 1 ? ids.length : undefined,
+        draggable: !soloVer,
+        title: soloVer ? undefined : "Arrastra este renglón sobre otro para agruparlos en un concepto",
+        onDragStart: soloVer ? undefined : e => { e.dataTransfer.setData("text/plain", String(i)); e.dataTransfer.effectAllowed = "move"; setArrastre({ de: i, sobre: null }); },
+        onDragOver: soloVer ? undefined : e => { if (arrastre.de === null || arrastre.de === i) return; e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (arrastre.sobre !== i) setArrastre(a => ({ ...a, sobre: i })); },
+        onDragLeave: soloVer ? undefined : () => { if (arrastre.sobre === i) setArrastre(a => ({ ...a, sobre: null })); },
+        onDrop: soloVer ? undefined : e => { e.preventDefault(); const de = Number(e.dataTransfer.getData("text/plain")); soltarSobre(Number.isInteger(de) ? de : arrastre.de, i); },
+        onDragEnd: soloVer ? undefined : () => setArrastre({ de: null, sobre: null }),
+      },
         h("div", null,
           h("input", { className: "input", "data-campo": "codigo-" + i, placeholder: manual ? "COD-001" : "MW-01", value: m.codigo || "", readOnly: soloVer, style: { fontFamily: "ui-monospace,monospace", fontSize: 12 }, onChange: e => ponRenglon(i, { codigo: e.target.value }) }),
           /* G100 · el tipo del ítem, sólo en los renglones a mano: los del
@@ -5691,8 +5894,12 @@ function HojaCotizacion({
           /* El renglón que la obra dejó aquí (requerimiento, G100): se dice
              de dónde viene y qué va a pasar al aprobar, para que nadie lo
              borre creyendo que sobra ni lo capture dos veces. */
-          m.item_id && h("div", { className: "h-arm", "data-requerimiento": m.item_id },
+          ids.length === 1 && h("div", { className: "h-arm", "data-requerimiento": ids[0] },
             "Requerimiento de la obra" + (m.codigo ? " · " + m.codigo : "") + ". Al aprobar, este mismo ítem queda vendido con el tipo y el precio de aquí, y estrena código."),
+          /* Varios ítems de la obra en un solo concepto (Mike, 2-oct): se
+             dice cuántos, y que al aprobar cada pieza sigue siendo la suya. */
+          ids.length > 1 && h("div", { className: "h-arm", "data-requerimiento": ids.join(" ") },
+            ids.length + " ítems de la obra agrupados en este concepto. Al aprobar, cada uno queda vendido con este precio y esta descripción."),
           !manual && h("div", { className: "h-arm" },
             armado ? "Armado: " + armado : "Mueble sin componentes",
             !soloVer && h("span", { className: "no-print" }, " · ", h("button", { onClick: () => editarMueble(i) }, "abrir el armador")))),
@@ -10271,6 +10478,38 @@ function App() {
     return ok;
   };
   // Crear cotización desde Inicio (sin entrar al proyecto)
+  /* Ítems pendientes (Mike, 2-oct): se abre la lista, se escogen varios y
+   * caen como renglones «a mano» con su item_id en una cotización nueva o
+   * en un borrador del proyecto. Se abre la hoja para editarla; se guarda
+   * como cualquier cotización. */
+  const [pendientes, setPendientes] = useState(null);
+  const abrirPendientes = async (cliente, proyecto) => {
+    setPendientes({ cliente, proyecto, items: [], cargando: true, error: "" });
+    try {
+      const items = await window.suiteDB.itemsFuera(proyecto.id);
+      setPendientes(p => p && p.proyecto.id === proyecto.id ? { ...p, items, cargando: false } : p);
+    } catch (e) {
+      setPendientes(p => p && p.proyecto.id === proyecto.id ? { ...p, cargando: false, error: "No se pudieron leer los ítems pendientes: " + (e.message || e) } : p);
+    }
+  };
+  const agregarPendientes = (cliente, proyecto, items, destino) => {
+    const renglones = items.map(renglonDeItem);
+    const ahora = new Date().toISOString();
+    let cot;
+    const existente = destino !== "nueva" ? (proyecto.cotizaciones || []).find(c => c.id === destino) : null;
+    if (existente) {
+      const v0 = (existente.versiones || [])[0] || { muebles: [], usaFlete: true, usaArq: true, usaTDC: true, descuento: 0, desglosar: true };
+      cot = { ...existente, versiones: [{ ...v0, muebles: [...(v0.muebles || []), ...renglones], fecha: ahora }, ...(existente.versiones || []).slice(1)] };
+    } else {
+      cot = {
+        id: uid(),
+        nombre: "Ítems pendientes " + new Date().toLocaleDateString("es-MX", { day: "numeric", month: "short" }),
+        versiones: [{ muebles: renglones, usaFlete: true, usaArq: true, usaTDC: true, descuento: 0, desglosar: true, fecha: ahora }]
+      };
+    }
+    setPendientes(null);
+    setNav({ p: "cotizador", cliente, proyecto, cot, ver: false, vi: 0, originRect: null, from: "inicio" });
+  };
   const nuevaCotDe = (cliente, proyecto, rect) => {
     const cot = {
       id: uid(),
@@ -10718,6 +10957,7 @@ function App() {
     }),
     onNuevoProyecto: nuevoProyectoDe,
     onNuevaCot: nuevaCotDe,
+    onItemsPendientes: abrirPendientes,
     onDuplicarCot: duplicarCot,
     onEliminarProyecto: eliminarProyectoDesdeInicio,
     onEliminarCot: eliminarCotDesdeInicio,
@@ -10727,6 +10967,14 @@ function App() {
       cliente: null,
       proyecto: null
     })
+  }), pendientes && /*#__PURE__*/React.createElement(ItemsPendientesModal, {
+    cliente: pendientes.cliente,
+    proyecto: pendientes.proyecto,
+    items: pendientes.items,
+    cargando: pendientes.cargando,
+    error: pendientes.error,
+    onAgregar: (items, destino) => agregarPendientes(pendientes.cliente, pendientes.proyecto, items, destino),
+    onClose: () => setPendientes(null)
   }), nav.p === "cotizador" && (nav.originRect ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(PantallaInicio, {
     clientes: clientes,
     loading: loading,
