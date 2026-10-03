@@ -167,7 +167,12 @@ test('una cotización se abre en la hoja, y el mueble vale lo mismo que en el PD
   } finally { await ctx.close(); }
 });
 
-test('un renglón a mano se cobra tal cual: sin cargos, sin flete, y se guarda', async () => {
+/* Mike, 3-oct-2026: lo escrito a mano es la BASE; encima van los indirectos
+ * siempre y las comisiones prendidas (las dos vienen prendidas), al peso:
+ * 1000 × 1.075 × 1.10 × 1.045 = 1235.71 → $1,236. El flete sigue siendo del
+ * armador. Hasta el 2-oct lo escrito a mano era el precio final. */
+const A_MANO_CLIENTE = Math.round(1000 * 1.075 * 1.10 * 1.045);
+test('un renglón a mano: lo escrito es la base, encima van indirectos y comisiones, sin flete, y se guarda', async () => {
   const { ctx, p, errores, escrituras } = await abrirApp();
   try {
     await abrirCotizacion(p);
@@ -186,8 +191,9 @@ test('un renglón a mano se cobra tal cual: sin cargos, sin flete, y se guarda',
     await p.locator('[data-campo="contacto"]').fill('Ana Ruiz · 55 1234 5678');
     await p.waitForTimeout(900);
 
-    assert.equal(await leer(p, '[data-total="1"]'), 3000, '3 × $1,000');
-    assert.equal(await leer(p, '[data-hoja="subtotal"]'), antes + 3000, 'el subtotal sube exactamente lo escrito: nada de cargos encima');
+    assert.equal(await leer(p, '[data-precio-cliente="1"]'), A_MANO_CLIENTE, 'debajo de lo escrito se ve lo que paga el cliente: $1,000 con indirectos y comisiones');
+    assert.equal(await leer(p, '[data-total="1"]'), 3 * A_MANO_CLIENTE, '3 × $1,236');
+    assert.equal(await leer(p, '[data-hoja="subtotal"]'), antes + 3 * A_MANO_CLIENTE, 'el subtotal sube lo escrito con sus cargos repartidos');
     assert.equal(await leer(p, '[data-precio="0"]'), unitMueble, 'y el mueble no cambió de precio (el flete no se reparte en lo escrito a mano)');
 
     const v = ultimaVersion(escrituras);
@@ -197,7 +203,8 @@ test('un renglón a mano se cobra tal cual: sin cargos, sin flete, y se guarda',
     assert.equal(r.nombre, 'Instalación en sitio');
     assert.equal(r.descripcion, 'Cuadrilla de 3, una jornada');
     assert.equal(r.qty, 3);
-    assert.equal(r.precio, 1000);
+    assert.equal(r.precio, 1000, 'se guarda la base, lo escrito');
+    assert.equal(v.cargosAMano, true, 'y la cotización queda marcada con la regla de hoy');
     assert.equal(v.hoja?.contacto, 'Ana Ruiz · 55 1234 5678', 'lo de la hoja viaja con la versión');
     assert.deepEqual(errores, [], 'sin errores de JavaScript');
   } finally { await ctx.close(); }
@@ -246,7 +253,9 @@ test('«Nueva cotización» abre la hoja en blanco, y se imprime sin botones', a
     await imp.waitForLoadState('domcontentloaded');
     const t = await imp.locator('body').innerText();
     assert.ok(/GRAN TOTAL/.test(t) && /Closet vestidor/.test(t), 'imprime la hoja con lo escrito');
-    assert.ok(/52,200/.test(t), 'con su total con IVA');
+    // 45000 es la base; al cliente va con indirectos y comisiones (3-oct-2026): $55,607, y con IVA $64,504.12.
+    const conIva = Math.round(45000 * 1.075 * 1.10 * 1.045) * 1.16;
+    assert.ok(new RegExp(Math.floor(conIva).toLocaleString('en-US')).test(t), 'con su total con IVA (' + conIva + ')');
     assert.equal(await imp.locator('button, input, textarea').count(), 0, 'sin botones ni cajas de texto');
     assert.deepEqual(errores, [], 'sin errores de JavaScript');
   } finally { await ctx.close(); }
@@ -310,7 +319,7 @@ test('«Aprobar» manda cada renglón con su cantidad y su precio con descuento,
       { nombre: 'Cocina integral', cantidad: 2, precio: Math.round(unit * 0.9 * 100), descripcion: 'Gabinete Base 60' },
       'el mueble: su cantidad, su precio de la hoja con el 10% repartido, en centavos, y lo que lleva',
     );
-    assert.deepEqual({ nombre: lineas[1].nombre, cantidad: lineas[1].cantidad, precio: lineas[1].precio }, { nombre: 'Instalación en sitio', cantidad: 1, precio: 90000 });
+    assert.deepEqual({ nombre: lineas[1].nombre, cantidad: lineas[1].cantidad, precio: lineas[1].precio }, { nombre: 'Instalación en sitio', cantidad: 1, precio: Math.round(Math.round(1000 * 1.075 * 1.10 * 1.045) * 0.9 * 100) }, 'el renglón a mano: su precio al cliente (con indirectos y comisiones) con el 10% repartido, en centavos');
 
     assert.ok(/Aprobada el 23 de septiembre de 2026 · 3 piezas en el proyecto/.test(await p.locator('[data-hoja="aprobada"]').innerText()));
     assert.equal(await p.getByRole('button', { name: 'Aprobar', exact: true }).count(), 0, 'no se aprueba dos veces');
@@ -395,7 +404,9 @@ test('el PDF cliente: cada componente con su número, precio unitario de $50 en 
   try {
     await abrirCotizacion(p);
     const unit = await leer(p, '[data-precio="0"]');
-    assert.equal(await leer(p, '[data-total="1"]'), 1234, 'lo escrito a mano no se redondea');
+    // Guardada sin `cargosAMano` (antes del 3-oct-2026) y abierta para VER: se enseña como se mandó.
+    assert.equal(await leer(p, '[data-total="1"]'), 1234, 'una cotización de antes, vista, deja lo escrito a mano tal cual (sin cargos y sin redondeo)');
+    assert.equal(await p.locator('[data-cargos-de-antes]').count(), 1, 'y la caja de cargos lo dice');
     const subtotalHoja = await leer(p, '[data-hoja="subtotal"]');
     const [pdf] = await Promise.all([ctx.waitForEvent('page'), p.getByRole('button', { name: 'PDF cliente con condiciones' }).click()]);
     await pdf.waitForLoadState('domcontentloaded');

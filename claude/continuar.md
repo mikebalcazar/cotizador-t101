@@ -5,6 +5,52 @@ Lo escribe la sesión de Claude Code que trabaja el repo. Lo más nuevo arriba.
 
 ---
 
+# 3-oct-2026 · G106: las comisiones siempre a la vista, y los indirectos también en lo escrito a mano
+
+**Medido aquí (npm run prueba: 123 pruebas, 0 fallas) y en vivo.**
+
+Mike, en «Sanje CC37 - Chapeado Cantos de Puertas Duela»: «otra vez no me
+aparece la opción de agregar la comisión del arquitecto ni la comisión de
+TDC. Quiero siempre poder activar o desactivar eso. Y considera los
+indirectos siempre en la cotización. Desglósalo para mí, para verlo, pero en
+el PDF no se exportan nunca. Se distribuye proporcionalmente entre todos.»
+
+## Qué pasaba
+
+La caja «Cómo se forma el precio» (con las casillas de las dos comisiones)
+sólo se pintaba cuando había muebles del armador (`hayArmados`). Una
+cotización de puros renglones a mano —los requerimientos que la obra deja en
+quote101— se quedaba sin casillas. Y desde el 23-sep lo escrito a mano «ya
+era el precio al cliente»: sin indirectos ni comisiones.
+
+## Qué quedó
+
+- La caja sale con cualquier renglón. Comisión profesionista y comisión TDC
+  siempre se pueden prender o apagar; vienen prendidas.
+- Lo escrito a mano es la BASE. Encima van los indirectos (siempre) y las
+  comisiones prendidas; el precio al cliente se redondea al peso y se ve
+  debajo de lo escrito («al cliente $…»). Ingeniería, embalaje y flete siguen
+  siendo del armador. Con los porcentajes de fábrica, 1000 → 1,236.
+- El desglose completo está en la caja (base armados, base a mano,
+  indirectos, ingeniería, embalaje, flete, comisiones, redondeo), con
+  `no-print`. Los PDF del cliente, el Presupuesto y el Excel llevan el precio
+  ya repartido en cada renglón y nunca una fila de indirectos ni comisiones.
+  El único documento con el desglose es el «PDF interno», que ahora lo toma
+  de `preciosHoja` (los mismos números que la hoja; antes traía porcentajes
+  escritos a mano y otra cuenta).
+- `cargosAMano` viaja en la versión. Una cotización guardada antes del 3-oct
+  no lo trae: al VERLA se enseña como se mandó (sin cargos en lo escrito a
+  mano, con un aviso en la caja); al EDITARLA entra a la regla de hoy y se
+  guarda marcada. Las nuevas nacen con la bandera.
+- `totalFinal` (lo que se guarda) es ahora el subtotal de la hoja menos el
+  descuento, el mismo número que se ve; antes salía de otra cuenta.
+
+## Pruebas
+
+`pruebas/los-cargos-siempre.spec.mjs` (4). Sobre el código viejo fallan las
+cuatro. Se ajustaron `la-hoja`, `los-requerimientos` y
+`los-items-pendientes`, que medían la regla del 23-sep.
+
 # 16-sep-2026 · Fase 2, primera mitad: la app ya no se entrega sin sesión
 
 **Medido aquí y sobre lo publicado.**
