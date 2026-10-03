@@ -118,11 +118,12 @@ test('al aprobar, el requerimiento viaja con su item_id, su tipo y su precio: se
     const [req, mano] = envio.cuerpo.lineas;
     assert.equal(req.item_id, 'it-1', 'la línea del requerimiento dice qué ítem es');
     assert.equal(req.tipo, 'puerta', 'con el tipo que se le escogió');
-    assert.equal(req.precio, 150000, 'y su precio en centavos');
+    // Lo escrito es la base; al cliente va con indirectos y comisiones (3-oct-2026): 1500 × 1.2357 = $1,854.
+    assert.equal(req.precio, Math.round(1500 * 1.075 * 1.10 * 1.045) * 100, 'y su precio al cliente en centavos');
     assert.equal(req.cantidad, 1);
     assert.equal(mano.item_id, null, 'el escrito a mano no es de ningún ítem: nace nuevo');
     assert.equal(mano.tipo, 'servicio', 'con su tipo');
-    assert.equal(mano.precio, 80000);
+    assert.equal(mano.precio, Math.round(800 * 1.075 * 1.10 * 1.045) * 100, 'también con sus cargos encima');
     assert.deepEqual(errores, [], 'sin errores de JavaScript');
   } finally { await ctx.close(); }
 });

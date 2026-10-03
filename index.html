@@ -1960,8 +1960,18 @@ const precioManual = m => Number(m.precio !== undefined ? m.precio : m.total) ||
  * todos de aquí: lo que se ve en pantalla es lo que firma el cliente. */
 const REDONDEO = 50;
 const redondear = x => Math.ceil(x / REDONDEO - 1e-9) * REDONDEO;
-function preciosHoja(muebles, { usaF, usaA, usaT }) {
-  const factor = (1 + cfg("indirectos") + cfg("ingenieria") + cfg("embalaje")) * (usaA ? 1 + cfg("comisionArq") : 1) * (usaT ? 1 + cfg("comisionTDC") : 1);
+function preciosHoja(muebles, { usaF, usaA, usaT, cargosAMano = true }) {
+  const fA = usaA ? 1 + cfg("comisionArq") : 1, fT = usaT ? 1 + cfg("comisionTDC") : 1;
+  const factor = (1 + cfg("indirectos") + cfg("ingenieria") + cfg("embalaje")) * fA * fT;
+  /* Los renglones escritos a mano también llevan cargos (Mike, 3-oct-2026:
+   * «considera los indirectos siempre en la cotización … se distribuye
+   * proporcionalmente entre todos»). Lo escrito es la BASE; encima van los
+   * indirectos, siempre, y las comisiones que estén prendidas; el precio al
+   * cliente se redondea al peso. Ingeniería, embalaje y flete son del armador
+   * y no se le cargan a lo escrito a mano. Hasta el 2-oct lo escrito a mano
+   * ya era el precio al cliente: `cargosAMano: false` deja ver una cotización
+   * guardada antes de la regla tal como se mandó. */
+  const factorMano = cargosAMano ? (1 + cfg("indirectos")) * fA * fT : 1;
   const exactos = muebles.map(m => esManual(m) ? null : (m.total || 0) * factor);
   const sinFlete = muebles.reduce((s, m, i) => exactos[i] === null ? s : s + exactos[i] * (m.qty || 1), 0);
   const fleteNeto = usaF && sinFlete > 0 ? flete(sinFlete) : 0;
@@ -1979,22 +1989,28 @@ function preciosHoja(muebles, { usaF, usaA, usaT }) {
       return { unit, cant, subtotal: unit * cant };
     });
   });
-  const unitarios = muebles.map((m, i) => exactos[i] === null ? precioManual(m)
+  const unitarios = muebles.map((m, i) => exactos[i] === null ? Math.round(precioManual(m) * factorMano)
     : componentes[i] ? componentes[i].reduce((a, c) => a + c.subtotal, 0)
     : redondear(exactos[i] * factorFlete));
   const subtotal = muebles.reduce((s, m, i) => s + unitarios[i] * (m.qty || 1), 0);
-  /* De qué se forma el precio de los armados (Mike, 23-sep: «necesito ese
-   * monto»). Con los porcentajes de ⚙, en el orden en que se aplican: los
-   * cargos sobre el costo, las comisiones encima, y el flete repartido. Lo
-   * que sobra es el redondeo a $50 de cada componente, para que la suma
+  /* De qué se forma el precio (Mike, 23-sep: «necesito ese monto»; 3-oct:
+   * «desglósalo para mí, para verlo»). Con los porcentajes de ⚙, en el orden
+   * en que se aplican: los indirectos sobre el costo de los armados y sobre
+   * lo escrito a mano; ingeniería, embalaje y flete sólo sobre los armados;
+   * las comisiones encima de todo. Lo que sobra es el redondeo ($50 por
+   * componente armado, al peso en lo escrito a mano), para que la suma
    * cuadre con lo que dice la hoja. Es para quien cotiza: no sale al cliente. */
   const costo = muebles.reduce((s, m, i) => exactos[i] === null ? s : s + (m.total || 0) * (m.qty || 1), 0);
-  const ind = costo * cfg("indirectos"), ing = costo * cfg("ingenieria"), emb = costo * cfg("embalaje");
-  const conCargos = costo + ind + ing + emb;
+  const aMano = muebles.reduce((s, m, i) => exactos[i] === null ? s + precioManual(m) * (m.qty || 1) : s, 0);
+  const baseInd = costo + (cargosAMano ? aMano : 0);
+  const ind = baseInd * cfg("indirectos"), ing = costo * cfg("ingenieria"), emb = costo * cfg("embalaje");
+  const conCargos = baseInd + ind + ing + emb;
   const arq = usaA ? conCargos * cfg("comisionArq") : 0;
   const tdc = usaT ? (conCargos + arq) * cfg("comisionTDC") : 0;
   const armados = muebles.reduce((s, m, i) => exactos[i] === null ? s : s + unitarios[i] * (m.qty || 1), 0);
-  const desglose = { costo, ind, ing, emb, arq, tdc, flete: fleteNeto, armados, redondeo: armados - (conCargos + arq + tdc + fleteNeto) };
+  const manuales = subtotal - armados;
+  const redondeo = subtotal - (conCargos + arq + tdc + fleteNeto + (cargosAMano ? 0 : aMano));
+  const desglose = { costo, aMano, ind, ing, emb, arq, tdc, flete: fleteNeto, armados, manuales, redondeo, cargosAMano };
   return { unitarios, subtotal, componentes, desglose };
 }
 
@@ -4103,7 +4119,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G105";
+const APP_VERSION = "G106";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -5905,7 +5921,11 @@ function HojaCotizacion({
             !soloVer && h("span", { className: "no-print" }, " · ", h("button", { onClick: () => editarMueble(i) }, "abrir el armador")))),
         h("input", { className: "input num", "data-campo": "cantidad-" + i, type: "number", min: 1, step: 1, value: qty, readOnly: soloVer, onChange: e => ponRenglon(i, { qty: Math.max(1, Math.round(aNum(e.target.value)) || 1) }) }),
         manual
-          ? h("input", { className: "input num", "data-campo": "precio-" + i, type: "number", min: 0, step: "any", value: m.precio === undefined ? m.total || 0 : m.precio, readOnly: soloVer, onChange: e => { const v = aNum(e.target.value); ponRenglon(i, { precio: v, total: v }); } })
+          ? h("div", null,
+              h("input", { className: "input num", "data-campo": "precio-" + i, type: "number", min: 0, step: "any", value: m.precio === undefined ? m.total || 0 : m.precio, readOnly: soloVer, title: "Lo que escribes es la base; los indirectos y las comisiones prendidas van encima (ver «Cómo se forma el precio»)", onChange: e => { const v = aNum(e.target.value); ponRenglon(i, { precio: v, total: v }); } }),
+              /* Lo escrito es la base; esto es lo que paga el cliente con los
+                 cargos repartidos (Mike, 3-oct). Si son iguales, no se repite. */
+              unit !== precioManual(m) && h("div", { className: "h-arm num", "data-precio-cliente": i, style: { textAlign: "right" } }, "al cliente " + hojaDinero(unit)))
           : h("div", { className: "num", "data-precio": i, title: "Calculado por el armador con los cargos y el flete prendidos", style: { paddingTop: 8, fontSize: 14 } }, hojaDinero(unit)),
         h("div", { className: "num", "data-total": i, style: { paddingTop: 8, fontSize: 14 } }, hojaDinero(unit * qty)),
         !soloVer ? h("div", { className: "h-acc no-print" },
@@ -5917,24 +5937,34 @@ function HojaCotizacion({
       h("button", { className: "btn", onClick: nuevoMueble }, "+ Agregar mueble"),
       h("button", { className: "btn", onClick: () => renglonAMano() }, "+ Escribir a mano"),
       h("button", { className: "btn", onClick: abrirCatalogo }, "Buscar en catálogo")),
-    hayArmados && (() => {
+    /* La caja sale con CUALQUIER renglón, no sólo con armados (Mike, 3-oct:
+       «otra vez no me aparece la opción de agregar la comisión del arquitecto
+       ni la comisión de TDC. Quiero siempre poder activar o desactivar eso»).
+       Antes sólo se pintaba con muebles del armador, y una cotización de
+       puros renglones a mano —los requerimientos de la obra— se quedaba sin
+       casillas. */
+    muebles.length > 0 && (() => {
       const d = precios.desglose || {};
+      const hayManuales = muebles.some(m => esManual(m));
+      const conCargosAMano = d.cargosAMano !== false;
       const pct = k => (cfg(k) * 100).toLocaleString("es-MX", { maximumFractionDigits: 2 }) + "%";
       const cargo = (clave, etiqueta, monto, prendido, set) => h("div", { key: clave, className: "h-cargo" + (set && !prendido ? " apagado" : "") },
         set ? h("label", null, h("input", { type: "checkbox", checked: !!prendido, disabled: soloVer, onChange: e => set(e.target.checked) }), etiqueta) : h("span", null, etiqueta),
         h("b", { className: "num", "data-cargo": clave }, set && !prendido ? "—" : hojaDinero(monto)));
       return h("div", { className: "h-cargos no-print", "data-hoja": "cargos" },
-        h("div", { className: "h-cargos-tit" }, "Cómo se forma el precio de los muebles armados",
-          h("span", null, " · los porcentajes se cambian en ⚙ Configuración · no sale en el PDF del cliente")),
+        h("div", { className: "h-cargos-tit" }, "Cómo se forma el precio",
+          h("span", null, " · los porcentajes se cambian en ⚙ Configuración · se reparte en el precio de cada renglón y no sale en el PDF del cliente"),
+          hayManuales && !conCargosAMano && h("span", { "data-cargos-de-antes": true }, " · guardada antes del 3-oct-2026: lo escrito a mano va sin cargos, como se mandó")),
         h("div", { className: "h-cargos-fila" },
-          cargo("costo", "Costo de los muebles", d.costo),
+          hayArmados && cargo("costo", "Costo de los muebles armados", d.costo),
+          hayManuales && cargo("amano", "Escrito a mano (base)", d.aMano),
           cargo("indirectos", "Indirectos " + pct("indirectos"), d.ind),
-          cargo("ingenieria", "Ingeniería " + pct("ingenieria"), d.ing),
-          cargo("embalaje", "Embalaje " + pct("embalaje"), d.emb),
-          cargo("flete", "Flete", d.flete, usaF, setUsaF),
+          hayArmados && cargo("ingenieria", "Ingeniería " + pct("ingenieria"), d.ing),
+          hayArmados && cargo("embalaje", "Embalaje " + pct("embalaje"), d.emb),
+          hayArmados && cargo("flete", "Flete", d.flete, usaF, setUsaF),
           cargo("arq", "Comisión profesionista " + pct("comisionArq"), d.arq, usaA, setUsaA),
           cargo("tdc", "Comisión TDC " + pct("comisionTDC"), d.tdc, usaT, setUsaT),
-          cargo("redondeo", "Redondeo a $" + REDONDEO, d.redondeo)));
+          cargo("redondeo", "Redondeo" + (hayArmados ? " a $" + REDONDEO : " al peso"), d.redondeo)));
       /* La cajita «Precio de los armados» (la suma de todas) se quitó el
        * 26-sep: Mike, «no debería estar ahí». Repetía el Subtotal. */
     })());
@@ -6858,6 +6888,12 @@ function Cotizador({
   const [usaF, setUsaF] = useState((cotIni === null || cotIni === void 0 ? void 0 : cotIni.usaFlete) !== undefined ? cotIni.usaFlete : true);
   const [usaA, setUsaA] = useState((cotIni === null || cotIni === void 0 ? void 0 : cotIni.usaArq) !== undefined ? cotIni.usaArq : true);
   const [usaT, setUsaT] = useState((cotIni === null || cotIni === void 0 ? void 0 : cotIni.usaTDC) !== undefined ? cotIni.usaTDC : true);
+  /* Los renglones a mano llevan indirectos y comisiones desde el 3-oct-2026
+   * (ver `preciosHoja`). Una cotización guardada antes no trae la bandera:
+   * al VERLA se enseña como se mandó (sin cargos en lo escrito a mano); al
+   * EDITARLA entra a la regla de hoy, se ve en «Cómo se forma el precio» y
+   * se guarda con la bandera. Las nuevas nacen con ella. */
+  const cargosAMano = (cotIni === null || cotIni === void 0 ? void 0 : cotIni.cargosAMano) !== undefined ? !!cotIni.cargosAMano : !(modoVer || readonly);
   /* «Desglosar componentes» en el PDF del cliente (Mike, 28-sep-2026): el PDF
    * de siempre, con la tabla de componentes y las páginas del plano, o sólo
    * la lista de muebles con su precio, subtotal, IVA y total. Viaja CON la
@@ -7039,6 +7075,7 @@ function Cotizador({
           usaFlete: usaF,
           usaArq: usaA,
           usaTDC: usaT,
+          cargosAMano,
           desglosar,
           descuento,
           nombre: cotNombre,
@@ -7100,7 +7137,7 @@ function Cotizador({
       try {
         onGuardar({
           muebles, totalFinal: tF,
-          usaFlete: usaF, usaArq: usaA, usaTDC: usaT, desglosar,
+          usaFlete: usaF, usaArq: usaA, usaTDC: usaT, cargosAMano, desglosar,
           descuento, nombre: cotNombre, materiales, hoja,
           fecha: new Date().toISOString(), silent: true
         });
@@ -7450,7 +7487,9 @@ function Cotizador({
   const cT = usaT ? (tBM + cP) * cfg("comisionTDC") : 0;
   const subC = subCM + grandMan;
   const tB = tBM + grandMan;
-  const subtotalAntesDesc = tB + cP + cT;
+  // El total es el de la hoja: lo que se ve es lo que se guarda y lo que firma el cliente.
+  const PH_HOJA = preciosHoja(muebles, { usaF, usaA, usaT, cargosAMano });
+  const subtotalAntesDesc = PH_HOJA.subtotal;
   const descMonto = descuento > 0 ? subtotalAntesDesc * (descuento / 100) : 0;
   const tF = subtotalAntesDesc - descMonto;
   const exportPDF = () => {
@@ -7472,10 +7511,19 @@ function Cotizador({
       }).join("");
       return '<div class="mb"><div class="mbh"><div style="display:flex;align-items:center">' + imgTag + '<div><div style="font-size:15px;font-weight:700">' + m.nombre + '</div><div style="font-size:11px;color:#888">' + q + ' pieza' + (q !== 1 ? 's' : '') + '</div></div></div><div style="font-size:14px;font-weight:700;color:#0080C1">' + $(m.total * q) + '</div></div><table><thead><tr><th style="width:35%">Componente</th><th style="width:30%">Especificacion</th><th style="text-align:center;width:15%">Cant.</th><th style="text-align:right;width:20%">Total</th></tr></thead><tbody>' + compRows + '</tbody></table></div>';
     }).join("");
-    const fleteRow = usaF ? '<div class="rr"><span>Flete</span><span>' + $(fl) + '</span></div>' : "";
-    const arqRow = usaA ? '<div class="rr"><span>Comision profesionista (10%)</span><span>' + $(cP) + '</span></div>' : "";
-    const tdcRow = usaT ? '<div class="rr"><span>Comision TDC (4.5%)</span><span>' + $(cT) + '</span></div>' : "";
-    const html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Cotizacion Taller 101</title>' + TIPO101() + '<style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:"Cifras","Raleway",Arial,sans-serif;padding:24px;max-width:800px;margin:0 auto;color:#2C2C2C;}' + '.hdr{background:#0080C1;color:#fff;padding:16px 20px;border-radius:6px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;}' + '.hdr h1{font-size:20px;font-weight:700;}.mb{border:1px solid #D8D4CD;border-left:3px solid #0080C1;border-radius:4px;padding:14px;margin-bottom:12px;}' + '.mbh{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}' + 'table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px;}th{text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:#888;border-bottom:1px solid #EAE7E1;}' + 'td{padding:5px 6px;border-bottom:1px solid #F4F2EE;vertical-align:middle;}' + '.res{margin-top:20px;border:1px solid #D8D4CD;border-radius:4px;padding:14px;}' + '.rr{display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid #EAE7E1;color:#888;}' + '.rs{display:flex;justify-content:space-between;font-weight:700;background:#F4F2EE;padding:8px 10px;border-radius:3px;border-left:2px solid #0080C1;margin:8px 0;}' + '.rt{display:flex;justify-content:space-between;font-size:17px;font-weight:700;padding-top:12px;border-top:2px solid #2C2C2C;margin-top:6px;}' + '@media print{body{padding:0;}.no-print{display:none!important;}}</style></head><body>' + '<div class="hdr"><div style="display:flex;align-items:center;gap:14px"><img src="' + LOGO_SRC + '" style="width:44px;height:44px;object-fit:cover;border-radius:4px;flex-shrink:0;"/><div><div style="font-size:11px;opacity:0.75;margin-bottom:2px;text-transform:uppercase;letter-spacing:0.08em">Cotización</div><h1>' + titulo + '</h1></div></div>' + '<div style="text-align:right;font-size:12px"><div>' + fd + '</div><div style="font-weight:700;font-size:14px">COT-' + serie + '</div><div style="font-size:10px;opacity:0.6;margin-top:2px">' + APP_VERSION + '</div></div></div>' + rows + '<div class="res"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#0080C1;margin-bottom:10px">Resumen de cotizacion</div>' + '<div class="rr"><span>Subtotal productos</span><span>' + $(grand) + '</span></div>' + '<div class="rr"><span>Indirectos (7.5%)</span><span>' + $(ind) + '</span></div>' + '<div class="rr"><span>Ingenieria (5.0%)</span><span>' + $(ing) + '</span></div>' + '<div class="rr"><span>Embalaje (3.0%)</span><span>' + $(emb) + '</span></div>' + fleteRow + '<div class="rs"><span>Total base</span><span>' + $(tB) + '</span></div>' + arqRow + tdcRow + '<div class="rt"><span>Total cotizacion</span><span>' + $(tF) + '</span></div></div>' + '<div class="no-print" style="text-align:center;margin:20px 0;display:flex;gap:12px;justify-content:center;">' + '<button onclick="window.print()" style="padding:10px 24px;background:#0080C1;color:#fff;border:none;border-radius:4px;font-size:14px;font-weight:700;cursor:pointer;font-family:Cifras,Raleway,Arial,sans-serif;">🖨️ Imprimir / Guardar PDF</button>' + '<button onclick="window.close()" style="padding:10px 24px;background:#fff;color:#555;border:1px solid #D8D4CD;border-radius:4px;font-size:14px;cursor:pointer;font-family:Cifras,Raleway,Arial,sans-serif;">← Cerrar</button>' + '</div>' + '</body></html>';
+    /* El resumen es el desglose de la hoja (`preciosHoja`), con los
+       porcentajes de ⚙: es el único documento donde salen los cargos. */
+    const D = PH_HOJA.desglose;
+    const pctI = k => (cfg(k) * 100).toLocaleString("es-MX", { maximumFractionDigits: 2 }) + "%";
+    const fila = (etq, monto) => '<div class="rr"><span>' + etq + '</span><span>' + $(monto) + '</span></div>';
+    const arqRow = usaA ? fila("Comision profesionista (" + pctI("comisionArq") + ")", D.arq) : "";
+    const tdcRow = usaT ? fila("Comision TDC (" + pctI("comisionTDC") + ")", D.tdc) : "";
+    const totalBase = D.costo + D.aMano + D.ind + D.ing + D.emb + D.flete;
+    const resumenRows = (D.costo > 0 ? fila("Costo de los muebles armados", D.costo) : "") + (D.aMano > 0 ? fila("Escrito a mano (base)", D.aMano) : "")
+      + fila("Indirectos (" + pctI("indirectos") + ")", D.ind) + (D.costo > 0 ? fila("Ingenieria (" + pctI("ingenieria") + ")", D.ing) + fila("Embalaje (" + pctI("embalaje") + ")", D.emb) : "") + (usaF && D.costo > 0 ? fila("Flete", D.flete) : "")
+      + '<div class="rs"><span>Total base</span><span>' + $(totalBase) + '</span></div>' + arqRow + tdcRow + fila("Redondeo", D.redondeo)
+      + (descMonto > 0 ? fila("Descuento (" + descuento + "%)", -descMonto) : "");
+    const html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Cotizacion Taller 101</title>' + TIPO101() + '<style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:"Cifras","Raleway",Arial,sans-serif;padding:24px;max-width:800px;margin:0 auto;color:#2C2C2C;}' + '.hdr{background:#0080C1;color:#fff;padding:16px 20px;border-radius:6px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;}' + '.hdr h1{font-size:20px;font-weight:700;}.mb{border:1px solid #D8D4CD;border-left:3px solid #0080C1;border-radius:4px;padding:14px;margin-bottom:12px;}' + '.mbh{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}' + 'table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px;}th{text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:#888;border-bottom:1px solid #EAE7E1;}' + 'td{padding:5px 6px;border-bottom:1px solid #F4F2EE;vertical-align:middle;}' + '.res{margin-top:20px;border:1px solid #D8D4CD;border-radius:4px;padding:14px;}' + '.rr{display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid #EAE7E1;color:#888;}' + '.rs{display:flex;justify-content:space-between;font-weight:700;background:#F4F2EE;padding:8px 10px;border-radius:3px;border-left:2px solid #0080C1;margin:8px 0;}' + '.rt{display:flex;justify-content:space-between;font-size:17px;font-weight:700;padding-top:12px;border-top:2px solid #2C2C2C;margin-top:6px;}' + '@media print{body{padding:0;}.no-print{display:none!important;}}</style></head><body>' + '<div class="hdr"><div style="display:flex;align-items:center;gap:14px"><img src="' + LOGO_SRC + '" style="width:44px;height:44px;object-fit:cover;border-radius:4px;flex-shrink:0;"/><div><div style="font-size:11px;opacity:0.75;margin-bottom:2px;text-transform:uppercase;letter-spacing:0.08em">Cotización</div><h1>' + titulo + '</h1></div></div>' + '<div style="text-align:right;font-size:12px"><div>' + fd + '</div><div style="font-weight:700;font-size:14px">COT-' + serie + '</div><div style="font-size:10px;opacity:0.6;margin-top:2px">' + APP_VERSION + '</div></div></div>' + rows + '<div class="res"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#0080C1;margin-bottom:10px">Resumen de cotizacion</div>' + resumenRows + '<div class="rt"><span>Total cotizacion</span><span>' + $(tF) + '</span></div></div>' + '<div class="no-print" style="text-align:center;margin:20px 0;display:flex;gap:12px;justify-content:center;">' + '<button onclick="window.print()" style="padding:10px 24px;background:#0080C1;color:#fff;border:none;border-radius:4px;font-size:14px;font-weight:700;cursor:pointer;font-family:Cifras,Raleway,Arial,sans-serif;">🖨️ Imprimir / Guardar PDF</button>' + '<button onclick="window.close()" style="padding:10px 24px;background:#fff;color:#555;border:1px solid #D8D4CD;border-radius:4px;font-size:14px;cursor:pointer;font-family:Cifras,Raleway,Arial,sans-serif;">← Cerrar</button>' + '</div>' + '</body></html>';
     w.document.write(html);
     w.document.close();
   };
@@ -7696,7 +7744,7 @@ function Cotizador({
 
       // ─── Muebles ─────────────────────────────────────
       // Los mismos precios que la hoja y el PDF cliente (ver `preciosHoja`).
-      const PHXL = preciosHoja(muebles, { usaF, usaA, usaT });
+      const PHXL = preciosHoja(muebles, { usaF, usaA, usaT, cargosAMano });
       let totalNeto = 0;
       muebles.forEach((m, i) => {
         const q = m.qty || 1;
@@ -7939,7 +7987,7 @@ function Cotizador({
     if (!w) return;
 
     // Los mismos precios que la hoja (ver `preciosHoja`).
-    const PH = preciosHoja(muebles, { usaF, usaA, usaT });
+    const PH = preciosHoja(muebles, { usaF, usaA, usaT, cargosAMano });
     const stripCosto = s => String(s).replace(/\s*\$\s*[\d,]+(?:\.\d+)?\s*(?:\/ml|\/m|\/u|\/pza)?/g, '').trim();
     const numComp = (c, k) => c.marca || k + 1;
     const circulo = n => '<span class="nc">' + n + '</span>';
@@ -8810,7 +8858,7 @@ ${rowHTML}
     setMuebles,
     hoja,
     setHoja,
-    precios: preciosHoja(muebles, { usaF, usaA, usaT }),
+    precios: PH_HOJA,
     descuento,
     setDescuento,
     usaF,
@@ -8836,6 +8884,7 @@ ${rowHTML}
       usaFlete: usaF,
       usaArq: usaA,
       usaTDC: usaT,
+      cargosAMano,
       desglosar,
       descuento,
       nombre: cotNombre,
@@ -8850,6 +8899,7 @@ ${rowHTML}
       usaFlete: usaF,
       usaArq: usaA,
       usaTDC: usaT,
+      cargosAMano,
       desglosar,
       descuento,
       nombre: cotNombre,
@@ -10498,13 +10548,13 @@ function App() {
     let cot;
     const existente = destino !== "nueva" ? (proyecto.cotizaciones || []).find(c => c.id === destino) : null;
     if (existente) {
-      const v0 = (existente.versiones || [])[0] || { muebles: [], usaFlete: true, usaArq: true, usaTDC: true, descuento: 0, desglosar: true };
+      const v0 = (existente.versiones || [])[0] || { muebles: [], usaFlete: true, usaArq: true, usaTDC: true, cargosAMano: true, descuento: 0, desglosar: true };
       cot = { ...existente, versiones: [{ ...v0, muebles: [...(v0.muebles || []), ...renglones], fecha: ahora }, ...(existente.versiones || []).slice(1)] };
     } else {
       cot = {
         id: uid(),
         nombre: "Ítems pendientes " + new Date().toLocaleDateString("es-MX", { day: "numeric", month: "short" }),
-        versiones: [{ muebles: renglones, usaFlete: true, usaArq: true, usaTDC: true, descuento: 0, desglosar: true, fecha: ahora }]
+        versiones: [{ muebles: renglones, usaFlete: true, usaArq: true, usaTDC: true, cargosAMano: true, descuento: 0, desglosar: true, fecha: ahora }]
       };
     }
     setPendientes(null);
@@ -10741,6 +10791,9 @@ function App() {
     // Sin el campo (cotizaciones de antes del 28-sep) queda undefined y la
     // hoja lo toma como desglosado: se imprime como se mandó.
     desglosar: nav.cot.versiones && nav.cot.versiones[0] ? nav.cot.versiones[0].desglosar : undefined,
+    // Sin el campo (antes del 3-oct-2026) queda undefined: se ve como se
+    // mandó y al editar entra a la regla de hoy (ver `cargosAMano`).
+    cargosAMano: nav.cot.versiones && nav.cot.versiones[0] ? nav.cot.versiones[0].cargosAMano : undefined,
     descuento: ((_nav$cot$versiones5 = nav.cot.versiones) === null || _nav$cot$versiones5 === void 0 || (_nav$cot$versiones5 = _nav$cot$versiones5[0]) === null || _nav$cot$versiones5 === void 0 ? void 0 : _nav$cot$versiones5.descuento) || 0,
     nombre: nav.cot.nombre || "Cotización",
     fecha: ((_nav$cot$versiones6 = nav.cot.versiones) === null || _nav$cot$versiones6 === void 0 || (_nav$cot$versiones6 = _nav$cot$versiones6[nav.ver ? nav.vi : 0]) === null || _nav$cot$versiones6 === void 0 ? void 0 : _nav$cot$versiones6.fecha) || null,
