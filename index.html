@@ -1966,14 +1966,17 @@ function preciosHoja(muebles, { usaF, usaA, usaT, cargosAMano = true }) {
   /* Los renglones escritos a mano también llevan cargos (Mike, 3-oct-2026:
    * «considera los indirectos siempre en la cotización … se distribuye
    * proporcionalmente entre todos»). Lo escrito es la BASE; encima van los
-   * indirectos, siempre, y las comisiones que estén prendidas; el precio al
-   * cliente se redondea al peso. Ingeniería, embalaje y flete son del armador
-   * y no se le cargan a lo escrito a mano. Hasta el 2-oct lo escrito a mano
-   * ya era el precio al cliente: `cargosAMano: false` deja ver una cotización
-   * guardada antes de la regla tal como se mandó. */
+   * indirectos, siempre, las comisiones que estén prendidas y, si está
+   * prendido, el flete repartido entre TODOS los renglones (Mike, 3-oct: «no
+   * veo el desglose del flete»); el precio al cliente se redondea al peso.
+   * Ingeniería y embalaje son del armador y no se le cargan a lo escrito a
+   * mano. Hasta el 2-oct lo escrito a mano ya era el precio al cliente:
+   * `cargosAMano: false` deja ver una cotización guardada antes de la regla
+   * tal como se mandó. */
   const factorMano = cargosAMano ? (1 + cfg("indirectos")) * fA * fT : 1;
   const exactos = muebles.map(m => esManual(m) ? null : (m.total || 0) * factor);
-  const sinFlete = muebles.reduce((s, m, i) => exactos[i] === null ? s : s + exactos[i] * (m.qty || 1), 0);
+  const exactosMano = muebles.map(m => esManual(m) && cargosAMano ? precioManual(m) * factorMano : null);
+  const sinFlete = muebles.reduce((s, m, i) => s + (exactos[i] !== null ? exactos[i] : exactosMano[i] !== null ? exactosMano[i] : 0) * (m.qty || 1), 0);
   const fleteNeto = usaF && sinFlete > 0 ? flete(sinFlete) : 0;
   const factorFlete = sinFlete > 0 ? 1 + fleteNeto / sinFlete : 1;
   const componentes = muebles.map((m, i) => {
@@ -1989,15 +1992,16 @@ function preciosHoja(muebles, { usaF, usaA, usaT, cargosAMano = true }) {
       return { unit, cant, subtotal: unit * cant };
     });
   });
-  const unitarios = muebles.map((m, i) => exactos[i] === null ? Math.round(precioManual(m) * factorMano)
+  const unitarios = muebles.map((m, i) => exactos[i] === null ? (exactosMano[i] === null ? precioManual(m) : Math.round(exactosMano[i] * factorFlete))
     : componentes[i] ? componentes[i].reduce((a, c) => a + c.subtotal, 0)
     : redondear(exactos[i] * factorFlete));
   const subtotal = muebles.reduce((s, m, i) => s + unitarios[i] * (m.qty || 1), 0);
   /* De qué se forma el precio (Mike, 23-sep: «necesito ese monto»; 3-oct:
    * «desglósalo para mí, para verlo»). Con los porcentajes de ⚙, en el orden
    * en que se aplican: los indirectos sobre el costo de los armados y sobre
-   * lo escrito a mano; ingeniería, embalaje y flete sólo sobre los armados;
-   * las comisiones encima de todo. Lo que sobra es el redondeo ($50 por
+   * lo escrito a mano; ingeniería y embalaje sólo sobre los armados; las
+   * comisiones encima de todo, y el flete repartido entre todos los
+   * renglones. Lo que sobra es el redondeo ($50 por
    * componente armado, al peso en lo escrito a mano), para que la suma
    * cuadre con lo que dice la hoja. Es para quien cotiza: no sale al cliente. */
   const costo = muebles.reduce((s, m, i) => exactos[i] === null ? s : s + (m.total || 0) * (m.qty || 1), 0);
@@ -5961,7 +5965,7 @@ function HojaCotizacion({
           cargo("indirectos", "Indirectos " + pct("indirectos"), d.ind),
           hayArmados && cargo("ingenieria", "Ingeniería " + pct("ingenieria"), d.ing),
           hayArmados && cargo("embalaje", "Embalaje " + pct("embalaje"), d.emb),
-          hayArmados && cargo("flete", "Flete", d.flete, usaF, setUsaF),
+          cargo("flete", "Flete", d.flete, usaF, setUsaF),
           cargo("arq", "Comisión profesionista " + pct("comisionArq"), d.arq, usaA, setUsaA),
           cargo("tdc", "Comisión TDC " + pct("comisionTDC"), d.tdc, usaT, setUsaT),
           cargo("redondeo", "Redondeo" + (hayArmados ? " a $" + REDONDEO : " al peso"), d.redondeo)));

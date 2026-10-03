@@ -45,11 +45,23 @@ era el precio al cliente»: sin indirectos ni comisiones.
 - `totalFinal` (lo que se guarda) es ahora el subtotal de la hoja menos el
   descuento, el mismo número que se ve; antes salía de otra cuenta.
 
+## El flete también (mismo día, #75)
+
+Mike, al verlo: «no veo el desglose del flete en el cotizador». En #74 el
+flete (y su casilla) se quedó sólo para cotizaciones con armados. Ahora el
+flete se reparte entre TODOS los renglones, los escritos a mano también,
+y su casilla sale siempre. El monto es el de siempre
+(MAX(mínimo, escalones) sobre la suma de los renglones con cargos y
+comisiones, antes del flete). Ingeniería y embalaje siguen siendo sólo del
+armador.
+
 ## Pruebas
 
 `pruebas/los-cargos-siempre.spec.mjs` (4). Sobre el código viejo fallan las
 cuatro. Se ajustaron `la-hoja`, `los-requerimientos` y
-`los-items-pendientes`, que medían la regla del 23-sep.
+`los-items-pendientes`, que medían la regla del 23-sep; las tres y la nueva
+leen el número esperado de `pruebas/cargos.mjs`, que repite la cuenta de
+`preciosHoja` con los porcentajes de fábrica.
 
 # 16-sep-2026 · Fase 2, primera mitad: la app ya no se entrega sin sesión
 

@@ -23,6 +23,7 @@ import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { editarCotizacion } from './editar.mjs';
+import { preciosEsperados, fleteDe, IND, ARQ, TDC } from './cargos.mjs';
 
 const PUBLICAR = fileURLToPath(new URL('../publicar/', import.meta.url));
 const TIPOS = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.woff2': 'font/woff2', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
@@ -38,13 +39,13 @@ const CHROMIUM = process.env.CHROMIUM ?? '/opt/pw-browsers/chromium';
 const navegador = await chromium.launch(existsSync(CHROMIUM) ? { executablePath: CHROMIUM } : {});
 const ok = (data) => ({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, data }) });
 
-// Porcentajes de fábrica (CONFIG_DEFAULT): indirectos 7.5 %, profesionista 10 %, TDC 4.5 %.
-const IND = 0.075, ARQ = 0.10, TDC = 0.045;
-const alCliente = (base, { arq = true, tdc = true } = {}) => Math.round(base * (1 + IND) * (arq ? 1 + ARQ : 1) * (tdc ? 1 + TDC : 1));
+// Porcentajes de fábrica (CONFIG_DEFAULT) y la cuenta esperada, en pruebas/cargos.mjs.
+const RENGLONES = [{ base: 1000, qty: 2 }, { base: 700, qty: 1 }];
+const esperados = (opts) => preciosEsperados(RENGLONES, opts);
 
 // Puros renglones a mano, como los requerimientos que la obra deja en quote101.
 const CHAPEADO = { id: 'it-1', manual: true, item_id: 'it-1', tipo: 'puerta', codigo: 'RQ-01', nombre: 'Chapeado de cantos de puertas', descripcion: 'Duela, 12 puertas', qty: 2, precio: 1000, total: 1000, componentes: [], imagenes: [] };
-const INSTALACION = { id: 'm-2', manual: true, codigo: '', nombre: 'Instalación', descripcion: '', qty: 1, precio: 500, total: 500, componentes: [], imagenes: [] };
+const INSTALACION = { id: 'm-2', manual: true, codigo: '', nombre: 'Instalación', descripcion: '', qty: 1, precio: 700, total: 700, componentes: [], imagenes: [] };
 const version = (extra) => ({ muebles: [CHAPEADO, INSTALACION], usaFlete: true, usaArq: true, usaTDC: true, descuento: 0, desglosar: true, fecha: '2026-10-03T12:00:00Z', ...extra });
 const CLIENTE = { id: 'cl-1', nombre: 'Sanje', negocio_id: 'n-1' };
 const PROYECTO = { id: 'pr-1', nombre: 'Casa Sanje', cliente_id: 'cl-1', negocio_id: 'n-1' };
@@ -93,8 +94,9 @@ test('con puros renglones a mano, la caja «Cómo se forma el precio» está, co
     assert.equal(await casilla(p, 'tdc').count(), 1, 'y la de la comisión TDC');
     assert.equal(await casilla(p, 'arq').isChecked(), true);
     assert.equal(await casilla(p, 'tdc').isChecked(), true);
-    assert.equal(await p.locator('[data-cargo="flete"]').count(), 0, 'el flete es del armador: sin armados no se ofrece');
-    assert.equal(await p.locator('[data-cargo="ingenieria"]').count(), 0, 'ni ingeniería ni embalaje, que son del armador');
+    assert.equal(await casilla(p, 'flete').count(), 1, 'y la del flete (Mike, 3-oct: «no veo el desglose del flete»)');
+    assert.equal(await casilla(p, 'flete').isChecked(), true, 'prendida');
+    assert.equal(await p.locator('[data-cargo="ingenieria"]').count(), 0, 'ingeniería y embalaje no: son del armador');
     assert.equal(await p.locator('[data-hoja="cargos"]').evaluate((e) => e.classList.contains('no-print')), true, 'y no se imprime');
     assert.deepEqual(errores, [], 'sin errores de JavaScript');
   } finally { await ctx.close(); }
@@ -104,35 +106,45 @@ test('los indirectos van siempre y se reparten en cada renglón; las comisiones 
   const { ctx, p } = await abrirApp({ cotizacion: cotizacionCon(version({ cargosAMano: true })) });
   try {
     await editarCotizacion(p);
-    // Base: 2 × 1000 + 1 × 500 = 2500. Indirectos 7.5 % de la base.
-    assert.equal(await leer(p, '[data-cargo="amano"]'), 2500, 'la base es lo escrito');
-    assert.equal(await leer(p, '[data-cargo="indirectos"]'), 187.5, 'los indirectos sobre toda la base');
+    // Base: 2 × 1000 + 1 × 700 = 2700. Indirectos 7.5 % de la base. Flete mínimo, repartido.
+    assert.equal(await leer(p, '[data-cargo="amano"]'), 2700, 'la base es lo escrito');
+    assert.equal(await leer(p, '[data-cargo="indirectos"]'), 2700 * IND, 'los indirectos sobre toda la base');
+    assert.equal(await leer(p, '[data-cargo="flete"]'), fleteDe(2700 * (1 + IND) * (1 + ARQ) * (1 + TDC)), 'el flete, con su monto (el mínimo aquí)');
     assert.equal(await p.locator('[data-campo="precio-0"]').inputValue(), '1000', 'lo escrito no se toca');
-    assert.equal(await leer(p, '[data-precio-cliente="0"]'), alCliente(1000), 'debajo se ve lo que paga el cliente: con indirectos y las dos comisiones');
-    assert.equal(await leer(p, '[data-total="0"]'), 2 * alCliente(1000), 'el total del renglón es al cliente × cantidad');
-    assert.equal(await leer(p, '[data-hoja="subtotal"]'), 2 * alCliente(1000) + alCliente(500), 'y el subtotal es la suma');
+    const [u0, u1] = esperados();
+    assert.equal(await leer(p, '[data-precio-cliente="0"]'), u0, 'debajo se ve lo que paga el cliente: indirectos, las dos comisiones y su parte del flete');
+    assert.equal(await leer(p, '[data-total="0"]'), 2 * u0, 'el total del renglón es al cliente × cantidad');
+    assert.equal(await leer(p, '[data-hoja="subtotal"]'), 2 * u0 + u1, 'y el subtotal es la suma');
 
     await casilla(p, 'tdc').uncheck(); await p.waitForTimeout(200);
-    assert.equal(await leer(p, '[data-precio-cliente="0"]'), alCliente(1000, { tdc: false }), 'sin TDC baja');
+    assert.equal(await leer(p, '[data-precio-cliente="0"]'), esperados({ tdc: false })[0], 'sin TDC baja');
     assert.equal(await p.locator('[data-cargo="tdc"]').innerText(), '—', 'y el renglón de la comisión queda en «—»');
     await casilla(p, 'arq').uncheck(); await p.waitForTimeout(200);
-    assert.equal(await leer(p, '[data-precio-cliente="0"]'), alCliente(1000, { tdc: false, arq: false }), 'sin ninguna comisión quedan sólo los indirectos: $1,075');
-    assert.equal(await leer(p, '[data-hoja="subtotal"]'), 2 * 1075 + Math.round(500 * 1.075), 'y el subtotal lo sigue');
-    await casilla(p, 'arq').check(); await casilla(p, 'tdc').check(); await p.waitForTimeout(200);
-    assert.equal(await leer(p, '[data-precio-cliente="0"]'), alCliente(1000), 'prendidas otra vez, vuelve');
+    assert.equal(await leer(p, '[data-precio-cliente="0"]'), esperados({ tdc: false, arq: false })[0], 'sin ninguna comisión quedan indirectos y flete');
+    await casilla(p, 'flete').uncheck(); await p.waitForTimeout(200);
+    assert.equal(await leer(p, '[data-precio-cliente="0"]'), Math.round(1000 * (1 + IND)), 'sin flete quedan sólo los indirectos: $1,075');
+    assert.equal(await p.locator('[data-cargo="flete"]').innerText(), '—', 'y el flete queda en «—»');
+    const [v0, v1] = esperados({ tdc: false, arq: false, flete: false });
+    assert.equal(await leer(p, '[data-hoja="subtotal"]'), 2 * v0 + v1, 'y el subtotal lo sigue');
+    await casilla(p, 'arq').check(); await casilla(p, 'tdc').check(); await casilla(p, 'flete').check(); await p.waitForTimeout(200);
+    assert.equal(await leer(p, '[data-precio-cliente="0"]'), u0, 'prendidas otra vez, vuelve');
   } finally { await ctx.close(); }
 });
 
-test('el PDF del cliente trae los precios con todo repartido y NUNCA los renglones de indirectos ni comisiones', async () => {
+test('el PDF del cliente trae los precios con todo repartido y NUNCA los renglones de indirectos, flete ni comisiones', async () => {
   const { ctx, p } = await abrirApp({ cotizacion: cotizacionCon(version({ cargosAMano: true })) });
   try {
     const [w] = await Promise.all([ctx.waitForEvent('page'), p.getByRole('button', { name: 'PDF cliente con condiciones' }).click()]);
     await w.waitForLoadState('domcontentloaded');
     const texto = await w.locator('body').innerText();
+    const resumen = await w.locator('.res').innerText();
     await w.close();
     assert.ok(!/Indirectos/i.test(texto), 'sin «Indirectos»');
     assert.ok(!/Comisi/i.test(texto), 'sin «Comisión»');
-    assert.ok(texto.includes('$' + alCliente(1000).toLocaleString('es-MX')), 'el precio del renglón ya trae los cargos (' + alCliente(1000) + ')');
+    // «Flete» sí aparece en las condiciones de contratación (la cláusula de logística); en el resumen económico, no.
+    assert.ok(!/Flete/i.test(resumen), 'sin renglón de «Flete» en el resumen');
+    assert.ok(/Subtotal/.test(resumen) && /IVA/.test(resumen) && /Total/.test(resumen), 'el resumen trae subtotal, IVA y total');
+    assert.ok(texto.includes('$' + esperados()[0].toLocaleString('es-MX')), 'el precio del renglón ya trae los cargos (' + esperados()[0] + ')');
     assert.ok(!/\$1,000\.00/.test(texto), 'y la base escrita no se le enseña al cliente');
   } finally { await ctx.close(); }
 });
@@ -143,7 +155,7 @@ test('una cotización guardada antes de la regla se VE como se mandó, y al EDIT
     assert.equal(await leer(p, '[data-total="0"]'), 2000, 'vista: 2 × $1,000, sin cargos, como se mandó');
     assert.equal(await p.locator('[data-cargos-de-antes]').count(), 1, 'y la caja avisa que es de antes');
     await editarCotizacion(p); await p.waitForTimeout(900);
-    assert.equal(await leer(p, '[data-total="0"]'), 2 * alCliente(1000), 'editando, lo escrito a mano ya lleva sus cargos');
+    assert.equal(await leer(p, '[data-total="0"]'), 2 * esperados()[0], 'editando, lo escrito a mano ya lleva sus cargos');
     assert.equal(await p.locator('[data-cargos-de-antes]').count(), 0, 'y el aviso se va');
     // Se guarda sola al cambiar algo, como siempre; entrar a editar no escribe.
     await p.locator('[data-campo="descripcion-1"]').fill('Cuadrilla de 2'); await p.waitForTimeout(900);
