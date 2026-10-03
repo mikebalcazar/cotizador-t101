@@ -25,6 +25,7 @@ import { existsSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { preciosEsperados } from './cargos.mjs';
 
 const PUBLICAR = fileURLToPath(new URL('../publicar/', import.meta.url));
 const TIPOS = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.woff2': 'font/woff2', '.json': 'application/json' };
@@ -167,7 +168,7 @@ test('arrastrar un renglón sobre otro los agrupa: un concepto, cantidad 2, los 
     assert.ok(envio, 'se pidió aprobar a la suite');
     assert.equal(envio.cuerpo.lineas.length, 2, 'una línea por ítem');
     assert.deepEqual(envio.cuerpo.lineas.map((l) => l.item_id), ['it-a', 'it-b']);
-    assert.ok(envio.cuerpo.lineas.every((l) => l.cantidad === 1 && l.precio === Math.round(18000 * 1.075 * 1.10 * 1.045) * 100 && l.descripcion === 'Nogal natural, bisagras ocultas' && l.tipo === 'puerta'),
+    assert.ok(envio.cuerpo.lineas.every((l) => l.cantidad === 1 && l.precio === preciosEsperados([{ base: 18000, qty: 2 }])[0] * 100 && l.descripcion === 'Nogal natural, bisagras ocultas' && l.tipo === 'puerta'),
       'las dos con el mismo precio, la misma descripción y el mismo tipo: ' + JSON.stringify(envio.cuerpo.lineas));
     assert.deepEqual(errores, [], 'sin errores de JavaScript');
   } finally { await ctx.close(); }
