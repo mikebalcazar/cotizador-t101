@@ -829,7 +829,7 @@ async function subirFoto(b64, cotizacion_id) {
  * manda nada: `guardar` recibe el árbol completo en cada tecleo. */
 const espejo = { clientes: new Map(), proyectos: new Map(), cotizaciones: new Map() };
 
-const huellaCliente = (c) => JSON.stringify({ nombre: c.nombre || '' });
+const huellaCliente = (c) => JSON.stringify({ nombre: c.nombre || '', correo: c.correo || '' });
 const huellaProyecto = (p, cliente_id) => JSON.stringify({ nombre: p.nombre || '', cliente_id });
 const huellaCotizacion = (q, cliente_id, proyecto_id) => JSON.stringify({
   cliente_id, proyecto_id, total: totalDe(q),
@@ -890,7 +890,7 @@ window.suiteDB = {
       }
 
       const clientes = (cls.data?.filas || [])
-        .map((c) => ({ id: c.id, nombre: c.nombre, proyectos: porCliente.get(c.id) || [] }));
+        .map((c) => ({ id: c.id, nombre: c.nombre, correo: c.correo || '', telefono: c.telefono || '', proyectos: porCliente.get(c.id) || [] }));
 
       /* El espejo se llena RECORRIENDO EL ÁRBOL QUE SE ENTREGA, no las listas
        * que llegaron. La diferencia no es de estilo: `guardar` borra lo que
@@ -934,15 +934,19 @@ window.suiteDB = {
         /* Cliente. Si es nuevo, el id lo pone la suite y se le escribe encima
          * al objeto del árbol: la app vuelve a guardar ese mismo objeto y el id
          * tiene que ser el de la base, no el inventado en memoria. */
+        /* El correo viaja con el cliente (0.65.0): el mismo cliente en las tres
+         * apps, y si el correo ya es de otro la suite dice de quién (409
+         * correo_en_uso). La pantalla pregunta antes; esto es por si aun así. */
+        const datosCliente = { nombre: c.nombre || 'Cliente', ...(c.correo ? { correo: c.correo } : {}) };
+        const porCorreoDeOtro = (r) => r.estado === 409 && r.error === 'correo_en_uso'
+          ? new Error('cliente: ese correo ya es de ' + ((r.detalle && r.detalle.cliente && r.detalle.cliente.nombre) || 'otro cliente')) : null;
         if (!espejo.clientes.has(c.id)) {
-          const r = await pedir(`/orgs/${ORG}/clientes`, {
-            method: 'POST', cuerpo: { nombre: c.nombre || 'Cliente' },
-          });
-          if (r.estado !== 201) throw new Error('cliente: ' + (r.error || r.estado));
+          const r = await pedir(`/orgs/${ORG}/clientes`, { method: 'POST', cuerpo: datosCliente });
+          if (r.estado !== 201) throw porCorreoDeOtro(r) || new Error('cliente: ' + (r.error || r.estado));
           c.id = r.data.id;
         } else if (espejo.clientes.get(c.id) !== huellaCliente(c)) {
-          const r = await pedir(`/orgs/${ORG}/clientes/${c.id}`, { method: 'PATCH', cuerpo: { nombre: c.nombre || 'Cliente' } });
-          if (r.estado !== 200) throw new Error('cliente: ' + (r.error || r.estado));
+          const r = await pedir(`/orgs/${ORG}/clientes/${c.id}`, { method: 'PATCH', cuerpo: datosCliente });
+          if (r.estado !== 200) throw porCorreoDeOtro(r) || new Error('cliente: ' + (r.error || r.estado));
         }
         espejo.clientes.set(c.id, huellaCliente(c));
         vistos.clientes.add(c.id);
@@ -1131,6 +1135,19 @@ window.suiteDB = {
     } catch (e) {
       console.error('clientesParecidos:', e);
       return [];
+    }
+  },
+
+  /** El cliente que YA tiene ese correo, o null (contrato 0.65.0). Mike, 4-oct:
+   *  «avisar que ya existe un cliente, presentar su info y preguntar si es ese». */
+  async clientePorCorreo(correo) {
+    try {
+      await identidad();
+      const r = await pedir(`/orgs/${ORG}/clientes/parecidos?correo=${encodeURIComponent(correo)}`);
+      return r.data?.por_correo || null;
+    } catch (e) {
+      console.error('clientePorCorreo:', e);
+      return null;
     }
   },
 
@@ -2514,9 +2531,26 @@ function PantallaInicio({
    * clic, porque a veces de veras son dos. */
   const [parecidos, setParecidos] = useState([]);
   const [buscandoParecidos, setBuscandoParecidos] = useState(false);
+  /* El correo es de UN cliente (contrato 0.65.0). Mike, 4-oct: «en caso de
+   * querer generar un nuevo cliente con el email de otro que ya existe,
+   * avisar que ya existe un cliente, presentar su info y preguntar si es ese
+   * cliente el que estás buscando y ya usarlo o si quieres crear uno nuevo
+   * con otro email». Aquí no hay «insistir»: con ese correo no se crea otro. */
+  const [correoNuevo, setCorreoNuevo] = useState("");
+  const [conEseCorreo, setConEseCorreo] = useState(null);
   const save = async (insistiendo = false) => {
     const nombre = nom.trim();
     if (!nombre) return;
+    const correo = correoNuevo.trim().toLowerCase();
+    if (correo) {
+      setBuscandoParecidos(true);
+      const dueno = await window.suiteDB.clientePorCorreo(correo);
+      setBuscandoParecidos(false);
+      if (dueno) {
+        setConEseCorreo(dueno);
+        return;
+      }
+    }
     if (!insistiendo) {
       setBuscandoParecidos(true);
       const iguales = await window.suiteDB.clientesParecidos(nombre);
@@ -2526,8 +2560,10 @@ function PantallaInicio({
         return;
       }
     }
-    onNuevo(nombre);
+    onNuevo(nombre, correo);
     setNom("");
+    setCorreoNuevo("");
+    setConEseCorreo(null);
     setParecidos([]);
     setCr(false);
   };
@@ -2911,7 +2947,51 @@ function PantallaInicio({
       setParecidos([]);
       setCr(false);
     }
-  }, "Cancelar")), parecidos.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, "Cancelar")), /*#__PURE__*/React.createElement(Lbl, {
+    style: { marginTop: 8 }
+  }, "Correo (opcional)"), /*#__PURE__*/React.createElement("input", {
+    style: { ...st.inp },
+    type: "email",
+    "data-campo": "correo-cliente-nuevo",
+    value: correoNuevo,
+    onChange: e => {
+      setCorreoNuevo(e.target.value);
+      setConEseCorreo(null);
+    },
+    onKeyDown: e => e.key === "Enter" && save(),
+    placeholder: "contacto@cliente.com"
+  }), conEseCorreo && /*#__PURE__*/React.createElement("div", {
+    "data-con-ese-correo": true,
+    style: {
+      marginTop: 10,
+      padding: "10px 12px",
+      background: "#FFF6DD",
+      border: "1px solid #E9C96A",
+      borderRadius: 4,
+      fontSize: 12,
+      color: "#5B4300",
+      lineHeight: 1.5
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { fontWeight: 700, marginBottom: 4 }
+  }, "Ya hay un cliente con el correo ", conEseCorreo.correo, ". \xBFEs \xE9ste el que buscas?"), /*#__PURE__*/React.createElement("div", {
+    style: { marginBottom: 8 }
+  }, conEseCorreo.nombre, conEseCorreo.telefono ? " \xB7 " + conEseCorreo.telefono : "", conEseCorreo.rfc ? " \xB7 " + conEseCorreo.rfc : "", conEseCorreo.portal_activo ? " \xB7 con portal" : ""), /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", gap: 8, flexWrap: "wrap" }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    primary: true,
+    onClick: () => {
+      const id = conEseCorreo.id;
+      setConEseCorreo(null);
+      setParecidos([]);
+      setNom("");
+      setCorreoNuevo("");
+      setCr(false);
+      setClienteAbierto(id);
+    }
+  }, "S\xED, es \xE9se: abrirlo"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => setConEseCorreo(null)
+  }, "No, es otro: lo creo con otro correo"))), parecidos.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 10,
       padding: "10px 12px",
@@ -4123,7 +4203,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G106";
+const APP_VERSION = "G107";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -10416,10 +10496,11 @@ function App() {
   };
 
   // Al crear cliente → abre el cliente inmediatamente
-  const nuevoC = async nom => {
+  const nuevoC = async (nom, correo = "") => {
     const nuevoCliente = {
       id: uid(),
       nombre: nom,
+      correo: correo || "",
       proyectos: []
     };
     const n = [...clientes, nuevoCliente];

@@ -150,7 +150,7 @@ const arbolNuevo = () => ([{
   }],
 }]);
 
-const vacio = () => base({
+const vacio = (extra = {}) => base({
   'GET /s101/orgs/:o/clientes': { data: { filas: [] } },
   'GET /s101/orgs/:o/proyectos': { data: { filas: [] } },
   'GET /s101/orgs/:o/cotizaciones': { data: { filas: [] } },
@@ -165,6 +165,46 @@ const vacio = () => base({
   // Proyectos y clientes se van CON TODO lo suyo (contrato 0.51.0).
   'POST /s101/orgs/:o/proyectos/:id/borrar': { data: { ok: true, proyectos: 1, items: 0 } },
   'POST /s101/orgs/:o/clientes/:id/borrar': { data: { ok: true, proyectos: 0, items: 0, cotizaciones: 0 } },
+  ...extra,
+});
+
+/* Mike, 4-oct-2026: «El cliente se debe poder crear desde quell, dash o
+ * quote. Los 3 generan exactamente el mismo cliente (…) en caso de querer
+ * generar un nuevo cliente con el email de otro que ya existe, avisar que ya
+ * existe un cliente, presentar su info y preguntar». El correo viaja con el
+ * cliente y la suite es la que dice de quién es (contrato 0.65.0). */
+describe('el correo del cliente viaja a la suite, y la suite dice de quién es', () => {
+  test('un cliente nuevo con correo se crea con su correo; sin correo, sólo el nombre', async () => {
+    const { db, pedidas } = levantar(vacio());
+    await db.cargar();
+    const arbol = arbolNuevo();
+    arbol[0].correo = 'aurea@ejemplo.mx';
+    arbol.push({ id: 'tmp-c2', nombre: 'Sin correo', proyectos: [] });
+    assert.equal(await db.guardar(arbol), true);
+    const altas = pedidas.filter((p) => p.metodo === 'POST' && p.ruta.endsWith('/clientes')).map((p) => p.cuerpo);
+    assert.deepEqual(altas, [{ nombre: 'Casa Aurea', correo: 'aurea@ejemplo.mx' }, { nombre: 'Sin correo' }]);
+  });
+
+  test('clientePorCorreo pregunta a la suite y entrega al dueño del correo, o null', async () => {
+    const dueno = { id: 'c9', nombre: 'Muebles Luna', correo: 'compras@luna.mx', telefono: '5555555555' };
+    const { db, pedidas } = levantar(base({
+      'GET /s101/orgs/:o/clientes/parecidos': ({ ruta }) => ({ data: { parecidos: [], por_correo: ruta.includes('compras%40luna.mx') ? dueno : null } }),
+    }));
+    assert.deepEqual(await db.clientePorCorreo('compras@luna.mx'), dueno);
+    assert.equal(await db.clientePorCorreo('nadie@luna.mx'), null);
+    assert.ok(pedidas.some((p) => p.ruta.includes('/clientes/parecidos?correo=compras%40luna.mx')), 'pregunta por el correo, no por el nombre');
+  });
+
+  test('si aun así la suite dice que el correo es de otro, el guardado no pasa y se dice de quién', async () => {
+    const { db } = levantar(vacio({
+      'POST /s101/orgs/:o/clientes': { estado: 409, cuerpo: { ok: false, error: 'correo_en_uso', detalle: { cliente: { id: 'c9', nombre: 'Muebles Luna' } } } },
+    }));
+    await db.cargar();
+    const arbol = arbolNuevo();
+    arbol[0].correo = 'compras@luna.mx';
+    assert.equal(await db.guardar(arbol), false, 'no se marca guardado');
+    assert.match(db.ultimoError(), /ese correo ya es de Muebles Luna/, 'y el error dice de quién es');
+  });
 });
 
 describe('guardar: lo nuevo se crea y los ids los pone la suite', () => {
