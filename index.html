@@ -609,6 +609,27 @@ function(a,b,c){if(!Vd(b))throw Error(m(200));return Wd(null,a,b,!1,c)};Q.unmoun
   #splash101 button:hover{background:rgba(255,255,255,.22)}
   @media (prefers-reduced-motion:reduce){#splash101 .hoja,#splash101 .traza,#splash101 .traza *,#splash101 .estado i{animation:none}
     #splash101 .traza,#splash101 .traza *{stroke-dashoffset:0}#splash101 .aparece{opacity:1;animation:none}}
+
+/* El ítem de la obra, a la derecha (Mike, 5-oct-2026): la barra de quell101 de sólo lectura. */
+.pz-fondo{position:fixed;inset:0;background:rgba(20,28,38,.28);z-index:9000;display:flex;justify-content:flex-end}
+.pz-panel{width:min(440px,100%);height:100%;background:#fff;box-shadow:-8px 0 30px rgba(0,0,0,.18);overflow:auto;padding:14px 18px 28px;display:flex;flex-direction:column;gap:10px;font-size:13px;color:#1b2430}
+.pz-cab{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.pz-cerrar{font:inherit;font-size:14px;border:1px solid #ddd;background:#fff;border-radius:8px;width:32px;height:32px;cursor:pointer}
+.pz-eyebrow{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.04em}
+.pz-nombre{margin:0;font-size:20px;font-weight:700;line-height:1.2}
+.pz-meta{font-size:12px;color:#666}
+.pz-chips{display:flex;gap:6px;flex-wrap:wrap}
+.pz-chip{font-size:11px;padding:3px 8px;border-radius:999px;background:#eef2f6;color:#334}
+.pz-sec{border-top:1px solid #eee;padding-top:10px}
+.pz-t{font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
+.pz-texto{display:flex;flex-direction:column;gap:6px;white-space:pre-wrap}
+.pz-nota{font-size:11.5px;color:#888}
+.pz-liga{color:#0080C1;text-decoration:underline;text-underline-offset:3px}
+.pz-punto,.pz-registro{padding:8px 10px;border:1px solid #eee;border-radius:10px;background:#fafbfc}
+.pz-punto[data-estado="ok"]{opacity:.6}
+.pz-fotos{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.pz-fotos img{width:84px;height:64px;object-fit:cover;border-radius:6px;border:1px solid #e3e3e3;display:block}
+@media (max-width:560px){.pz-panel{width:100%}}
 </style>
 <script>
   // La app manda avances con splash101.estado("…") y la quita con splash101.ocultar().
@@ -1114,6 +1135,36 @@ window.suiteDB = {
     const r = await pedir(`/orgs/${ORG}/items?proyecto_id=${encodeURIComponent(proyecto_id)}&estado=cotizado&limite=5000`);
     if (r.estado !== 200 || !Array.isArray(r.data?.filas)) throw new Error(r.error || String(r.estado));
     return r.data.filas;
+  },
+
+  /** El ítem en la obra (contrato 0.67.1). Mike, 5-oct: «si le doy click
+   *  [a un requerimiento], a la derecha me abra la barra de quell de los
+   *  detalles del ítem». El cotizador tiene el ítem; la pieza del plano la
+   *  tiene el motor de obra, y de ella cuelgan la bitácora con sus fotos,
+   *  el punchlist y los archivos. Tres lecturas, con el X-App de esta app. */
+  async piezaDeItem(item_id) {
+    await identidad();
+    const r = await pedir(`/orgs/${ORG}/quell/items/${encodeURIComponent(item_id)}/pieza`);
+    if (r.estado === 404) throw new Error('Este ítem no está en ningún plano de la obra.');
+    if (r.estado !== 200 || !r.pieza) throw new Error(r.error || String(r.estado));
+    return r.pieza;
+  },
+  async pieza(element_id) {
+    await identidad();
+    const r = await pedir(`/orgs/${ORG}/quell/elements/${encodeURIComponent(element_id)}`);
+    if (r.estado !== 200 || !r.element) throw new Error(r.error || String(r.estado));
+    return r;
+  },
+  async piezaDocs(element_id) {
+    await identidad();
+    const r = await pedir(`/orgs/${ORG}/quell/elements/${encodeURIComponent(element_id)}/docs`);
+    if (r.estado !== 200) throw new Error(r.error || String(r.estado));
+    return r;
+  },
+  /** La dirección de un archivo del bucket de la obra (foto, plano): la
+   *  llave lleva diagonales y se codifica tramo por tramo. */
+  archivoDeQuell(llave) {
+    return `${API}/orgs/${ORG}/quell/files/${String(llave).split('/').map(encodeURIComponent).join('/')}`;
   },
 
   /** Aprueba la cotización: la suite crea sus piezas vendidas en el
@@ -2433,6 +2484,106 @@ function renglonDeItem(it) {
   };
 }
 
+/* ─────────────── el ítem de la obra, a la derecha ───────────────
+ *
+ * Mike, 5-oct-2026: «cuando estoy en quote viendo la lista de requerimientos
+ * nuevos, quiero que si le doy click, a la derecha me abra la barra de quell
+ * de los detalles del ítem, así puedo revisar qué es el requerimiento y
+ * decidir si lo agrego o no a la cotización. Y ya una vez en el formato de
+ * cotización quiero poder otra vez dar click sobre el requerimiento o en un
+ * iconito de info que haya para abrir de nuevo la barra, revisar los
+ * detalles y poder definir costos y demás».
+ *
+ * Es la barra de quell101 de SÓLO LECTURA: lo mismo que se ve allá —tipo y
+ * código, plano, fase y alcance, descripción, contratistas, entrega,
+ * archivos, punchlist y bitácora con fotos— pedido al mismo motor de obra.
+ * Aquí no se escribe nada: para eso está quell101. Se abre desde cualquier
+ * pantalla con `abrirPieza(item_id)` (un evento de la ventana, para no pasar
+ * el estado por todo el árbol) y se cierra con ✕, con Escape o picando fuera.
+ */
+const abrirPieza = item_id => window.dispatchEvent(new CustomEvent("abrir-pieza", { detail: { item_id } }));
+function PanelPiezaHost() {
+  const [itemId, setItemId] = useState(null);
+  useEffect(() => {
+    const f = e => setItemId(e.detail && e.detail.item_id || null);
+    window.addEventListener("abrir-pieza", f);
+    return () => window.removeEventListener("abrir-pieza", f);
+  }, []);
+  useEffect(() => {
+    if (!itemId) return undefined;
+    const k = e => { if (e.key === "Escape") setItemId(null); };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [itemId]);
+  if (!itemId) return null;
+  return /*#__PURE__*/React.createElement(PanelPieza, { key: itemId, itemId, onClose: () => setItemId(null) });
+}
+const FASE_OBRA = { produccion: "Producción", punchlist: "Punchlist" };
+const fechaObra = iso => iso ? new Date(iso).toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" }) : "";
+const fechaDia = d => d ? new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("es-MX", { day: "numeric", month: "long", year: "numeric" }) : "";
+function PanelPieza({ itemId, onClose }) {
+  const h = React.createElement;
+  const [d, setD] = useState({ cargando: true });
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      try {
+        const suite = window.suiteDB;
+        const pieza = await suite.piezaDeItem(itemId);
+        const [det, docs] = await Promise.all([suite.pieza(pieza.element_id), suite.piezaDocs(pieza.element_id).catch(() => null)]);
+        if (vivo) setD({ pieza, det, docs });
+      } catch (e) { if (vivo) setD({ error: e.message || String(e) }); }
+    })();
+    return () => { vivo = false; };
+  }, [itemId]);
+  const archivo = llave => window.suiteDB.archivoDeQuell(llave);
+  const e = d.det && d.det.element;
+  const seccion = (titulo, cuerpo) => h("div", { className: "pz-sec" }, h("div", { className: "pz-t" }, titulo), cuerpo);
+  let cuerpo;
+  if (d.cargando) cuerpo = h("div", { className: "pz-nota" }, "Preguntando a la obra…");
+  else if (d.error) cuerpo = h("div", { className: "pz-nota", style: { color: "#b00" } }, d.error);
+  else {
+    const { log = [], punch = [], contratistas = [] } = d.det;
+    const abiertos = punch.filter(k => k.status !== "ok");
+    const docs = d.docs || {};
+    const soporte = Array.isArray(docs.soporte) ? docs.soporte : [];
+    cuerpo = h(React.Fragment, null,
+      h("div", { className: "pz-eyebrow" }, (e.type || "Ítem") + " · ", h("b", { style: { color: "var(--h-accent, #0080C1)" } }, e.code || "sin código")),
+      h("h2", { className: "pz-nombre", "data-pieza-nombre": e.id }, e.name || "Sin nombre"),
+      h("div", { className: "pz-meta" }, d.pieza.project_name, d.pieza.plan_name ? " · " + d.pieza.plan_name : ""),
+      h("div", { className: "pz-chips" },
+        e.fase && h("span", { className: "pz-chip" }, FASE_OBRA[e.fase] || e.fase),
+        e.alcance && h("span", { className: "pz-chip" }, e.alcance === "fuera" ? "Fuera de alcance" : "En alcance"),
+        e.type === "Requerimiento" && h("span", { className: "pz-chip" }, "Falta cotizarlo")),
+      e.item_descripcion && seccion("Descripción", h("div", { className: "pz-texto" }, e.item_descripcion)),
+      seccion("En la obra", h("div", { className: "pz-texto" },
+        h("div", null, "Contratistas: ", contratistas.length ? contratistas.map(c => c.name + (c.company ? " (" + c.company + ")" : "")).join(", ") : "nadie todavía"),
+        h("div", null, e.item_fecha_entrega ? "Entrega: " + fechaDia(e.item_fecha_entrega) + (e.item_entrega_falta != null ? " · " + (e.item_entrega_falta < 0 ? Math.abs(e.item_entrega_falta) + " días tarde" : "faltan " + e.item_entrega_falta + " días") : "") : "Sin fecha de entrega"),
+        e.item_monto != null && h("div", null, "Precio del ítem: " + $(Number(e.item_monto) / 100) + ((Number(e.item_cantidad) || 1) > 1 ? " · " + e.item_cantidad + " piezas" : "")))),
+      seccion("Archivos del ítem" + (docs.principal || soporte.length ? "" : " · ninguno"), h("div", { className: "pz-texto" },
+        docs.principal && h("a", { className: "pz-liga", href: archivo(docs.principal.r2_key), target: "_blank", rel: "noreferrer" }, "Plano: " + (docs.principal.nombre || "principal")),
+        soporte.map(x => h("a", { key: x.id, className: "pz-liga", href: archivo(x.r2_key), target: "_blank", rel: "noreferrer" }, x.nombre || "archivo")))),
+      seccion("Punchlist · " + abiertos.length + "/" + punch.length, h("div", { className: "pz-texto" },
+        !punch.length && h("div", { className: "pz-nota" }, "Sin pendientes."),
+        punch.map(k => h("div", { key: k.id, className: "pz-punto", "data-estado": k.status },
+          h("b", null, k.title || "Pendiente"), k.description ? " · " + k.description : "",
+          h("div", { className: "pz-nota" }, (k.status === "ok" ? "Cerrado" : k.status === "proc" ? "En proceso" : "Pendiente") + (k.assignee_name ? " · " + k.assignee_name : k.resp ? " · " + k.resp : "") + (k.due_date ? " · para el " + fechaDia(k.due_date) : "")),
+          (k.photos || []).length > 0 && h("div", { className: "pz-fotos" }, k.photos.map(f => h("a", { key: f.id || f.r2_key, href: archivo(f.r2_key), target: "_blank", rel: "noreferrer" }, h("img", { src: archivo(f.r2_key), alt: f.file_name || "foto", loading: "lazy" })))))))),
+      seccion("Bitácora · " + log.length, h("div", { className: "pz-texto" },
+        !log.length && h("div", { className: "pz-nota" }, "Sin registros."),
+        [...log].reverse().map(l => h("div", { key: l.id, className: "pz-registro", "data-bitacora": l.id },
+          h("div", { className: "pz-nota" }, (l.user_name || "Suite 101") + " · " + fechaObra(l.created_at)),
+          l.text && h("div", null, l.text),
+          (l.photos || []).length > 0 && h("div", { className: "pz-fotos" }, l.photos.map(f => h("a", { key: f.id || f.r2_key, href: archivo(f.r2_key), target: "_blank", rel: "noreferrer" }, h("img", { src: archivo(f.r2_key), alt: f.file_name || "foto", loading: "lazy" })))))))));
+  }
+  return h("div", { className: "pz-fondo", "data-panel-pieza": itemId, onClick: ev => ev.target === ev.currentTarget && onClose() },
+    h("aside", { className: "pz-panel", role: "dialog", "aria-label": "El ítem en la obra" },
+      h("div", { className: "pz-cab" },
+        h("span", { className: "pz-nota" }, "El ítem en la obra · sólo lectura"),
+        h("button", { className: "pz-cerrar", onClick: onClose, title: "Cerrar", "aria-label": "Cerrar" }, "✕")),
+      cuerpo));
+}
+
 function ItemsPendientesModal({ cliente, proyecto, items, cargando, error, onAgregar, onClose }) {
   const [marcados, setMarcados] = useState(() => new Set());
   const [destino, setDestino] = useState("nueva");
@@ -2467,7 +2618,15 @@ function ItemsPendientesModal({ cliente, proyecto, items, cargando, error, onAgr
       style: { display: "grid", gridTemplateColumns: "24px 1fr auto", gap: 8, padding: "8px 10px", borderBottom: "1px solid #f0f0f0", cursor: "pointer", fontSize: 12, alignItems: "start" }
     }, /*#__PURE__*/React.createElement("input", { type: "checkbox", checked: marcados.has(it.id), onChange: () => alternar(it.id) }),
     /*#__PURE__*/React.createElement("div", null,
-      /*#__PURE__*/React.createElement("div", { style: { fontWeight: 600 } }, it.clave ? /*#__PURE__*/React.createElement("span", { style: { color: "#888", fontWeight: 400 } }, it.clave, " · ") : null, it.nombre),
+      /*#__PURE__*/React.createElement("div", { style: { fontWeight: 600, display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" } },
+        /*#__PURE__*/React.createElement("span", null, it.clave ? /*#__PURE__*/React.createElement("span", { style: { color: "#888", fontWeight: 400 } }, it.clave, " · ") : null, it.nombre),
+        /* Mike, 5-oct: «si le doy click, a la derecha me abra la barra de quell
+           de los detalles del ítem». El botón no marca la casilla. */
+        /*#__PURE__*/React.createElement("button", {
+          type: "button", "data-ver-pieza": it.id, title: "Ver el ítem en la obra: fotos, bitácora, pendientes y archivos",
+          style: { font: "inherit", fontSize: 11, fontWeight: 500, color: "#0080C1", background: "none", border: 0, padding: 0, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 3 },
+          onClick: e => { e.preventDefault(); e.stopPropagation(); abrirPieza(it.id); }
+        }, "ⓘ ver en la obra")),
       it.descripcion ? /*#__PURE__*/React.createElement("div", { style: { color: "#666", fontSize: 11 } }, it.descripcion) : null,
       /*#__PURE__*/React.createElement("div", { style: { color: "#888", fontSize: 10 } },
         it.cancelado_at ? "Se sacó del alcance" + (it.cancelado_motivo ? " · «" + it.cancelado_motivo + "»" : "") : "Requerimiento sin aprobar",
@@ -5995,11 +6154,16 @@ function HojaCotizacion({
              de dónde viene y qué va a pasar al aprobar, para que nadie lo
              borre creyendo que sobra ni lo capture dos veces. */
           ids.length === 1 && h("div", { className: "h-arm", "data-requerimiento": ids[0] },
-            "Requerimiento de la obra" + (m.codigo ? " · " + m.codigo : "") + ". Al aprobar, este mismo ítem queda vendido con el tipo y el precio de aquí, y estrena código."),
+            "Requerimiento de la obra" + (m.codigo ? " · " + m.codigo : "") + ". Al aprobar, este mismo ítem queda vendido con el tipo y el precio de aquí, y estrena código. ",
+            /* Mike, 5-oct: «dar click sobre el requerimiento o en un iconito de
+               info (…) para abrir de nuevo la barra, revisar los detalles y
+               poder definir costos». */
+            h("span", { className: "no-print" }, h("button", { type: "button", "data-ver-pieza": ids[0], title: "Ver el ítem en la obra: fotos, bitácora, pendientes y archivos", onClick: () => abrirPieza(ids[0]) }, "ⓘ ver en la obra"))),
           /* Varios ítems de la obra en un solo concepto (Mike, 2-oct): se
              dice cuántos, y que al aprobar cada pieza sigue siendo la suya. */
           ids.length > 1 && h("div", { className: "h-arm", "data-requerimiento": ids.join(" ") },
-            ids.length + " ítems de la obra agrupados en este concepto. Al aprobar, cada uno queda vendido con este precio y esta descripción."),
+            ids.length + " ítems de la obra agrupados en este concepto. Al aprobar, cada uno queda vendido con este precio y esta descripción. ",
+            h("span", { className: "no-print" }, ids.map((id, k) => h("button", { key: id, type: "button", "data-ver-pieza": id, title: "Ver este ítem en la obra", style: { marginRight: 6 }, onClick: () => abrirPieza(id) }, "ⓘ ítem " + (k + 1))))),
           !manual && h("div", { className: "h-arm" },
             armado ? "Armado: " + armado : "Mueble sin componentes",
             !soloVer && h("span", { className: "no-print" }, " · ", h("button", { onClick: () => editarMueble(i) }, "abrir el armador")))),
@@ -11113,7 +11277,7 @@ function App() {
     error: pendientes.error,
     onAgregar: (items, destino) => agregarPendientes(pendientes.cliente, pendientes.proyecto, items, destino),
     onClose: () => setPendientes(null)
-  }), nav.p === "cotizador" && (nav.originRect ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(PantallaInicio, {
+  }), /*#__PURE__*/React.createElement(PanelPiezaHost, null), nav.p === "cotizador" && (nav.originRect ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(PantallaInicio, {
     clientes: clientes,
     loading: loading,
     onSelect: () => {},
