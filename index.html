@@ -6190,7 +6190,7 @@ function HojaCotizacion({
              exportamos el PDF para interno»). `no-print`: la hoja impresa
              para el cliente las quita junto con los botones. */
           (!soloVer || String(m.notas_internas || "").trim()) && h("div", { className: "no-print h-nota-interna", "data-nota-interna": i, style: { marginTop: 6.8 } },
-            h("textarea", { className: "input", "data-campo": "notas-internas-" + i, rows: 1, placeholder: "Notas internas: no las ve el cliente; salen en el PDF interno y, al aprobar, en la bitácora del ítem en quell101", value: m.notas_internas || "", readOnly: soloVer, title: "Sólo para el taller", style: { fontSize: 12, fontStyle: "italic", background: "color-mix(in srgb, #F5C542 12%, transparent)" }, onChange: e => ponRenglon(i, { notas_internas: e.target.value }) })),
+            h("textarea", { className: "input", "data-campo": "notas-internas-" + i, rows: 1, placeholder: "Notas internas (no las ve el cliente)", value: m.notas_internas || "", readOnly: soloVer, title: "Sólo para el taller: salen en el PDF interno y, al aprobar, en la bitácora del ítem en quell101", style: { fontSize: 12, fontStyle: "italic", background: "color-mix(in srgb, #F5C542 12%, transparent)" }, onChange: e => ponRenglon(i, { notas_internas: e.target.value }) })),
           manual && (((m.imagenes || []).length > 0) || !soloVer) && h("div", { className: "h-imgs", "data-imagenes-renglon": i, style: { display: "flex", gap: 6.8, flexWrap: "wrap", alignItems: "center", marginTop: 6.8 } },
             (m.imagenes || []).map((src, k) => h("span", { key: k, style: { position: "relative", display: "inline-block" } },
               h("img", { src, alt: "", "data-imagen-renglon": i + "-" + k, style: { width: 48, height: 48, objectFit: "cover", borderRadius: 4, display: "block" } }),
@@ -6253,8 +6253,15 @@ function HojaCotizacion({
         set ? h("label", null, h("input", { type: "checkbox", checked: !!prendido, disabled: soloVer, onChange: e => set(e.target.checked) }), etiqueta) : h("span", null, etiqueta),
         h("b", { className: "num", "data-cargo": clave }, set && !prendido ? "—" : hojaDinero(monto)));
       return h("div", { className: "h-cargos no-print", "data-hoja": "cargos" },
-        h("div", { className: "h-cargos-tit" }, "Cómo se forma el precio",
-          h("span", null, " · los porcentajes se cambian en ⚙ Configuración · se reparte en el precio de cada renglón y no sale en el PDF del cliente"),
+        /* Mike, 7-oct: «se está duplicando o triplicando los costos
+           indirectos (…) en la lista aparecen ya con el sobrecosto, y
+           adicional al final se vuelven a agregar». No se suman dos veces: se
+           midió (costo $4,000 → $6,700 con todo prendido, cada cargo una
+           vez), pero la caja se leía como cargos ENCIMA del subtotal. Escogió
+           con botones «dejar como está, aclarado»: la caja dice que ya está
+           dentro de los precios de arriba y cierra en el mismo subtotal. */
+        h("div", { className: "h-cargos-tit" }, "Cómo se forma el precio: ya está incluido en los precios de arriba",
+          h("span", { "data-cargos-ya-incluidos": true }, " · no se suma otra vez · cada renglón ya trae su parte · los porcentajes se cambian en ⚙ Configuración · no sale en el PDF del cliente"),
           hayManuales && !conCargosAMano && h("span", { "data-cargos-de-antes": true }, " · guardada antes del 3-oct-2026: lo escrito a mano va sin cargos, como se mandó")),
         h("div", { className: "h-cargos-fila" },
           hayArmados && cargo("costo", "Costo de los muebles armados", d.costo),
@@ -6265,7 +6272,9 @@ function HojaCotizacion({
           cargo("flete", "Flete", d.flete, usaF, setUsaF),
           cargo("arq", "Comisión profesionista " + pct("comisionArq"), d.arq, usaA, setUsaA),
           cargo("tdc", "Comisión TDC " + pct("comisionTDC"), d.tdc, usaT, setUsaT),
-          cargo("redondeo", "Redondeo" + (hayArmados ? " a $" + REDONDEO : " al peso"), d.redondeo)));
+          cargo("redondeo", "Redondeo" + (hayArmados ? " a $" + REDONDEO : " al peso"), d.redondeo)),
+        h("div", { className: "h-cargos-suma", "data-cargos-suma": true, style: { marginTop: 6.8, fontWeight: 500, color: "var(--h-text)" } },
+          "= " + hojaDinero(precios.subtotal) + ", el mismo Subtotal de abajo: estos cargos ya están repartidos en el precio de cada renglón."));
       /* La cajita «Precio de los armados» (la suma de todas) se quitó el
        * 26-sep: Mike, «no debería estar ahí». Repetía el Subtotal. */
     })());
