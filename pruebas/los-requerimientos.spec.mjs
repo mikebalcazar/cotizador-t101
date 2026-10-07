@@ -203,6 +203,32 @@ test('el requerimiento se arma por componentes: sale su costo y al aprobar sigue
   } finally { await ctx.close(); }
 });
 
+test('las ligas de las notas internas se pueden picar, en la hoja y en el PDF interno', async () => {
+  /* Mike, 7-oct-2026: «En las notas del ítem en quote, quiero que cuando
+   * agrego un link lo detecte como para poder darle click, ya sea durante
+   * edición o sobre el PDF interno exportado». */
+  const { ctx, p, errores } = await abrirApp();
+  try {
+    await editarCotizacion(p);
+    await p.locator('[data-campo="notas-internas-0"]').fill('Plano: https://ejemplo.mx/plano?a=1&b=2. Proveedor en www.taller101.com <script>x</script>');
+    const ligas = p.locator('[data-ligas-nota="0"] a');
+    await ligas.first().waitFor({ timeout: 5000 });
+    assert.deepEqual(await ligas.evaluateAll((as) => as.map((a) => [a.getAttribute('href'), a.getAttribute('target')])), [
+      ['https://ejemplo.mx/plano?a=1&b=2', '_blank'],
+      ['https://www.taller101.com', '_blank'],
+    ], 'en la hoja, cada liga se pica y abre aparte; el punto final no es parte de la liga');
+
+    const [interno] = await Promise.all([ctx.waitForEvent('page'), p.getByRole('button', { name: 'PDF interno' }).click()]);
+    await interno.waitForLoadState();
+    const hrefs = await interno.locator('.nota-interna a').evaluateAll((as) => as.map((a) => a.getAttribute('href')));
+    assert.deepEqual(hrefs, ['https://ejemplo.mx/plano?a=1&b=2', 'https://www.taller101.com'], 'en el PDF interno también');
+    assert.equal(await interno.locator('.nota-interna script').count(), 0, 'y lo demás va como texto, nunca como código');
+    assert.match(await interno.locator('.nota-interna').innerText(), /<script>x<\/script>/);
+    await interno.close();
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
 /* Un PNG de 1×1: basta con que sea una imagen. */
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 
