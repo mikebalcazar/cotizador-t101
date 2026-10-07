@@ -216,8 +216,12 @@ test('al requerimiento o concepto escrito a mano se le agrega una imagen, se gua
     assert.equal(await p.locator('[data-campo="imagen-1"]').count(), 1, 'y el concepto escrito a mano también');
     await p.locator('[data-campo="imagen-0"]').setInputFiles({ name: 'barra.png', mimeType: 'image/png', buffer: PNG });
     await p.locator('[data-imagen-renglon="0-0"]').waitFor({ timeout: 5000 });
-    // Arrastrada sobre el renglón también entra, y no agrupa renglones.
-    await p.locator('[data-renglon="1"]').evaluate((el, b64) => {
+    /* Mike, 7-oct: «un recuadro donde diga, arrastrar imagen o agregar desde
+     * carpeta y que al arrastrarla sobre ese recuadro se cargue a ese ítem». */
+    const zona = p.locator('[data-zona-imagen="1"]');
+    assert.match(await zona.innerText(), /Arrastra la imagen aquí o pégala ·\s*agregar desde carpeta/, 'el recuadro lo dice');
+    // Arrastrada sobre el recuadro entra a ESE renglón, y no agrupa renglones.
+    await zona.evaluate((el, b64) => {
       const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
       const dt = new DataTransfer();
       dt.items.add(new File([bytes], 'foto.png', { type: 'image/png' }));
@@ -237,6 +241,17 @@ test('al requerimiento o concepto escrito a mano se le agrega una imagen, se gua
     await p.waitForTimeout(900);
     assert.equal(await p.locator('[data-imagen-renglon="0-0"]').count(), 0, 'se quita');
     assert.equal(guardado().cuerpo.datos.versiones[0].muebles[0].imagenes.length, 0, 'y se guarda sin ella');
+
+    // Pegada (Ctrl-V) con el recuadro picado, también entra a ese renglón.
+    await p.locator('[data-zona-imagen="0"]').evaluate((el, b64) => {
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      const dt = new DataTransfer();
+      dt.items.add(new File([bytes], 'captura.png', { type: 'image/png' }));
+      el.focus();
+      el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+    }, PNG.toString('base64'));
+    await p.locator('[data-imagen-renglon="0-0"]').waitFor({ timeout: 5000 });
+    assert.equal(await p.locator('[data-imagen-renglon="1-1"]').count(), 0, 'y no se fue al otro renglón');
     assert.deepEqual(errores, [], 'sin errores de JavaScript');
   } finally { await ctx.close(); }
 });
