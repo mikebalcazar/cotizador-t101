@@ -1956,6 +1956,19 @@ const flete = t => Math.max(cfg("fleteMin"), Math.floor(t / cfg("fleteEscalon"))
  *     PDF interno) no vea un renglón en cero. */
 const MOSTRAR_HISTORIAL = false;
 const esManual = m => !!(m && m.manual);
+/* Un requerimiento armado por componentes (Mike, 7-oct: «quiero poder
+ * editar un requerimiento para sacar su costo y generarlo con el cotizador
+ * por componentes»). El renglón que la obra dejó a mano se abre en el
+ * armador y, en cuanto lleva componentes, deja de ser a mano: su `total` es
+ * el COSTO y el precio sale como el de cualquier mueble armado. Se queda con
+ * su `item_id`, código, nombre, descripción y tipo, para que al aprobar se
+ * apruebe ESE requerimiento. Sin componentes no cambia nada: abrir el
+ * armador y salir no le borra el precio escrito. */
+const conArmado = (m, cambios) => {
+  const nuevo = { ...m, ...cambios };
+  if (esManual(m) && (nuevo.componentes || []).length) { delete nuevo.manual; delete nuevo.precio; }
+  return nuevo;
+};
 
 /* ─────────────── agrupar renglones y aprobar por pieza (Mike, 2-oct) ───────────────
  *
@@ -2004,9 +2017,14 @@ function lineasParaAprobar(muebles, precioDe) {
       nombre: String(m.nombre).trim(),
       descripcion: String(m.descripcion || "").trim() || (esManual(m) ? null : resumenArmado(m) || null),
       codigo: String(m.codigo || "").trim() || null,
-      tipo: esManual(m) && TIPOS_DE_ITEM[m.tipo] ? m.tipo : "mueble",
+      tipo: TIPOS_DE_ITEM[m.tipo] ? m.tipo : "mueble",
       precio: precioDe(i),
       producto_id: m.producto_id || null,
+      /* Mike, 7-oct: las notas internas del renglón «aparecen en quell cuando
+       * se autoriza el requerimiento. Se escriben en la bitácora del ahora
+       * ítem». La suite las escribe ahí (contrato 0.78.0); no van al ítem ni
+       * a nada que vea el cliente. */
+      notas_internas: String(m.notas_internas || "").trim() || null,
     };
     const ids = itemsDelRenglon(m);
     const qty = Number(m.qty) || 1;
@@ -5986,6 +6004,23 @@ function HojaCotizacion({
     onChange: e => setHoja(p => ({ ...p, [k]: e.target.value }))
   });
   const ponRenglon = (i, cambio) => setMuebles(p => p.map((m, j) => j === i ? { ...m, ...cambio } : m));
+  /* Imágenes del renglón escrito a mano (Mike, 7-oct: «quiero poder agregar
+   * una imagen al requerimiento o concepto en caso de que no sea generado
+   * desde el cotizador»). Los del armador ya traen las suyas desde ahí. Pasan
+   * por la MISMA `fotoAMiniatura` que las fotos del armador (fotos.spec), con
+   * el mismo tope de cinco; se suben a la suite al guardar como las demás, y
+   * la primera sale en los PDF, que ya la leían de cualquier renglón. */
+  const agregarImagenes = async (i, archivos) => {
+    const lista = Array.from(archivos || []).filter(f => f && /^image\//.test(f.type || ""));
+    const nuevas = [];
+    for (const f of lista) {
+      try { nuevas.push(await fotoAMiniatura(f)); } catch (e) { /* una que no abra se salta */ }
+    }
+    if (!nuevas.length) return;
+    setMuebles(p => p.map((m, j) => j === i ? { ...m, imagenes: [...(m.imagenes || []), ...nuevas].slice(0, FOTOS_MAX) } : m));
+  };
+  const quitarImagen = (i, k) => setMuebles(p => p.map((m, j) => j === i ? { ...m, imagenes: (m.imagenes || []).filter((_, x) => x !== k) } : m));
+  const traeArchivos = e => Array.from((e.dataTransfer && e.dataTransfer.types) || []).includes("Files");
   const aNum = v => {
     const n = parseFloat(String(v).replace(/[^0-9.\-]/g, ""));
     return isNaN(n) ? 0 : n;
@@ -6134,9 +6169,9 @@ function HojaCotizacion({
         draggable: !soloVer,
         title: soloVer ? undefined : "Arrastra este renglón sobre otro para agruparlos en un concepto",
         onDragStart: soloVer ? undefined : e => { e.dataTransfer.setData("text/plain", String(i)); e.dataTransfer.effectAllowed = "move"; setArrastre({ de: i, sobre: null }); },
-        onDragOver: soloVer ? undefined : e => { if (arrastre.de === null || arrastre.de === i) return; e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (arrastre.sobre !== i) setArrastre(a => ({ ...a, sobre: i })); },
+        onDragOver: soloVer ? undefined : e => { if (traeArchivos(e)) { if (manual) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } return; } if (arrastre.de === null || arrastre.de === i) return; e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (arrastre.sobre !== i) setArrastre(a => ({ ...a, sobre: i })); },
         onDragLeave: soloVer ? undefined : () => { if (arrastre.sobre === i) setArrastre(a => ({ ...a, sobre: null })); },
-        onDrop: soloVer ? undefined : e => { e.preventDefault(); const de = Number(e.dataTransfer.getData("text/plain")); soltarSobre(Number.isInteger(de) ? de : arrastre.de, i); },
+        onDrop: soloVer ? undefined : e => { e.preventDefault(); if (traeArchivos(e)) { if (manual) agregarImagenes(i, e.dataTransfer.files); return; } const de = Number(e.dataTransfer.getData("text/plain")); soltarSobre(Number.isInteger(de) ? de : arrastre.de, i); },
         onDragEnd: soloVer ? undefined : () => setArrastre({ de: null, sobre: null }),
       },
         h("div", null,
@@ -6145,11 +6180,24 @@ function HojaCotizacion({
              armador son muebles. Mike, 29-sep: «al aprobarse los
              requerimientos cambia su código a alguno de mueble, puerta etc.»;
              el tipo se escoge aquí, y la suite le pone el código al aprobar. */
-          manual && h("select", { className: "input", "data-campo": "tipo-" + i, value: TIPOS_DE_ITEM[m.tipo] ? m.tipo : "mueble", disabled: soloVer, title: "Qué tipo de ítem es: decide el prefijo de su código en la obra", style: { marginTop: 6.8, fontSize: 12 }, onChange: e => ponRenglon(i, { tipo: e.target.value }) },
+          (manual || ids.length > 0) && h("select", { className: "input", "data-campo": "tipo-" + i, value: TIPOS_DE_ITEM[m.tipo] ? m.tipo : "mueble", disabled: soloVer, title: "Qué tipo de ítem es: decide el prefijo de su código en la obra", style: { marginTop: 6.8, fontSize: 12 }, onChange: e => ponRenglon(i, { tipo: e.target.value }) },
             Object.keys(TIPOS_DE_ITEM).map(t => h("option", { key: t, value: t }, TIPOS_DE_ITEM[t])))),
         h("div", null,
           h("input", { className: "input", "data-campo": "nombre-" + i, placeholder: "Nombre del producto o servicio", value: m.nombre || "", readOnly: soloVer, style: { fontWeight: 500 }, onChange: e => ponRenglon(i, { nombre: e.target.value }) }),
           h("textarea", { className: "input", "data-campo": "descripcion-" + i, rows: 2, placeholder: "Descripción, acabado, medidas, marca…", value: m.descripcion || "", readOnly: soloVer, style: { marginTop: 6.8, fontSize: 12.5, color: "color-mix(in srgb,var(--h-text) 75%,transparent)" }, onChange: e => ponRenglon(i, { descripcion: e.target.value }) }),
+          /* Notas internas (Mike, 7-oct: «notas locales (no se presentan al
+             cliente) que aparezcan cuando revisamos las cotizaciones o cuando
+             exportamos el PDF para interno»). `no-print`: la hoja impresa
+             para el cliente las quita junto con los botones. */
+          (!soloVer || String(m.notas_internas || "").trim()) && h("div", { className: "no-print h-nota-interna", "data-nota-interna": i, style: { marginTop: 6.8 } },
+            h("textarea", { className: "input", "data-campo": "notas-internas-" + i, rows: 1, placeholder: "Notas internas: no las ve el cliente; salen en el PDF interno y, al aprobar, en la bitácora del ítem en quell101", value: m.notas_internas || "", readOnly: soloVer, title: "Sólo para el taller", style: { fontSize: 12, fontStyle: "italic", background: "color-mix(in srgb, #F5C542 12%, transparent)" }, onChange: e => ponRenglon(i, { notas_internas: e.target.value }) })),
+          manual && (((m.imagenes || []).length > 0) || !soloVer) && h("div", { className: "h-imgs", "data-imagenes-renglon": i, style: { display: "flex", gap: 6.8, flexWrap: "wrap", alignItems: "center", marginTop: 6.8 } },
+            (m.imagenes || []).map((src, k) => h("span", { key: k, style: { position: "relative", display: "inline-block" } },
+              h("img", { src, alt: "", "data-imagen-renglon": i + "-" + k, style: { width: 48, height: 48, objectFit: "cover", borderRadius: 4, display: "block" } }),
+              !soloVer && h("button", { type: "button", className: "no-print", "data-quitar-imagen": i + "-" + k, title: "Quitar esta imagen", onClick: () => quitarImagen(i, k), style: { position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", border: "none", background: "var(--h-n700, #333)", color: "#fff", fontSize: 11, lineHeight: "18px", padding: 0, cursor: "pointer" } }, "\u2715"))),
+            !soloVer && (m.imagenes || []).length < FOTOS_MAX && h("label", { className: "btn btn-ghost no-print", title: "Escoge una imagen, o arrástrala sobre este renglón", style: { fontSize: 12, cursor: "pointer" } },
+              "+ imagen",
+              h("input", { type: "file", accept: "image/*", multiple: true, hidden: true, "data-campo": "imagen-" + i, onChange: e => { agregarImagenes(i, e.target.files); e.target.value = ""; } }))),
           /* El renglón que la obra dejó aquí (requerimiento, G100): se dice
              de dónde viene y qué va a pasar al aprobar, para que nadie lo
              borre creyendo que sobra ni lo capture dos veces. */
@@ -6158,7 +6206,12 @@ function HojaCotizacion({
             /* Mike, 5-oct: «dar click sobre el requerimiento o en un iconito de
                info (…) para abrir de nuevo la barra, revisar los detalles y
                poder definir costos». */
-            h("span", { className: "no-print" }, h("button", { type: "button", "data-ver-pieza": ids[0], title: "Ver el ítem en la obra: fotos, bitácora, pendientes y archivos", onClick: () => abrirPieza(ids[0]) }, "ⓘ ver en la obra"))),
+            h("span", { className: "no-print" }, h("button", { type: "button", "data-ver-pieza": ids[0], title: "Ver el ítem en la obra: fotos, bitácora, pendientes y archivos", onClick: () => abrirPieza(ids[0]) }, "ⓘ ver en la obra"),
+              /* Mike, 7-oct: «editar un requerimiento para sacar su costo y
+                 generarlo con el cotizador por componentes». Abre ESTE
+                 renglón en el armador; ya armado, el enlace de abajo («abrir
+                 el armador») lo vuelve a abrir. */
+              manual && !soloVer && h(React.Fragment, null, " · ", h("button", { type: "button", "data-armar-requerimiento": i, title: "Sacar su costo por componentes, como un mueble del armador", onClick: () => editarMueble(i) }, "armar por componentes")))),
           /* Varios ítems de la obra en un solo concepto (Mike, 2-oct): se
              dice cuántos, y que al aprobar cada pieza sigue siendo la suya. */
           ids.length > 1 && h("div", { className: "h-arm", "data-requerimiento": ids.join(" ") },
@@ -7427,8 +7480,7 @@ function Cotizador({
     setMarcaSel(null);
     const tot = comps.reduce((s, c) => s + c.subtotal, 0);
     if (editIdx !== null) {
-      setMuebles(p => p.map((m, i) => i === editIdx ? {
-        ...m,
+      setMuebles(p => p.map((m, i) => i === editIdx ? conArmado(m, {
         componentes: [...comps],
         total: tot,
         imagenes: imgs.length ? imgs : m.imagenes,
@@ -7436,7 +7488,7 @@ function Cotizador({
         // y los componentes con los nuevos.
         perfil: JSON.parse(JSON.stringify(perfil)),
         plano
-      } : m));
+      }) : m));
     } else {
       setMuebles(p => [...p, {
         id: uid(),
@@ -7467,15 +7519,14 @@ function Cotizador({
       if (i !== editIdx) return m;
       const nuevosComps = [...comps];
       const nuevoTotal = nuevosComps.reduce((s, c) => s + c.subtotal, 0);
-      return {
-        ...m,
+      return conArmado(m, {
         nombre: nomMueble || m.nombre,
         perfil: JSON.parse(JSON.stringify(perfil)),
         imagenes: imgs.length ? imgs : m.imagenes,
         componentes: nuevosComps,
         total: nuevoTotal,
         plano
-      };
+      });
     }));
     setComps([]);
     setMod(null);
@@ -7757,7 +7808,7 @@ function Cotizador({
         const ledRow = c.ledSubtotal > 0 ? '<tr style="background:#f0faff"><td colspan="2" style="padding-left:16px;font-size:10px;color:#0080C1">💡 LED</td><td style="text-align:center;font-size:10px;color:#0080C1">×' + c.qty + '</td><td style="font-weight:700;text-align:right;color:#0080C1">' + $(c.ledSubtotal) + '</td></tr>' : "";
         return '<tr><td><div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#0080C1">' + c.modulo + '</div><div style="font-weight:600">' + c.desc + '</div></td><td style="color:#888;font-size:11px">' + [...(c.tags || []), ...(c.extras || [])].join(" · ") + '</td><td style="text-align:center">×' + c.qty + '</td><td style="font-weight:700;text-align:right">' + $(c.subtotal) + '</td></tr>' + ledRow;
       }).join("");
-      return '<div class="mb"><div class="mbh"><div style="display:flex;align-items:center">' + imgTag + '<div><div style="font-size:15px;font-weight:700">' + m.nombre + '</div><div style="font-size:11px;color:#888">' + q + ' pieza' + (q !== 1 ? 's' : '') + '</div></div></div><div style="font-size:14px;font-weight:700;color:#0080C1">' + $(m.total * q) + '</div></div><table><thead><tr><th style="width:35%">Componente</th><th style="width:30%">Especificacion</th><th style="text-align:center;width:15%">Cant.</th><th style="text-align:right;width:20%">Total</th></tr></thead><tbody>' + compRows + '</tbody></table></div>';
+      return '<div class="mb"><div class="mbh"><div style="display:flex;align-items:center">' + imgTag + '<div><div style="font-size:15px;font-weight:700">' + m.nombre + '</div><div style="font-size:11px;color:#888">' + q + ' pieza' + (q !== 1 ? 's' : '') + '</div></div></div><div style="font-size:14px;font-weight:700;color:#0080C1">' + $(m.total * q) + '</div></div>' + (String(m.notas_internas || "").trim() ? '<div class="nota-interna" style="margin:6px 0 8px;padding:6px 8px;background:#FFF8E1;border-left:3px solid #F5C542;font-size:11px;white-space:pre-wrap"><b>Nota interna:</b> ' + String(m.notas_internas).trim().replace(/&/g, "&amp;").replace(/</g, "&lt;") + '</div>' : '') + '<table><thead><tr><th style="width:35%">Componente</th><th style="width:30%">Especificacion</th><th style="text-align:center;width:15%">Cant.</th><th style="text-align:right;width:20%">Total</th></tr></thead><tbody>' + compRows + '</tbody></table></div>';
     }).join("");
     /* El resumen es el desglose de la hoja (`preciosHoja`), con los
        porcentajes de ⚙: es el único documento donde salen los cargos. */
@@ -8546,14 +8597,13 @@ ${rowHTML}
     if (marcas.length && !window.confirm("Quedan " + marcas.length + (marcas.length === 1 ? " componente" : " componentes") + " sin configurar en el plano (" + marcas.map(m => m.n).join(", ") + "). Si sigues, se descartan. ¿Guardar el mueble así?")) return;
     setMarcas([]);
     setMarcaSel(null);
-    setMuebles(p => p.map((m, i) => i === editIdx ? {
-      ...m,
+    setMuebles(p => p.map((m, i) => i === editIdx ? conArmado(m, {
       nombre: nomMueble || m.nombre,
       imagenes: imgs.length ? imgs : m.imagenes,
       perfil: JSON.parse(JSON.stringify(perfil)),
       ...(comps.length ? { componentes: [...comps], total: comps.reduce((s, c) => s + c.subtotal, 0) } : {}),
       plano
-    } : m));
+    }) : m));
     setComps([]);
     setMod(null);
     setEditIdx(null);
