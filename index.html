@@ -1142,6 +1142,14 @@ window.suiteDB = {
    *  detalles del ítem». El cotizador tiene el ítem; la pieza del plano la
    *  tiene el motor de obra, y de ella cuelgan la bitácora con sus fotos,
    *  el punchlist y los archivos. Tres lecturas, con el X-App de esta app. */
+  /** 0.79.0 · El título de la página de una liga (Mike, 7-oct: «sólo pon el
+   *  título de la página a la que liga, no todo el link»). Lo lee la API: el
+   *  navegador no puede leer otro sitio. `titulo` null si no se pudo. */
+  async tituloDeLiga(url) {
+    await identidad();
+    const r = await pedir(`/orgs/${ORG}/titulo-de-liga?url=${encodeURIComponent(url)}`);
+    return r.estado === 200 && r.data ? r.data : null;
+  },
   async piezaDeItem(item_id) {
     await identidad();
     const r = await pedir(`/orgs/${ORG}/quell/items/${encodeURIComponent(item_id)}/pieza`);
@@ -1964,6 +1972,7 @@ const LIGA_RE = /\b(?:https?:\/\/|www\.)[^\s<>"']+/gi;
 const limpiaLiga = s => s.replace(/[.,;:!?)\]]+$/, "");
 const ligasDe = texto => [...new Set((String(texto || "").match(LIGA_RE) || []).map(limpiaLiga))];
 const hrefDe = l => /^https?:\/\//i.test(l) ? l : "https://" + l;
+const dominioDe = l => { try { return new URL(hrefDe(l)).hostname.replace(/^www\./, ""); } catch (e) { return l; } };
 const escHtml = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 /** El texto, escapado para HTML, con cada liga como <a> que abre aparte. Se
  *  parte sobre el texto crudo (no sobre el escapado) para que un «&» dentro
@@ -6050,6 +6059,29 @@ function HojaCotizacion({
   };
   const quitarImagen = (i, k) => setMuebles(p => p.map((m, j) => j === i ? { ...m, imagenes: (m.imagenes || []).filter((_, x) => x !== k) } : m));
   const traeArchivos = e => Array.from((e.dataTransfer && e.dataTransfer.types) || []).includes("Files");
+  /* Los títulos de las ligas de las notas internas: se piden una vez por liga
+   * y se guardan en el renglón (`ligas_titulos`), así que no se vuelven a
+   * pedir. Con 0.8 s de pausa: mientras se escribe la liga no se pregunta
+   * por cada letra. Si no hay título, queda el dominio. */
+  const pidiendoTitulos = useRef(new Set());
+  useEffect(() => {
+    if (soloVer || !window.suiteDB || !window.suiteDB.tituloDeLiga) return undefined;
+    const faltan = [];
+    for (const m of muebles) for (const l of ligasDe(m.notas_internas)) {
+      if (!(m.ligas_titulos && m.ligas_titulos[l]) && !pidiendoTitulos.current.has(m.id + " " + l)) faltan.push([m.id, l]);
+    }
+    if (!faltan.length) return undefined;
+    const t = setTimeout(() => {
+      for (const [id, l] of faltan) {
+        pidiendoTitulos.current.add(id + " " + l);
+        window.suiteDB.tituloDeLiga(hrefDe(l)).catch(() => null).then(r => {
+          const titulo = (r && r.titulo) || dominioDe(l);
+          setMuebles(p => p.map(x => x.id === id ? { ...x, ligas_titulos: { ...(x.ligas_titulos || {}), [l]: titulo } } : x));
+        });
+      }
+    }, 800);
+    return () => clearTimeout(t);
+  }, [muebles, soloVer]);
   const aNum = v => {
     const n = parseFloat(String(v).replace(/[^0-9.\-]/g, ""));
     return isNaN(n) ? 0 : n;
@@ -6220,7 +6252,7 @@ function HojaCotizacion({
              para el cliente las quita junto con los botones. */
           (!soloVer || String(m.notas_internas || "").trim()) && h("div", { className: "no-print h-nota-interna", "data-nota-interna": i, style: { marginTop: 6.8 } },
             ligasDe(m.notas_internas).length > 0 && h("div", { "data-ligas-nota": i, style: { display: "flex", flexWrap: "wrap", gap: 6.8, fontSize: 12, marginBottom: 3.4 } },
-              ligasDe(m.notas_internas).map(l => h("a", { key: l, href: hrefDe(l), target: "_blank", rel: "noopener", title: "Abrir en otra pestaña", style: { color: "#0080C1", textDecoration: "underline", wordBreak: "break-all" } }, "\u2197 " + l))),
+              ligasDe(m.notas_internas).map(l => h("a", { key: l, href: hrefDe(l), target: "_blank", rel: "noopener", title: l, "data-liga": l, style: { color: "#0080C1", textDecoration: "underline", wordBreak: "break-word" } }, "\u2197 " + ((m.ligas_titulos && m.ligas_titulos[l]) || dominioDe(l))))),
             h("textarea", { className: "input", "data-campo": "notas-internas-" + i, rows: 1, placeholder: "Notas internas (no las ve el cliente)", value: m.notas_internas || "", readOnly: soloVer, title: "Sólo para el taller: salen en el PDF interno y, al aprobar, en la bitácora del ítem en quell101", style: { fontSize: 12, fontStyle: "italic", background: "color-mix(in srgb, #F5C542 12%, transparent)" }, onChange: e => ponRenglon(i, { notas_internas: e.target.value }) })),
           manual && (((m.imagenes || []).length > 0) || !soloVer) && h("div", { className: "h-imgs", "data-imagenes-renglon": i, style: { display: "flex", gap: 6.8, flexWrap: "wrap", alignItems: "center", marginTop: 6.8 } },
             (m.imagenes || []).map((src, k) => h("span", { key: k, style: { position: "relative", display: "inline-block" } },

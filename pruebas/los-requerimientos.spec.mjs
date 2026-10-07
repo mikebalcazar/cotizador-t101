@@ -76,6 +76,11 @@ async function abrirApp() {
     if (r === '/orgs/org-1/clientes') return route.fulfill(ok({ filas: [CLIENTE] }));
     if (r === '/orgs/org-1/proyectos') return route.fulfill(ok({ filas: [PROYECTO] }));
     if (r === '/orgs/org-1/cotizaciones') return route.fulfill(ok({ filas: [BORRADOR] }));
+    // 0.79.0 · el título de la página de una liga: uno con título, otro sin.
+    if (r === '/orgs/org-1/titulo-de-liga') {
+      const u = new URL(route.request().url()).searchParams.get('url') || '';
+      return route.fulfill(ok({ url: u, dominio: new URL(u).hostname.replace(/^www\./, ''), titulo: u.includes('ejemplo.mx') ? 'Plano de cocina · Ejemplo' : null }));
+    }
     return route.fulfill(ok({ filas: [] }));
   });
   await p.goto(base, { waitUntil: 'domcontentloaded' });
@@ -217,6 +222,11 @@ test('las ligas de las notas internas se pueden picar, en la hoja y en el PDF in
       ['https://ejemplo.mx/plano?a=1&b=2', '_blank'],
       ['https://www.taller101.com', '_blank'],
     ], 'en la hoja, cada liga se pica y abre aparte; el punto final no es parte de la liga');
+    /* Mike, 7-oct: «sólo pon el título de la página a la que liga, no todo
+     * el link». Con título, el título; sin título, el dominio. */
+    await p.waitForFunction(() => document.querySelector('[data-ligas-nota="0"] a')?.textContent.includes('Plano de cocina'), null, { timeout: 5000 });
+    assert.deepEqual(await ligas.evaluateAll((as) => as.map((a) => a.textContent)), ['\u2197 Plano de cocina · Ejemplo', '\u2197 taller101.com'], 'el título, o el dominio');
+    assert.equal(await ligas.first().getAttribute('title'), 'https://ejemplo.mx/plano?a=1&b=2', 'la liga completa queda al pasar el mouse');
 
     const [interno] = await Promise.all([ctx.waitForEvent('page'), p.getByRole('button', { name: 'PDF interno' }).click()]);
     await interno.waitForLoadState();
