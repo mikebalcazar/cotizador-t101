@@ -5710,13 +5710,16 @@ function ZonaFotos({
       gap: 8,
       flexWrap: "wrap",
       alignItems: "center",
-      padding: 8,
-      margin: -8,
+      padding: 12,
       borderRadius: 6,
-      border: arrastrando ? "2px dashed #0080C1" : "2px dashed transparent",
+      /* Mike, 7-oct: «quiero poder arrastrarla o pegarla nada más (…) un
+       * recuadro donde diga, arrastrar imagen o agregar desde carpeta». El
+       * recuadro se ve siempre, no sólo mientras se arrastra. */
+      border: arrastrando ? "2px dashed #0080C1" : "2px dashed #C9C4BB",
       background: arrastrando ? "rgba(0,128,193,0.06)" : "transparent",
       transition: "background 120ms"
-    }
+    },
+    "data-zona-fotos": true
   }, imgs.map((src, i) => /*#__PURE__*/React.createElement("div", {
     key: i,
     style: {
@@ -5766,16 +5769,20 @@ function ZonaFotos({
       justifyContent: "center",
       lineHeight: 1
     }
-  }, "\xD7"))), !lleno && /*#__PURE__*/React.createElement("label", {
+  }, "\xD7"))), !lleno && /*#__PURE__*/React.createElement("span", {
     style: {
-      ...st.btn,
+      fontSize: 12.5,
+      color: "#888"
+    }
+  }, arrastrando ? "" : "Arrastra la imagen aqu\xED o p\xE9gala con Ctrl-V \xB7 "), !lleno && /*#__PURE__*/React.createElement("label", {
+    style: {
       cursor: "pointer",
-      display: "inline-flex",
-      alignItems: "center",
-      gap: 6,
+      color: "#0080C1",
+      textDecoration: "underline",
+      fontSize: 12.5,
       flexShrink: 0
     }
-  }, "📎 ", imgs.length === 0 ? "Agregar foto" : "+ Foto", /*#__PURE__*/React.createElement("input", {
+  }, "agregar desde carpeta", /*#__PURE__*/React.createElement("input", {
     type: "file",
     accept: "image/*",
     multiple: true,
@@ -6195,9 +6202,24 @@ function HojaCotizacion({
             (m.imagenes || []).map((src, k) => h("span", { key: k, style: { position: "relative", display: "inline-block" } },
               h("img", { src, alt: "", "data-imagen-renglon": i + "-" + k, style: { width: 48, height: 48, objectFit: "cover", borderRadius: 4, display: "block" } }),
               !soloVer && h("button", { type: "button", className: "no-print", "data-quitar-imagen": i + "-" + k, title: "Quitar esta imagen", onClick: () => quitarImagen(i, k), style: { position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", border: "none", background: "var(--h-n700, #333)", color: "#fff", fontSize: 11, lineHeight: "18px", padding: 0, cursor: "pointer" } }, "\u2715"))),
-            !soloVer && (m.imagenes || []).length < FOTOS_MAX && h("label", { className: "btn btn-ghost no-print", title: "Escoge una imagen, o arrástrala sobre este renglón", style: { fontSize: 12, cursor: "pointer" } },
-              "+ imagen",
-              h("input", { type: "file", accept: "image/*", multiple: true, hidden: true, "data-campo": "imagen-" + i, onChange: e => { agregarImagenes(i, e.target.files); e.target.value = ""; } }))),
+            /* Mike, 7-oct: «un recuadro donde diga, arrastrar imagen o
+               agregar desde carpeta y que al arrastrarla sobre ese recuadro se
+               cargue a ese ítem». Pegar también: se pica el recuadro y Ctrl-V
+               (el pegado va al recuadro con foco, no a toda la hoja, porque
+               aquí hay muchos renglones). */
+            !soloVer && (m.imagenes || []).length < FOTOS_MAX && h("div", {
+              className: "no-print h-zona-imagen", "data-zona-imagen": i, tabIndex: 0, role: "button",
+              title: "Suelta la imagen aquí, o pica el recuadro y pégala con Ctrl-V",
+              style: { flex: "1 1 220px", minHeight: 48, display: "flex", alignItems: "center", justifyContent: "center", gap: 4, padding: "6px 10px", border: "1.5px dashed color-mix(in srgb, var(--h-text) 30%, transparent)", borderRadius: 6, fontSize: 12, color: "var(--h-muted)", cursor: "copy", textAlign: "center" },
+              onDragOver: e => { if (!traeArchivos(e)) return; e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = "copy"; e.currentTarget.style.borderColor = "#0080C1"; },
+              onDragLeave: e => { e.currentTarget.style.borderColor = ""; },
+              onDrop: e => { e.preventDefault(); e.stopPropagation(); e.currentTarget.style.borderColor = ""; agregarImagenes(i, e.dataTransfer.files); },
+              onPaste: e => { const archivos = Array.from((e.clipboardData && e.clipboardData.items) || []).filter(it => it.kind === "file" && /^image\//.test(it.type)).map(it => it.getAsFile()).filter(Boolean); if (!archivos.length) return; e.preventDefault(); agregarImagenes(i, archivos); },
+            },
+              "Arrastra la imagen aquí o pégala · ",
+              h("label", { style: { color: "#0080C1", textDecoration: "underline", cursor: "pointer" }, onClick: e => e.stopPropagation() },
+                "agregar desde carpeta",
+                h("input", { type: "file", accept: "image/*", multiple: true, hidden: true, "data-campo": "imagen-" + i, onChange: e => { agregarImagenes(i, e.target.files); e.target.value = ""; } })))),
           /* El renglón que la obra dejó aquí (requerimiento, G100): se dice
              de dónde viene y qué va a pasar al aprobar, para que nadie lo
              borre creyendo que sobra ni lo capture dos veces. */
