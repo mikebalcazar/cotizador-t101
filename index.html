@@ -1160,6 +1160,20 @@ window.suiteDB = {
     return r.data.filas;
   },
 
+  /** Los precios base de cost101 (contrato 0.81.0): lo que la empresa paga
+   *  por unidad —un material por pieza o metro, un oficio o un equipo por
+   *  hora—, en centavos y CON IVA. Mike, 7-oct-2026: «Quote debe poder leer
+   *  los precios base y el catálogo de productos». Aquí sólo se lee. Una
+   *  empresa sin cost101 no tiene con qué contestar: eso es lista vacía, no
+   *  un error que tape el catálogo de productos. */
+  async costosBase() {
+    await identidad();
+    const r = await pedir(`/orgs/${ORG}/costos_base?limite=5000`);
+    if (r.estado === 403 || r.estado === 404) return [];
+    if (r.estado !== 200 || !Array.isArray(r.data?.filas)) throw new Error(r.error || String(r.estado));
+    return r.data.filas;
+  },
+
   /** Los ítems del proyecto que están FUERA DEL ALCANCE (contrato 0.64.0):
    *  requerimientos sin aprobar y lo que se sacó. Mike, 2-oct: «cuando en un
    *  proyecto hay ítems fuera de alcance, en quote debe aparecer (…) un botón
@@ -2154,6 +2168,17 @@ function lineasParaAprobar(muebles, precioDe) {
  * suite al aprobar. */
 const TIPOS_DE_ITEM = { mueble: "Mueble", puerta: "Puerta", acabado: "Acabado", servicio: "Servicio", otro: "Otro" };
 const precioManual = m => Number(m.precio !== undefined ? m.precio : m.total) || 0;
+/* El renglón que viene del catálogo de cost101 (Mike, 7-oct-2026, con
+ * botones: «Precio cost101 sin IVA»). Ese precio YA trae los indirectos y la
+ * utilidad que se le pusieron en cost101, así que aquí es PRECIO FINAL: no
+ * lleva los indirectos de quote101, ni comisiones, ni flete, ni redondeo. Lo
+ * único que se le suma es el IVA, al pie, como a todo. Va marcado en el
+ * renglón (`sinCargos`) y viaja en la versión: una cotización que se abre
+ * mañana lo sigue tratando igual aunque el catálogo haya cambiado. */
+const esPrecioFinal = m => esManual(m) && m.sinCargos === true;
+/** Lo que cost101 guarda con IVA (los precios base), dicho sin IVA y al centavo. */
+const IVA_DE_COST101 = 0.16;
+const sinIvaDeCost101 = centavos => Math.round((Number(centavos) || 0) / (1 + IVA_DE_COST101)) / 100;
 /* El precio al cliente se forma por componente (Mike, 23-sep): el precio
  * del mueble —costo × cargos y comisiones, con el flete repartido— se reparte
  * entre sus componentes según lo que cuesta cada uno, y el precio UNITARIO de
@@ -2177,7 +2202,7 @@ function preciosHoja(muebles, { usaF, usaA, usaT, cargosAMano = true }) {
    * tal como se mandó. */
   const factorMano = cargosAMano ? (1 + cfg("indirectos")) * fA * fT : 1;
   const exactos = muebles.map(m => esManual(m) ? null : (m.total || 0) * factor);
-  const exactosMano = muebles.map(m => esManual(m) && cargosAMano ? precioManual(m) * factorMano : null);
+  const exactosMano = muebles.map(m => esManual(m) && cargosAMano && !esPrecioFinal(m) ? precioManual(m) * factorMano : null);
   const sinFlete = muebles.reduce((s, m, i) => s + (exactos[i] !== null ? exactos[i] : exactosMano[i] !== null ? exactosMano[i] : 0) * (m.qty || 1), 0);
   const fleteNeto = usaF && sinFlete > 0 ? flete(sinFlete) : 0;
   const factorFlete = sinFlete > 0 ? 1 + fleteNeto / sinFlete : 1;
@@ -2207,7 +2232,9 @@ function preciosHoja(muebles, { usaF, usaA, usaT, cargosAMano = true }) {
    * componente armado, al peso en lo escrito a mano), para que la suma
    * cuadre con lo que dice la hoja. Es para quien cotiza: no sale al cliente. */
   const costo = muebles.reduce((s, m, i) => exactos[i] === null ? s : s + (m.total || 0) * (m.qty || 1), 0);
-  const aMano = muebles.reduce((s, m, i) => exactos[i] === null ? s + precioManual(m) * (m.qty || 1) : s, 0);
+  const aMano = muebles.reduce((s, m, i) => exactos[i] === null && !esPrecioFinal(m) ? s + precioManual(m) * (m.qty || 1) : s, 0);
+  // Lo de catálogo de cost101: entra tal cual, sin cargos (ver `esPrecioFinal`).
+  const catalogo = muebles.reduce((s, m) => esPrecioFinal(m) ? s + precioManual(m) * (m.qty || 1) : s, 0);
   const baseInd = costo + (cargosAMano ? aMano : 0);
   const ind = baseInd * cfg("indirectos"), ing = costo * cfg("ingenieria"), emb = costo * cfg("embalaje");
   const conCargos = baseInd + ind + ing + emb;
@@ -2215,8 +2242,8 @@ function preciosHoja(muebles, { usaF, usaA, usaT, cargosAMano = true }) {
   const tdc = usaT ? (conCargos + arq) * cfg("comisionTDC") : 0;
   const armados = muebles.reduce((s, m, i) => exactos[i] === null ? s : s + unitarios[i] * (m.qty || 1), 0);
   const manuales = subtotal - armados;
-  const redondeo = subtotal - (conCargos + arq + tdc + fleteNeto + (cargosAMano ? 0 : aMano));
-  const desglose = { costo, aMano, ind, ing, emb, arq, tdc, flete: fleteNeto, armados, manuales, redondeo, cargosAMano };
+  const redondeo = subtotal - (conCargos + arq + tdc + fleteNeto + (cargosAMano ? 0 : aMano) + catalogo);
+  const desglose = { costo, aMano, catalogo, ind, ing, emb, arq, tdc, flete: fleteNeto, armados, manuales, redondeo, cargosAMano };
   return { unitarios, subtotal, componentes, desglose };
 }
 
@@ -4496,7 +4523,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G107";
+const APP_VERSION = "G108";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -6219,13 +6246,44 @@ function HojaCotizacion({
   };
   const abrirCatalogo = async () => {
     setBusqueda("");
-    setCatalogo({ cargando: true, filas: [] });
+    setCatalogo({ cargando: true, filas: [], base: [], pestana: "productos" });
     try {
-      const filas = window.suiteDB && window.suiteDB.productos ? await window.suiteDB.productos() : [];
-      setCatalogo({ cargando: false, filas });
+      const db = window.suiteDB || {};
+      /* Los dos catálogos de una vez (Mike, 7-oct: «agregar del catálogo, ya
+       * sea de productos o de precios base»). Un borrador de cost101 no se
+       * ofrece: todavía no lo aprueba quien dirige. */
+      const [filas, base] = await Promise.all([db.productos ? db.productos() : [], db.costosBase ? db.costosBase() : []]);
+      setCatalogo({ cargando: false, filas: filas.filter(c => c.estado !== "borrador"), base, pestana: "productos" });
     } catch (e) {
-      setCatalogo({ cargando: false, filas: [], error: String(e && e.message || e) });
+      setCatalogo({ cargando: false, filas: [], base: [], pestana: "productos", error: String(e && e.message || e) });
     }
+  };
+  /* Del catálogo a la hoja. Un producto armado en cost101 (trae `estado`)
+   * entra con su precio —sin IVA, con los indirectos y la utilidad de
+   * cost101— como PRECIO FINAL. Un producto de siempre (el modelo con precio
+   * escrito en dash101) entra como hasta hoy: es la base, y la hoja le pone
+   * sus cargos. */
+  const agregarProducto = c => {
+    const deCost101 = c.estado === "aprobado";
+    const precio = (c.precio || 0) / 100;
+    renglonAMano({
+      producto_id: c.id, codigo: c.codigo || "", nombre: c.nombre || "",
+      descripcion: c.descripcion || (deCost101 && c.unidad ? "Precio por " + c.unidad : ""),
+      precio, total: precio,
+      ...(deCost101 ? { sinCargos: true, origen_catalogo: "cost101", unidad: c.unidad || "", tipo: TIPOS_DE_ITEM[c.tipo] ? c.tipo : "servicio" } : {}),
+    });
+    setCatalogo(null);
+  };
+  /* Un precio base es un COSTO —lo que se le paga al proveedor o al
+   * oficial—: entra sin IVA y como base, igual que un renglón escrito a
+   * mano, y la hoja le pone indirectos y comisiones. */
+  const agregarPrecioBase = c => {
+    const precio = sinIvaDeCost101(c.precio);
+    renglonAMano({
+      costo_base_id: c.id, codigo: c.clave || "", nombre: c.nombre || "", descripcion: c.unidad ? "Por " + c.unidad : "",
+      precio, total: precio, origen_catalogo: "cost101-base", unidad: c.unidad || "", tipo: c.tipo === "mo" ? "servicio" : "otro",
+    });
+    setCatalogo(null);
   };
   useEncima(!!catalogo, () => setCatalogo(null));
   const desc = aNum(descuento);
@@ -6235,7 +6293,10 @@ function HojaCotizacion({
   const ivaMonto = base * ivaTasa / 100;
   const total = base + ivaMonto;
   const q = busqueda.trim().toLowerCase();
-  const filasCat = catalogo ? catalogo.filas.filter(c => !q || ((c.codigo || "") + " " + (c.nombre || "") + " " + (c.descripcion || "")).toLowerCase().includes(q)) : [];
+  const filasCat = catalogo ? catalogo.filas.filter(c => !q || ((c.codigo || "") + " " + (c.nombre || "") + " " + (c.descripcion || "") + " " + (c.categoria || "")).toLowerCase().includes(q)) : [];
+  const filasBase = catalogo ? (catalogo.base || []).filter(c => !q || ((c.clave || "") + " " + (c.nombre || "") + " " + (c.categoria || "")).toLowerCase().includes(q)) : [];
+  const enBase = !!catalogo && catalogo.pestana === "base";
+  const TIPO_BASE = { material: "Material", mo: "Mano de obra", equipo: "Equipo" };
   const esquinas = () => ["tl", "tr", "bl", "br"].map(k => h("i", { key: k, className: "corner " + k }));
   const hayArmados = muebles.some(m => !esManual(m));
 
@@ -6406,7 +6467,10 @@ function HojaCotizacion({
               h("input", { className: "input num", "data-campo": "precio-" + i, type: "number", min: 0, step: "any", value: m.precio === undefined ? m.total || 0 : m.precio, readOnly: soloVer, title: "Lo que escribes es la base; los indirectos y las comisiones prendidas van encima (ver «Cómo se forma el precio»)", onChange: e => { const v = aNum(e.target.value); ponRenglon(i, { precio: v, total: v }); } }),
               /* Lo escrito es la base; esto es lo que paga el cliente con los
                  cargos repartidos (Mike, 3-oct). Si son iguales, no se repite. */
-              unit !== precioManual(m) && h("div", { className: "h-arm num", "data-precio-cliente": i, style: { textAlign: "right" } }, "al cliente " + hojaDinero(unit)))
+              unit !== precioManual(m) && h("div", { className: "h-arm num", "data-precio-cliente": i, style: { textAlign: "right" } }, "al cliente " + hojaDinero(unit)),
+              /* Del catálogo de cost101: precio final. Se dice aquí para que
+                 quien cotiza sepa por qué este renglón no sube con los cargos. */
+              esPrecioFinal(m) && h("div", { className: "h-arm no-print", "data-sin-cargos": i, style: { textAlign: "right" }, title: "Viene del catálogo de cost101: ya trae sus indirectos y su utilidad. La hoja sólo le suma el IVA." }, "cost101 · precio final"))
           : h("div", { className: "num", "data-precio": i, title: "Calculado por el armador con los cargos y el flete prendidos", style: { paddingTop: 8, fontSize: 14 } }, hojaDinero(unit)),
         h("div", { className: "num", "data-total": i, style: { paddingTop: 8, fontSize: 14 } }, hojaDinero(unit * qty)),
         !soloVer ? h("div", { className: "h-acc no-print" },
@@ -6426,7 +6490,7 @@ function HojaCotizacion({
        casillas. */
     muebles.length > 0 && (() => {
       const d = precios.desglose || {};
-      const hayManuales = muebles.some(m => esManual(m));
+      const hayManuales = muebles.some(m => esManual(m) && !esPrecioFinal(m));
       const conCargosAMano = d.cargosAMano !== false;
       const pct = k => (cfg(k) * 100).toLocaleString("es-MX", { maximumFractionDigits: 2 }) + "%";
       const cargo = (clave, etiqueta, monto, prendido, set) => h("div", { key: clave, className: "h-cargo" + (set && !prendido ? " apagado" : "") },
@@ -6446,6 +6510,7 @@ function HojaCotizacion({
         h("div", { className: "h-cargos-fila" },
           hayArmados && cargo("costo", "Costo de los muebles armados", d.costo),
           hayManuales && cargo("amano", "Escrito a mano (base)", d.aMano),
+          d.catalogo > 0 && cargo("catalogo", "Catálogo cost101 (precio final, sin cargos)", d.catalogo),
           cargo("indirectos", "Indirectos " + pct("indirectos"), d.ind),
           hayArmados && cargo("ingenieria", "Ingeniería " + pct("ingenieria"), d.ing),
           hayArmados && cargo("embalaje", "Embalaje " + pct("embalaje"), d.emb),
@@ -6490,24 +6555,40 @@ function HojaCotizacion({
     h("div", { className: "dialog hoja", style: { left: "auto", transform: "none" }, onClick: e => e.stopPropagation() },
       esquinas(),
       h("div", { style: { display: "flex", alignItems: "center", gap: 10.2 } },
-        h("div", { style: { fontWeight: 500, fontSize: 20, marginRight: "auto" } }, "Catálogo de productos"),
+        h("div", { style: { fontWeight: 500, fontSize: 20, marginRight: "auto" } }, "Catálogo"),
         h("button", { className: "btn", onClick: () => setCatalogo(null) }, "Cerrar")),
-      h("input", { className: "input", autoFocus: true, placeholder: "Buscar por código, nombre o descripción…", value: busqueda, onChange: e => setBusqueda(e.target.value) }),
+      /* Dos catálogos (Mike, 7-oct): los productos —lo que se vende, con su
+         precio— y los precios base de cost101 —lo que cuesta—. */
+      h("div", { style: { display: "flex", gap: 6.8, flexWrap: "wrap" }, "data-catalogo-pestanas": true },
+        h("button", { className: "btn" + (enBase ? "" : " btn-primary"), "data-catalogo": "productos", onClick: () => setCatalogo(c => ({ ...c, pestana: "productos" })) }, "Productos" + (catalogo.cargando ? "" : " · " + catalogo.filas.length)),
+        h("button", { className: "btn" + (enBase ? " btn-primary" : ""), "data-catalogo": "base", onClick: () => setCatalogo(c => ({ ...c, pestana: "base" })) }, "Precios base" + (catalogo.cargando ? "" : " · " + (catalogo.base || []).length))),
+      h("input", { className: "input", autoFocus: true, placeholder: enBase ? "Buscar por clave, nombre o categoría…" : "Buscar por código, nombre o descripción…", value: busqueda, onChange: e => setBusqueda(e.target.value) }),
+      h("div", { className: "h-aviso", "data-catalogo-regla": true, style: { fontSize: 11.5 } },
+        enBase ? "Costos de cost101, sin IVA. Entran como base: la hoja les pone indirectos y comisiones, igual que a lo escrito a mano."
+          : "Los que dicen cost101 entran con precio final (sin IVA): la hoja sólo les suma el IVA, sin indirectos ni comisiones."),
       h("div", { className: "h-cat" },
         catalogo.cargando ? h("div", { className: "h-vacio" }, "Cargando el catálogo…")
           : catalogo.error ? h("div", { className: "h-vacio" }, "No se pudo leer el catálogo: " + catalogo.error)
-          : catalogo.filas.length === 0 ? h("div", { className: "h-vacio" }, "El catálogo todavía está vacío. Escribe el renglón a mano; el catálogo de conceptos se va a ir armando.")
+          : enBase ? (
+            (catalogo.base || []).length === 0 ? h("div", { className: "h-vacio" }, "No hay precios base. Se capturan en cost101.")
+            : filasBase.length === 0 ? h("div", { className: "h-vacio" }, "Nada coincide con «" + busqueda + "».")
+            : filasBase.map(c => h("div", { key: c.id, "data-precio-base": c.clave || c.id },
+              h("span", { style: { fontFamily: "ui-monospace,monospace", fontSize: 12 } }, c.clave || "—"),
+              h("span", { style: { minWidth: 0 } },
+                h("span", { style: { display: "block", fontWeight: 500 } }, c.nombre),
+                h("span", { style: { display: "block", fontSize: 11.5, color: "var(--h-muted)" } }, (TIPO_BASE[c.tipo] || c.tipo) + (c.categoria ? " · " + c.categoria : "") + " · por " + c.unidad)),
+              h("span", { className: "num", title: "Sin IVA. En cost101 está con IVA: " + hojaDinero((c.precio || 0) / 100) }, hojaDinero(sinIvaDeCost101(c.precio))),
+              h("button", { className: "btn btn-primary", style: { fontSize: 12, padding: "4px 10px" }, onClick: () => agregarPrecioBase(c) }, "Agregar"))))
+          : catalogo.filas.length === 0 ? h("div", { className: "h-vacio" }, "El catálogo todavía está vacío. Escribe el renglón a mano, o arma tus productos en cost101.")
           : filasCat.length === 0 ? h("div", { className: "h-vacio" }, "Nada coincide con «" + busqueda + "».")
-          : filasCat.map(c => h("div", { key: c.id },
+          : filasCat.map(c => h("div", { key: c.id, "data-producto": c.codigo || c.id },
             h("span", { style: { fontFamily: "ui-monospace,monospace", fontSize: 12 } }, c.codigo || "—"),
             h("span", { style: { minWidth: 0 } },
               h("span", { style: { display: "block", fontWeight: 500 } }, c.nombre),
-              c.descripcion && h("span", { style: { display: "block", fontSize: 11.5, color: "var(--h-muted)" } }, c.descripcion)),
+              (c.descripcion || c.estado === "aprobado") && h("span", { style: { display: "block", fontSize: 11.5, color: "var(--h-muted)" } },
+                [c.estado === "aprobado" ? "cost101" + (c.unidad ? " · por " + c.unidad : "") + (c.categoria ? " · " + c.categoria : "") : null, c.descripcion].filter(Boolean).join(" · "))),
             h("span", { className: "num" }, hojaDinero((c.precio || 0) / 100)),
-            h("button", { className: "btn btn-primary", style: { fontSize: 12, padding: "4px 10px" }, onClick: () => {
-              renglonAMano({ producto_id: c.id, codigo: c.codigo || "", nombre: c.nombre || "", descripcion: c.descripcion || "", precio: (c.precio || 0) / 100, total: (c.precio || 0) / 100 });
-              setCatalogo(null);
-            } }, "Agregar"))))));
+            h("button", { className: "btn btn-primary", style: { fontSize: 12, padding: "4px 10px" }, onClick: () => agregarProducto(c) }, "Agregar"))))));
 
   return h("div", { className: "hoja", "data-pantalla": "hoja" },
     h("style", null, HOJA_CSS),
@@ -8008,8 +8089,9 @@ function Cotizador({
     const fila = (etq, monto) => '<div class="rr"><span>' + etq + '</span><span>' + $(monto) + '</span></div>';
     const arqRow = usaA ? fila("Comision profesionista (" + pctI("comisionArq") + ")", D.arq) : "";
     const tdcRow = usaT ? fila("Comision TDC (" + pctI("comisionTDC") + ")", D.tdc) : "";
-    const totalBase = D.costo + D.aMano + D.ind + D.ing + D.emb + D.flete;
+    const totalBase = D.costo + D.aMano + (D.catalogo || 0) + D.ind + D.ing + D.emb + D.flete;
     const resumenRows = (D.costo > 0 ? fila("Costo de los muebles armados", D.costo) : "") + (D.aMano > 0 ? fila("Escrito a mano (base)", D.aMano) : "")
+      + (D.catalogo > 0 ? fila("Catalogo cost101 (precio final, sin cargos)", D.catalogo) : "")
       + fila("Indirectos (" + pctI("indirectos") + ")", D.ind) + (D.costo > 0 ? fila("Ingenieria (" + pctI("ingenieria") + ")", D.ing) + fila("Embalaje (" + pctI("embalaje") + ")", D.emb) : "") + (usaF && D.costo > 0 ? fila("Flete", D.flete) : "")
       + '<div class="rs"><span>Total base</span><span>' + $(totalBase) + '</span></div>' + arqRow + tdcRow + fila("Redondeo", D.redondeo)
       + (descMonto > 0 ? fila("Descuento (" + descuento + "%)", -descMonto) : "");
