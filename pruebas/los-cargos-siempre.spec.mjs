@@ -98,6 +98,14 @@ test('con puros renglones a mano, la caja «Cómo se forma el precio» está, co
     assert.equal(await casilla(p, 'flete').isChecked(), true, 'prendida');
     assert.equal(await p.locator('[data-cargo="ingenieria"]').count(), 0, 'ingeniería y embalaje no: son del armador');
     assert.equal(await p.locator('[data-hoja="cargos"]').evaluate((e) => e.classList.contains('no-print')), true, 'y no se imprime');
+    /* Mike, 7-oct: «en la lista aparecen ya con el sobrecosto, y adicional
+     * al final se vuelven a agregar». No se suman dos veces; la caja lo dice y
+     * cierra en el mismo subtotal de la hoja (escogió «dejar como está,
+     * aclarado»). */
+    assert.match(await p.locator('[data-hoja="cargos"]').innerText(), /ya está incluido en los precios de arriba/, 'la caja dice que ya está dentro de los precios');
+    const suma = await p.locator('[data-cargos-suma]').innerText();
+    const subtotal = (await p.locator('[data-hoja="subtotal"]').innerText()).trim();
+    assert.ok(suma.includes(subtotal), `y cierra en el mismo Subtotal (${subtotal}): ${suma}`);
     assert.deepEqual(errores, [], 'sin errores de JavaScript');
   } finally { await ctx.close(); }
 });
