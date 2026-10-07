@@ -5,6 +5,33 @@ Lo escribe la sesión de Claude Code que trabaja el repo. Lo más nuevo arriba.
 
 ---
 
+# 7-oct-2026 · G108: agregar del catálogo — productos y precios base de cost101
+
+**Medido aquí (pruebas/el-catalogo-de-cost101.spec.mjs: 5 de 5; la batería completa: 142, con las 10 de `puerta.spec` pasando sola —en la corrida completa de este contenedor se cayeron por tiempo de arranque de wrangler, con y sin este cambio no difieren—). Lo hizo el chat de cost101, no Jr.**
+
+Mike, 7-oct: «Quote debe poder leer los precios base y el catálogo de
+productos. Hay que implementar en quote la opción de agregar del catálogo, ya
+sea de productos o de precios base.» Y con botones, sobre qué precio llega de
+cost101: **«Precio cost101 sin IVA»** — con los indirectos y la utilidad de
+cost101 adentro; quote101 sólo le suma IVA, no sus indirectos ni comisiones.
+
+## Qué quedó
+
+- «Buscar en catálogo» tiene dos pestañas: **Productos** y **Precios base**
+  (`suiteDB.costosBase()`, API 0.81.0). Los borradores de cost101 no salen.
+- Un producto de cost101 (trae `estado: 'aprobado'`) entra como **precio
+  final**: el renglón lleva `sinCargos: true` y `preciosHoja` no le pone
+  indirectos, comisiones, flete ni redondeo. En la caja «Cómo se forma el
+  precio» sale aparte («Catálogo cost101»), y la caja sigue cerrando en el
+  subtotal. El PDF interno también lo lista.
+- Un precio base entra **sin IVA** ($245.00 → $211.21) y **como base**: lleva
+  los cargos de la hoja, igual que lo escrito a mano. Es un costo, no un
+  precio de venta. *Esto lo decidió el chat, no Mike: si lo quiere distinto,
+  es una línea en `agregarPrecioBase`.*
+- Un producto de siempre (dash101, sin receta) entra como hasta hoy.
+- Una empresa sin cost101: `costos_base` contesta 403 y la pestaña sale
+  vacía; el catálogo de productos no se rompe.
+
 # 3-oct-2026 · G106: las comisiones siempre a la vista, y los indirectos también en lo escrito a mano
 
 **Medido aquí (npm run prueba: 123 pruebas, 0 fallas) y en vivo.**
