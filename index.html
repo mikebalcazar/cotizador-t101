@@ -2169,12 +2169,13 @@ function lineasParaAprobar(muebles, precioDe) {
 const TIPOS_DE_ITEM = { mueble: "Mueble", puerta: "Puerta", acabado: "Acabado", servicio: "Servicio", otro: "Otro" };
 const precioManual = m => Number(m.precio !== undefined ? m.precio : m.total) || 0;
 /* El renglón que viene del catálogo de cost101 (Mike, 7-oct-2026, con
- * botones: «Precio cost101 sin IVA»). Ese precio YA trae los indirectos y la
- * utilidad que se le pusieron en cost101, así que aquí es PRECIO FINAL: no
- * lleva los indirectos de quote101, ni comisiones, ni flete, ni redondeo. Lo
- * único que se le suma es el IVA, al pie, como a todo. Va marcado en el
- * renglón (`sinCargos`) y viaja en la versión: una cotización que se abre
- * mañana lo sigue tratando igual aunque el catálogo haya cambiado. */
+ * botones: «Precio cost101 sin IVA»). Hasta el 8-oct era PRECIO FINAL: sin
+ * indirectos, comisiones ni flete (`sinCargos`). Mike, 8-oct: «cuando se
+ * agregan productos de catálogo, también deben sumar las comisiones
+ * adicionales de indirectos, flete, comisión profesionista, comisión tdc».
+ * Desde entonces entra como base, igual que lo escrito a mano. La marca
+ * `sinCargos` sólo queda en lo que ya se aprobó (eso no se toca); en una
+ * cotización abierta se le quita al ponerla al día con cost101. */
 const esPrecioFinal = m => esManual(m) && m.sinCargos === true;
 /* El precio al cliente se forma por componente (Mike, 23-sep): el precio
  * del mueble —costo × cargos y comisiones, con el flete repartido— se reparte
@@ -4520,7 +4521,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G109";
+const APP_VERSION = "G110";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -6155,6 +6156,46 @@ function HojaCotizacion({
   useEffect(() => {
     if (!soloVer && emp.usuario && !hoja.responsable) setHoja(p => p.responsable ? p : { ...p, responsable: emp.usuario });
   }, [emp.usuario, soloVer, hoja.responsable]);
+  /* Mike, 8-oct-2026: «Si un precio se actualiza en cost101, ya sea base o de
+   * catálogo, se deben actualizar en quote, pero sólo en costos no
+   * autorizados aún. Si una cotización ya fue autorizada, ya no se
+   * actualizan los precios». Al abrir para editar una cotización que NO está
+   * aprobada, cada renglón de cost101 toma el precio de hoy de su producto o
+   * de su precio base, y lo que entró como precio final pasa a llevar los
+   * cargos de la hoja. Una aprobada es `soloVer`: no se toca nunca. */
+  const [alDia, setAlDia] = useState(null);
+  useEffect(() => {
+    if (soloVer) return;
+    const deCost = m => esManual(m) && ((m.origen_catalogo === "cost101" && m.producto_id) || (m.origen_catalogo === "cost101-base" && m.costo_base_id));
+    if (!muebles.some(deCost)) return;
+    let vivo = true;
+    (async () => {
+      try {
+        const db = window.suiteDB || {};
+        const [prods, base] = await Promise.all([db.productos ? db.productos() : [], db.costosBase ? db.costosBase() : []]);
+        if (!vivo) return;
+        const P = new Map(prods.map(c => [c.id, c])), B = new Map(base.map(c => [c.id, c]));
+        const fuente = m => !deCost(m) ? null : m.origen_catalogo === "cost101" ? P.get(m.producto_id) : B.get(m.costo_base_id);
+        const nuevo = (f) => (Number(f.precio) || 0) / 100;
+        const ponerAlDia = m => {
+          const f = fuente(m);
+          if (!f) return m;
+          const cambiaPrecio = Math.abs(precioManual(m) - nuevo(f)) >= 0.005;
+          if (!cambiaPrecio && !m.sinCargos) return m;
+          const r = { ...m };
+          delete r.sinCargos;
+          if (cambiaPrecio) { r.precio = nuevo(f); r.total = nuevo(f); }
+          return r;
+        };
+        const precios = muebles.filter(m => { const f = fuente(m); return f && Math.abs(precioManual(m) - nuevo(f)) >= 0.005; }).length;
+        const conCargos = muebles.filter(m => fuente(m) && m.sinCargos).length;
+        if (!precios && !conCargos) return;
+        setMuebles(lista => lista.map(ponerAlDia));
+        setAlDia({ precios, conCargos });
+      } catch (_) { /* sin la suite no hay con qué comparar: se queda como estaba */ }
+    })();
+    return () => { vivo = false; };
+  }, [soloVer]);
   const campo = k => ({
     "data-campo": k,
     value: hoja[k] === undefined || hoja[k] === null ? "" : hoja[k],
@@ -6257,7 +6298,8 @@ function HojaCotizacion({
   };
   /* Del catálogo a la hoja. Un producto armado en cost101 (trae `estado`)
    * entra con su precio —sin IVA, con los indirectos y la utilidad de
-   * cost101— como PRECIO FINAL. Un producto de siempre (el modelo con precio
+   * cost101— como BASE: la hoja le pone sus indirectos, comisiones y flete
+   * (Mike, 8-oct). Un producto de siempre (el modelo con precio
    * escrito en dash101) entra como hasta hoy: es la base, y la hoja le pone
    * sus cargos. */
   const agregarProducto = c => {
@@ -6267,7 +6309,7 @@ function HojaCotizacion({
       producto_id: c.id, codigo: c.codigo || "", nombre: c.nombre || "",
       descripcion: c.descripcion || (deCost101 && c.unidad ? "Precio por " + c.unidad : ""),
       precio, total: precio,
-      ...(deCost101 ? { sinCargos: true, origen_catalogo: "cost101", unidad: c.unidad || "", tipo: TIPOS_DE_ITEM[c.tipo] ? c.tipo : "servicio" } : {}),
+      ...(deCost101 ? { origen_catalogo: "cost101", unidad: c.unidad || "", tipo: TIPOS_DE_ITEM[c.tipo] ? c.tipo : "servicio" } : {}),
     });
     setCatalogo(null);
   };
@@ -6473,7 +6515,10 @@ function HojaCotizacion({
               unit !== precioManual(m) && h("div", { className: "h-arm num", "data-precio-cliente": i, style: { textAlign: "right" } }, "al cliente " + hojaDinero(unit)),
               /* Del catálogo de cost101: precio final. Se dice aquí para que
                  quien cotiza sepa por qué este renglón no sube con los cargos. */
-              esPrecioFinal(m) && h("div", { className: "h-arm no-print", "data-sin-cargos": i, style: { textAlign: "right" }, title: "Viene del catálogo de cost101: ya trae sus indirectos y su utilidad. La hoja sólo le suma el IVA." }, "cost101 · precio final"))
+              esPrecioFinal(m) && h("div", { className: "h-arm no-print", "data-sin-cargos": i, style: { textAlign: "right" }, title: "Se aprobó cuando lo de cost101 entraba como precio final: no lleva los cargos de la hoja." }, "cost101 · precio final"),
+              /* Mike, 8-oct: lo de cost101 se pone al día mientras la cotización
+                 no se apruebe; aprobada, se queda como se vendió. */
+              !esPrecioFinal(m) && (m.origen_catalogo === "cost101" || m.origen_catalogo === "cost101-base") && h("div", { className: "h-arm no-print", "data-cost101": i, style: { textAlign: "right" }, title: aprobacion ? "Precio congelado al aprobar." : "Sigue al precio de cost101 hasta que se apruebe la cotización." }, aprobacion ? "cost101 · congelado" : "cost101 · al día"))
           : h("div", { className: "num", "data-precio": i, title: "Calculado por el armador con los cargos y el flete prendidos", style: { paddingTop: 8, fontSize: 14 } }, hojaDinero(unit)),
         h("div", { className: "num", "data-total": i, style: { paddingTop: 8, fontSize: 14 } }, hojaDinero(unit * qty)),
         !soloVer ? h("div", { className: "h-acc no-print" },
@@ -6568,7 +6613,7 @@ function HojaCotizacion({
       h("input", { className: "input", autoFocus: true, placeholder: enBase ? "Buscar por clave, nombre o categoría…" : "Buscar por código, nombre o descripción…", value: busqueda, onChange: e => setBusqueda(e.target.value) }),
       h("div", { className: "h-aviso", "data-catalogo-regla": true, style: { fontSize: 11.5 } },
         enBase ? "Costos de cost101, con IVA, tal como están ahí. Entran como base: la hoja les pone indirectos, comisiones y el IVA al pie, igual que a lo escrito a mano."
-          : "Los que dicen cost101 entran con precio final (sin IVA): la hoja sólo les suma el IVA, sin indirectos ni comisiones."),
+          : "Los que dicen cost101 entran sin IVA y como base: la hoja les pone indirectos, flete y comisiones, como a todo. Mientras la cotización no se apruebe, su precio sigue al de cost101."),
       h("div", { className: "h-cat" },
         catalogo.cargando ? h("div", { className: "h-vacio" }, "Cargando el catálogo…")
           : catalogo.error ? h("div", { className: "h-vacio" }, "No se pudo leer el catálogo: " + catalogo.error)
@@ -6596,6 +6641,11 @@ function HojaCotizacion({
   return h("div", { className: "hoja", "data-pantalla": "hoja" },
     h("style", null, HOJA_CSS),
     barra,
+    alDia && h("div", { className: "h-aviso no-print", "data-al-dia": true, style: { margin: "8px 0", fontSize: 13 } },
+      (alDia.precios ? (alDia.precios === 1 ? "Se puso al día 1 precio" : "Se pusieron al día " + alDia.precios + " precios") + " de cost101" : "")
+      + (alDia.precios && alDia.conCargos ? ", y " : "")
+      + (alDia.conCargos ? (alDia.conCargos === 1 ? "1 renglón del catálogo ahora lleva" : alDia.conCargos + " renglones del catálogo ahora llevan") + " indirectos, flete y comisiones" : "")
+      + ". Guarda para dejarlo así."),
     h("div", { ref: hojaRef, className: "sheet" }, esquinas(), encabezado, datos, renglones, pie),
     exportes,
     // Al <body>: la hoja lleva `transform` para centrarse, y dentro de un

@@ -5,6 +5,26 @@ Lo escribe la sesión de Claude Code que trabaja el repo. Lo más nuevo arriba.
 
 ---
 
+# 8-oct-2026 · G110: lo de cost101 lleva cargos y se pone al día hasta aprobar
+
+**Medido aquí: pruebas/*.spec.mjs, 144 de 144 (el-catalogo-de-cost101, 7 de 7).**
+
+Mike, 8-oct, con captura: «cuando se agregan productos de catálogo, también
+deben sumar las comisiones adicionales de indirectos, flete, comisión
+profesionista, comisión tdc». Lo de G108 (producto de cost101 = precio final,
+`sinCargos`) queda sustituido: entra sin IVA y como **base**, igual que lo
+escrito a mano.
+
+Y: «Si un precio se actualiza en cost101, ya sea base o de catálogo, se deben
+actualizar en quote, pero sólo en costos no autorizados aún. Si una cotización
+ya fue autorizada, ya no se actualizan los precios». Al entrar a editar una
+cotización **no aprobada**, cada renglón con `producto_id` (cost101) o
+`costo_base_id` (cost101-base) toma el precio de hoy, y lo que traía
+`sinCargos` lo pierde; la hoja lo avisa («Se pusieron al día N precios… Guarda
+para dejarlo así»). Una aprobada es sólo de ver y no se toca: el renglón dice
+«cost101 · congelado». OJO: los precios de cost101 ya traen los indirectos y
+la utilidad de cost101; ahora encima van los de la hoja (decisión de Mike).
+
 # 8-oct-2026 · G109: el precio base entra a la hoja CON IVA
 
 **Medido aquí: pruebas/el-catalogo-de-cost101.spec.mjs, 5 de 5.**
