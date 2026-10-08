@@ -3,55 +3,64 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#0a1828">
+<meta name="theme-color" content="#060d13">
 <title>quote101 — Entrar</title>
 <link rel="icon" href="data:,">
 <style>
-/* Las mismas tres fuentes de la app, del propio origen: nada se le pide a
+/* Las fuentes de la app, del propio origen: nada se le pide a
    Google. Las cifras van primero en la pila y sólo cubren dígitos, así que el
    código de 6 dígitos se lee alineado sin tocar el resto del texto. */
 @font-face{font-family:"Cifras";src:url("fonts/fira-cifras-400.woff2") format("woff2");font-weight:400 500;font-display:swap;unicode-range:U+0030-0039,U+00B0,U+00B1,U+00D7,U+0025}
 @font-face{font-family:"Raleway";src:url("fonts/raleway-400.woff2") format("woff2");font-weight:400;font-display:swap}
 @font-face{font-family:"Raleway";src:url("fonts/raleway-600.woff2") format("woff2");font-weight:600;font-display:swap}
-@font-face{font-family:"Sansation";src:url("fonts/sansation-700.woff2") format("woff2");font-weight:700;font-display:swap}
+@font-face{font-family:"Cifras";src:url("fonts/fira-cifras-600.woff2") format("woff2");font-weight:600 900;font-display:swap;unicode-range:U+0030-0039,U+00B0,U+00B1,U+00D7,U+0025}
 
-:root { --tinta:#0a1828; --papel:#f7f9fb; --linea:#d7e0e8; --azul:#0381c2; --mal:#b3261e; --tenue:#5b6b7a; }
+:root { --tinta:#e8eef2; --tenue:#a9c0ce; --linea:rgba(255,255,255,.14); --acento:#3AA3DC; --liga:#86c9ec; --mal:#F0A08A; color-scheme:dark; }
+/* G111 (Mike, 8-oct-2026): el look de cost101 en toda la suite — el degradado,
+   el vidrio y los botones redondos. Sin desenfoque, como el resto de quote101. */
 *{box-sizing:border-box}
 body{
   margin:0; min-height:100dvh; display:grid; place-items:center; padding:24px 16px;
-  font-family:"Cifras","Raleway",system-ui,sans-serif; color:var(--tinta);
-  background:var(--tinta);
-  background-image:radial-gradient(circle at 20% 15%, rgba(0,200,230,.18) 0%, transparent 55%),
-                   radial-gradient(circle at 85% 80%, rgba(80,130,220,.20) 0%, transparent 55%);
+  font-family:"Cifras","Raleway",system-ui,sans-serif; color:var(--tinta); font-variant-numeric:lining-nums;
+  background:#060d13 radial-gradient(130% 70% at 50% -12%,#2a9be0 0%,#0a6aa6 22%,#0b3655 48%,#07141e 72%,#05090d 100%) fixed;
 }
-.caja{width:100%;max-width:380px;background:var(--papel);border-radius:14px;padding:26px 22px;box-shadow:0 18px 50px rgba(0,0,0,.35)}
-h1{font-family:"Sansation",sans-serif;font-size:26px;margin:0 0 2px;letter-spacing:.3px}
+.caja{width:100%;max-width:380px;background:linear-gradient(180deg,rgba(255,255,255,.085),rgba(255,255,255,.035)),rgba(10,32,48,.55);border:1px solid rgba(255,255,255,.13);border-radius:24px;padding:26px 22px;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 18px 50px rgba(0,0,0,.35)}
+/* El logotipo oficial, para fondo oscuro: la palabra en blanco y el aro en #3AA3DC. */
+.marca{display:block;margin:0 0 18px}
+.marca svg{display:block;height:36px;width:auto}
+h1{font-family:"Raleway",system-ui,sans-serif;font-weight:600;font-size:22px;margin:0 0 4px;letter-spacing:0}
 .sub{margin:0 0 18px;color:var(--tenue);font-size:14px;line-height:1.5}
 label{display:block;font-size:13px;font-weight:600;margin:0 0 6px}
 input{
-  width:100%;padding:11px 12px;border:1px solid var(--linea);border-radius:9px;
-  font:inherit;font-size:16px;background:#fff;color:inherit
+  width:100%;padding:11px 12px;border:1px solid var(--linea);border-radius:12px;
+  font:inherit;font-size:16px;background:rgba(255,255,255,.06);color:inherit
 }
-input:focus{outline:2px solid var(--azul);outline-offset:1px;border-color:var(--azul)}
+input::placeholder{color:rgba(232,238,242,.45)}
+input:hover{border-color:rgba(255,255,255,.3)}
+input:focus{outline:2px solid var(--acento);outline-offset:1px;border-color:var(--acento)}
 input.digitos{font-size:24px;letter-spacing:10px;text-align:center;font-variant-numeric:tabular-nums}
 button{
-  width:100%;margin-top:14px;padding:12px;border:0;border-radius:9px;font:inherit;font-weight:600;
-  font-size:15px;background:var(--azul);color:#fff;cursor:pointer
+  width:100%;margin-top:14px;padding:12px;border:0;border-radius:999px;font:inherit;font-weight:600;
+  font-size:15px;background:#fff;color:#0b1b26;cursor:pointer
 }
-button.suave{background:#fff;color:var(--tinta);border:1px solid var(--linea)}
+button:hover{background:#e3f2fb}
+button.suave{background:rgba(255,255,255,.07);color:var(--tinta);border:1px solid rgba(255,255,255,.16)}
+button.suave:hover{background:rgba(255,255,255,.14)}
 button:disabled{opacity:.55;cursor:default}
 .err{color:var(--mal);font-size:13.5px;margin-top:10px;min-height:1.2em;line-height:1.4}
 .nota{color:var(--tenue);font-size:12.5px;margin:12px 0 0;line-height:1.5;text-align:center}
-.enlace{background:none;border:0;color:var(--azul);font:inherit;font-size:13px;padding:4px;cursor:pointer;width:auto;margin:0}
+.enlace{background:none;border:0;color:var(--liga);font:inherit;font-size:13px;padding:4px;cursor:pointer;width:auto;margin:0}
+.enlace:hover{background:none;text-decoration:underline}
 .opciones{display:flex;justify-content:center;gap:10px;margin-top:10px;flex-wrap:wrap}
 [hidden]{display:none !important}
 </style>
 </head>
 <body>
 <main class="caja">
+  <div class="marca"><svg xmlns="http://www.w3.org/2000/svg" height="36" viewBox="86.69 208.74 442.06 194.51" role="img" aria-label="quote101" fill="#3AA3DC"><g fill="#FFFFFF" transform="translate(0,351.34) scale(0.047783,-0.047783)"><path d="M2536.287734131386 812Q2441.287734131386 836 2361.287734131386 836Q2076.287734131386 836 2076.287734131386 533Q2076.287734131386 220 2323.287734131386 220Q2447.287734131386 220 2536.287734131386 274ZM2801.287734131386 -380H2536.287734131386V50Q2428.287734131386 0 2292.287734131386 0Q1814.287734131386 0 1814.287734131386 531Q1814.287734131386 1050 2359.287734131386 1050Q2562.287734131386 1050 2801.287734131386 1007ZM3893.887734131386 1050V0H3686.887734131386L3654.887734131386 134Q3473.887734131386 0 3270.887734131386 0Q2948.887734131386 0 2948.887734131386 381V1050H3213.887734131386V388Q3213.887734131386 214 3365.887734131386 214Q3494.887734131386 214 3628.887734131386 317V1050ZM4511.487734131386 200Q4766.487734131386 200 4766.487734131386 529Q4766.487734131386 850 4511.487734131386 850Q4256.487734131386 850 4256.487734131386 529Q4256.487734131386 200 4511.487734131386 200ZM3991.487734131386 525Q3991.487734131386 1053 4511.487734131386 1053Q5031.487734131386 1053 5031.487734131386 525Q5031.487734131386 -2 4511.487734131386 -2Q3993.487734131386 -2 3991.487734131386 525ZM5114.087734131386 1220H5310.087734131386L5350.087734131386 1050H5614.087734131386V840H5379.087734131386V357Q5379.087734131386 210 5506.087734131386 210H5614.087734131386V0H5378.087734131386Q5114.087734131386 0 5114.087734131386 283ZM6134.687734131387 1050Q6612.687734131387 1050 6612.687734131387 562Q6612.687734131387 497 6603.687734131387 432H5906.687734131387Q5906.687734131387 210 6232.687734131387 210Q6391.687734131387 210 6550.687734131387 240V30Q6411.687734131387 0 6212.687734131387 0Q5641.687734131387 0 5641.687734131387 537Q5641.687734131387 1050 6134.687734131387 1050ZM5906.687734131387 616H6354.687734131387V624Q6354.687734131387 842 6134.687734131387 842Q5924.687734131387 842 5906.687734131387 616Z"/></g><rect x="86.69" y="360.72" width="26.49" height="6.52"/><path d="M431.49,208.74c-53.63,0-97.26,43.63-97.26,97.26,0,20.28,6.25,39.12,16.91,54.72h-209.28v6.52h214.15c17.85,21.95,45.05,36.01,75.48,36.01,53.63,0,97.26-43.63,97.26-97.26s-43.63-97.26-97.26-97.26ZM431.49,396.74c-29.48,0-55.72-14.14-72.3-35.99v-.02h-.01c-11.55-15.22-18.42-34.18-18.42-54.72,0-50.03,40.7-90.74,90.74-90.74s90.73,40.7,90.73,90.74-40.7,90.74-90.73,90.74Z"/><path d="M431.81,262.73c-26.11,0-39.16,14.87-39.16,44.62s13.05,44.38,39.16,44.38,38.48-14.79,38.48-44.38-12.83-44.62-38.48-44.62ZM431.81,337.61c-14.85,0-22.28-10.21-22.28-30.63s7.43-30.14,22.28-30.14,21.61,10.05,21.61,30.14-7.2,30.63-21.61,30.63Z"/><rect x="366.4" y="261.5" width="16.27" height="89.61"/><rect x="479.98" y="261.19" width="16.27" height="89.61"/></svg></div>
   <!-- Correo -->
   <section id="v-correo">
-    <h1>quote101</h1>
+    <h1>Entrar</h1>
     <p class="sub">Cotizaciones de mueble. Se entra con la cuenta de la suite 101, la misma de las demás aplicaciones.</p>
     <label for="correo">Tu correo</label>
     <input type="email" id="correo" autocomplete="username" inputmode="email" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="tu@correo.com">
