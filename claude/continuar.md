@@ -5,6 +5,31 @@ Lo escribe la sesión de Claude Code que trabaja el repo. Lo más nuevo arriba.
 
 ---
 
+# 8-oct-2026 · G111: el look de cost101 (Mike: «el look and feel de cost101 en toda la suite»)
+
+**Medido aquí: pruebas/*.spec.mjs, 144 de 144. Capturas a 1440×900 y 390×844
+sin desborde a lo ancho (scrollWidth = ancho de la ventana) y con un revisor de
+contraste que no encontró tinta oscura sobre oscuro en inicio, proyecto,
+armador, configuración, recibo y alta de cliente.**
+
+- Fondo: el degradado de cost101, en la misma capa fija y quieta de G103.
+- Interfaz: vidrio (degradado translúcido, borde .13, radio 20), botones
+  redondos (primario blanco, secundario translúcido), campos translúcidos,
+  diálogos `rgba(10,32,48,.92)` radio 24, barra oscura. **Sin backdrop-filter**:
+  se quitó en G103 y así sigue; por eso la barra va más opaca que la de cost101.
+- Los colores claros que la app trae en línea se traducen en UN lugar: el
+  bloque «ESTILO DE LA SUITE» del `<style>` principal, con el alcance `.q-app`
+  y sin tocar nada dentro de `.hoja` ni `.hoja-velo`.
+- **La hoja de cotización y todo lo que se imprime se quedan CLAROS, tal cual**
+  (HOJA_CSS no se tocó; tampoco los PDF de ventana aparte).
+- Logotipo: en la barra y en entrar.html, el oficial `quote101-claro` (palabra
+  blanca, aro #3AA3DC). El de la pantalla de carga sigue azul porque va sobre la
+  hoja blanca (Mike, 14-sep).
+- entrar.html: mismo degradado, tarjeta de vidrio, títulos en Raleway 600
+  (Sansation sólo vive dentro del logotipo).
+- Prueba cambiada: el-ambiente pedía la tarjeta del cliente «casi opaca»
+  (el blanco de antes); ahora pide vidrio con tinta clara.
+
 # 8-oct-2026 · G110: lo de cost101 lleva cargos y se pone al día hasta aprobar
 
 **Medido aquí: pruebas/*.spec.mjs, 144 de 144 (el-catalogo-de-cost101, 7 de 7).**

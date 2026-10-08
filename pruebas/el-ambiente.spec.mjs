@@ -110,10 +110,16 @@ test('sin cristal esmerilado: ningún elemento pintado lleva backdrop-filter', a
       return malos;
     });
     assert.deepEqual(conCristal, [], 'nada lleva backdrop-filter');
-    // Y lo que antes era translúcido se lee: la tarjeta del cliente es casi opaca.
-    const fondo = await p.evaluate(() => getComputedStyle(document.querySelector('.cliente-block')).backgroundColor);
-    const alfa = Number((fondo.match(/rgba?\([^)]*,\s*([\d.]+)\)/) || [])[1] ?? 1);
-    assert.ok(alfa >= 0.85, `la tarjeta del cliente es casi opaca (${fondo})`);
+    // G111 (Mike, 8-oct-2026: el look de cost101): la tarjeta del cliente es
+    // vidrio —el degradado translúcido de cost101, SIN desenfoque— y se lee
+    // porque la tinta es clara sobre el fondo oscuro, no porque sea opaca.
+    const tarjeta = await p.evaluate(() => {
+      const cs = getComputedStyle(document.querySelector('.cliente-block'));
+      return { imagen: cs.backgroundImage, tinta: cs.color };
+    });
+    assert.match(tarjeta.imagen, /linear-gradient/, `la tarjeta del cliente es de vidrio (${tarjeta.imagen})`);
+    const [r, g, b] = (tarjeta.tinta.match(/\d+/g) || []).map(Number);
+    assert.ok(r > 200 && g > 200 && b > 200, `con tinta clara (${tarjeta.tinta})`);
   } finally { await ctx.close(); }
 });
 
