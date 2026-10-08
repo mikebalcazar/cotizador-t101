@@ -10,9 +10,17 @@
  * IVA» — con los indirectos y la utilidad de cost101 adentro, y quote101 sólo
  * le suma IVA: no sus indirectos ni sus comisiones.
  *
+ * Mike, 8-oct-2026: «cuando se agregan productos de catálogo, también deben
+ * sumar las comisiones adicionales de indirectos, flete, comisión
+ * profesionista, comisión tdc» y «si un precio se actualiza en cost101 (…)
+ * se deben actualizar en quote, pero sólo en costos no autorizados aún».
+ *
  * Lo que se mide:
- *   · un producto de cost101 entra como PRECIO FINAL: no sube con indirectos,
- *     comisiones ni flete, y el subtotal lo cuenta tal cual;
+ *   · un producto de cost101 entra sin IVA y como BASE: lleva indirectos,
+ *     comisiones y flete, igual que lo escrito a mano;
+ *   · al abrir para editar una cotización no aprobada, lo de cost101 toma el
+ *     precio de hoy y lo que había entrado como precio final pasa a llevar
+ *     cargos; una aprobada no se mueve;
  *   · un precio base entra CON IVA (Mike, 8-oct) y como base: lleva los cargos de la
  *     hoja, igual que lo escrito a mano;
  *   · un producto de siempre (dash101, sin receta) sigue como hasta hoy;
@@ -61,10 +69,10 @@ const COSTOS = [
 const A_MANO = { id: 'm-1', manual: true, codigo: '', nombre: 'Instalación', descripcion: '', qty: 1, precio: 1000, total: 1000, componentes: [], imagenes: [] };
 const CLIENTE = { id: 'cl-1', nombre: 'Sanje', negocio_id: 'n-1' };
 const PROYECTO = { id: 'pr-1', nombre: 'Casa Sanje', cliente_id: 'cl-1', negocio_id: 'n-1' };
-const cotizacion = (muebles) => ({ id: 'q-1', folio: 'C-0037', cliente_id: 'cl-1', negocio_id: 'n-1', total: 0,
-  datos: { nombre: 'CC37 - Muros', proyecto_id: 'pr-1', versiones: [{ muebles, usaFlete: true, usaArq: true, usaTDC: true, cargosAMano: true, descuento: 0, desglosar: true, fecha: '2026-10-07T12:00:00Z' }] } });
+const cotizacion = (muebles, aprobacion = null) => ({ id: 'q-1', folio: 'C-0037', cliente_id: 'cl-1', negocio_id: 'n-1', total: 0, ...(aprobacion ? { estado: 'aceptada' } : {}),
+  datos: { nombre: 'CC37 - Muros', proyecto_id: 'pr-1', ...(aprobacion ? { aprobacion } : {}), versiones: [{ muebles, usaFlete: true, usaArq: true, usaTDC: true, cargosAMano: true, descuento: 0, desglosar: true, fecha: '2026-10-07T12:00:00Z' }] } });
 
-async function abrirApp({ muebles = [A_MANO], sinCost101 = false } = {}) {
+async function abrirApp({ muebles = [A_MANO], sinCost101 = false, aprobacion = null, editar = true } = {}) {
   const ctx = await navegador.newContext({ viewport: { width: 1280, height: 900 } });
   const p = await ctx.newPage();
   const errores = [], escrituras = [];
@@ -82,7 +90,7 @@ async function abrirApp({ muebles = [A_MANO], sinCost101 = false } = {}) {
     if (r === '/yo') return route.fulfill(ok({ usuario: { correo: 'mike@ejemplo.mx' }, orgs: [{ id: 'org-1', nombre: 'Taller de prueba' }] }));
     if (r === '/orgs/org-1/clientes') return route.fulfill(ok({ filas: [CLIENTE] }));
     if (r === '/orgs/org-1/proyectos') return route.fulfill(ok({ filas: [PROYECTO] }));
-    if (r === '/orgs/org-1/cotizaciones') return route.fulfill(ok({ filas: [cotizacion(muebles)] }));
+    if (r === '/orgs/org-1/cotizaciones') return route.fulfill(ok({ filas: [cotizacion(muebles, aprobacion)] }));
     if (r === '/orgs/org-1/productos') return route.fulfill(ok({ total: PRODUCTOS.length, filas: PRODUCTOS }));
     if (r === '/orgs/org-1/costos_base') {
       // Una empresa sin cost101: la suite contesta 403 app/permiso, no una lista.
@@ -97,7 +105,7 @@ async function abrirApp({ muebles = [A_MANO], sinCost101 = false } = {}) {
   await p.getByText('Casa Sanje').first().click(); await p.waitForTimeout(400);
   await p.getByText('CC37 - Muros').first().click();
   await p.waitForSelector('[data-pantalla="hoja"]', { timeout: 10000 });
-  await editarCotizacion(p);
+  if (editar) await editarCotizacion(p);
   return { ctx, p, errores, escrituras };
 }
 const pesos = (t) => Number(String(t).replace(/[^0-9.\-]/g, ''));
@@ -129,63 +137,90 @@ test('el catálogo tiene dos pestañas —productos y precios base— y no ofrec
   } finally { await ctx.close(); }
 });
 
-test('un producto de cost101 entra como precio final: sin indirectos, comisiones ni flete; sólo IVA al pie', async () => {
+test('un producto de cost101 entra sin IVA y como base: lleva indirectos, comisiones y flete (Mike, 8-oct)', async () => {
   const { ctx, p, errores, escrituras } = await abrirApp();
   try {
-    const [soloAMano] = preciosEsperados([{ base: 1000, qty: 1 }]);
-    assert.equal(await leer(p, '[data-hoja="subtotal"]'), soloAMano, 'antes: un renglón a mano de $1,000 con sus cargos');
-
     await abrirCatalogo(p);
+    assert.match(await p.locator('[data-catalogo-regla]').innerText(), /como base: la hoja les pone indirectos, flete y comisiones/);
     await p.locator('[data-producto="PAR-302"]').getByRole('button', { name: 'Agregar' }).click();
     await p.waitForTimeout(250);
     assert.equal(await p.locator('[data-campo="precio-1"]').inputValue(), '656.57', 'entra con el precio de cost101 sin IVA');
-    assert.equal(await p.locator('[data-sin-cargos="1"]').count(), 1, 'y la hoja dice que es precio final');
-    assert.equal(await p.locator('[data-precio-cliente="1"]').count(), 0, 'no hay un «al cliente» distinto: es el mismo');
-    assert.equal(await leer(p, '[data-total="1"]'), 656.57);
+    assert.equal(await p.locator('[data-sin-cargos="1"]').count(), 0, 'ya no es precio final');
+    assert.match(await p.locator('[data-cost101="1"]').innerText(), /cost101 · al día/, 'y dice que sigue a cost101');
 
-    // 10 m²: el total del renglón es 10 × el precio, sin nada encima.
     await p.locator('[data-campo="cantidad-1"]').fill('10');
     await p.waitForTimeout(200);
-    assert.equal(await leer(p, '[data-total="1"]'), 6565.7);
-    // El renglón a mano NO cambió por haber metido el de catálogo: el flete
-    // se reparte sólo entre lo que lleva cargos.
-    assert.equal(await leer(p, '[data-precio-cliente="0"]'), soloAMano, 'el renglón a mano paga lo mismo que antes');
-    assert.equal(await leer(p, '[data-hoja="subtotal"]'), Math.round((soloAMano + 6565.7) * 100) / 100, 'el subtotal es la suma de los dos');
-
-    // La caja de «Cómo se forma el precio»: lo de catálogo aparte, y los
-    // indirectos sólo sobre lo escrito a mano.
-    assert.equal(await leer(p, '[data-cargo="catalogo"]'), 6565.7);
-    assert.equal(await leer(p, '[data-cargo="amano"]'), 1000);
-    assert.equal(await leer(p, '[data-cargo="indirectos"]'), 1000 * IND, 'los indirectos no tocan lo de catálogo');
-    assert.equal(await leer(p, '[data-cargo="flete"]'), fleteDe(1000 * (1 + IND) * (1 + ARQ) * (1 + TDC)), 'ni el flete');
+    const [aMano, catalogo] = preciosEsperados([{ base: 1000, qty: 1 }, { base: 656.57, qty: 10 }]);
+    assert.equal(await leer(p, '[data-precio-cliente="1"]'), catalogo, 'al cliente con indirectos, comisiones y su parte del flete');
+    assert.equal(await leer(p, '[data-precio-cliente="0"]'), aMano, 'el flete se reparte entre los dos');
+    assert.equal(await p.locator('[data-cargo="catalogo"]').count(), 0, 'no hay renglón «sin cargos» en la caja');
+    assert.equal(await leer(p, '[data-cargo="amano"]'), 1000 + 6565.7, 'los dos son base');
+    assert.equal(await leer(p, '[data-cargo="indirectos"]'), Math.round((1000 + 6565.7) * IND * 100) / 100, 'los indirectos van sobre los dos');
     const suma = await p.locator('[data-cargos-suma]').innerText();
     assert.ok(suma.includes((await p.locator('[data-hoja="subtotal"]').innerText()).trim()), 'y la caja cierra en el mismo subtotal: ' + suma);
 
-    // Apagar las comisiones baja lo escrito a mano y deja igual lo de catálogo.
+    // Apagar las comisiones baja también el de catálogo.
     const casilla = (clave) => p.locator(`[data-cargo="${clave}"]`).locator('xpath=..').locator('input[type=checkbox]');
     await casilla('arq').uncheck(); await casilla('tdc').uncheck(); await p.waitForTimeout(200);
-    assert.equal(await leer(p, '[data-total="1"]'), 6565.7, 'sin comisiones, el de catálogo sigue igual');
-    assert.ok(await leer(p, '[data-precio-cliente="0"]') < soloAMano, 'y el escrito a mano bajó');
+    assert.ok(await leer(p, '[data-precio-cliente="1"]') < catalogo, 'sin comisiones, el de catálogo baja');
     await casilla('arq').check(); await casilla('tdc').check(); await p.waitForTimeout(200);
 
-    // El IVA al pie es sobre todo el subtotal.
-    const subtotal = await leer(p, '[data-hoja="subtotal"]');
-    const total = await leer(p, '[data-hoja="total"]');
-    assert.ok(Math.abs(total - subtotal * 1.16) < 0.011, `el total es el subtotal más IVA: ${total} vs ${subtotal * 1.16}`);
-
-    // Lo que se guarda: la marca y el producto viajan en el renglón.
     await p.getByRole('button', { name: /^Guardar/ }).first().click();
     await p.waitForTimeout(800);
-    const v = ultimaVersion(escrituras);
-    assert.ok(v, 'se guardó una versión');
-    const r = v.muebles[1];
-    assert.equal(r.sinCargos, true, 'el renglón viaja marcado como precio final');
+    const r = ultimaVersion(escrituras)?.muebles[1];
+    assert.ok(r, 'se guardó una versión');
+    assert.equal(r.sinCargos, undefined, 'no viaja marcado como precio final');
+    assert.equal(r.origen_catalogo, 'cost101');
     assert.equal(r.producto_id, 'p-muro', 'con su producto del catálogo');
     assert.equal(r.codigo, 'PAR-302');
-    assert.equal(r.tipo, 'servicio');
     assert.equal(r.unidad, 'm²');
     assert.equal(r.qty, 10);
     assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
+/* Una cotización de antes del 8-oct, todavía sin aprobar: un producto que
+ * entró como precio final a $600 (hoy vale $656.57 en cost101) y un precio
+ * base que entró a $230 (hoy $245). */
+const VIEJOS = [
+  A_MANO,
+  { id: 'm-2', manual: true, producto_id: 'p-muro', origen_catalogo: 'cost101', sinCargos: true, codigo: 'PAR-302', nombre: 'Muro de tablaroca 2 caras', descripcion: 'Precio por m²', qty: 2, precio: 600, total: 600, unidad: 'm²', tipo: 'servicio', componentes: [], imagenes: [] },
+  { id: 'm-3', manual: true, costo_base_id: 'c-yeso', origen_catalogo: 'cost101-base', codigo: 'MAT-001', nombre: 'Panel de yeso 1/2"', descripcion: 'Por pza', qty: 1, precio: 230, total: 230, unidad: 'pza', tipo: 'otro', componentes: [], imagenes: [] },
+];
+
+test('una cotización sin aprobar se pone al día con cost101 al editarla, y lo de catálogo pasa a llevar cargos', async () => {
+  const { ctx, p, errores, escrituras } = await abrirApp({ muebles: VIEJOS });
+  try {
+    await p.locator('[data-al-dia]').waitFor({ timeout: 5000 });
+    assert.match(await p.locator('[data-al-dia]').innerText(), /Se pusieron al día 2 precios de cost101, y 1 renglón del catálogo ahora lleva indirectos, flete y comisiones/);
+    assert.equal(await p.locator('[data-campo="precio-1"]').inputValue(), '656.57', 'el producto toma el precio de hoy');
+    assert.equal(await p.locator('[data-campo="precio-2"]').inputValue(), '245', 'y el precio base también');
+    assert.equal(await p.locator('[data-sin-cargos="1"]').count(), 0, 'ya no es precio final');
+    const esperados = preciosEsperados([{ base: 1000, qty: 1 }, { base: 656.57, qty: 2 }, { base: 245, qty: 1 }]);
+    assert.equal(await leer(p, '[data-precio-cliente="1"]'), esperados[1], 'con sus cargos');
+    assert.equal(await leer(p, '[data-precio-cliente="0"]'), esperados[0], 'el escrito a mano no cambia de precio, sólo comparte el flete');
+    await p.getByRole('button', { name: /^Guardar/ }).first().click();
+    await p.waitForTimeout(800);
+    const v = ultimaVersion(escrituras);
+    assert.equal(v?.muebles[1].precio, 656.57);
+    assert.equal(v?.muebles[1].sinCargos, undefined);
+    assert.equal(v?.muebles[2].precio, 245);
+    assert.deepEqual(errores, []);
+  } finally { await ctx.close(); }
+});
+
+test('una cotización aprobada no se mueve: sus precios quedan congelados', async () => {
+  const aprobacion = { at: '2026-10-07T18:00:00Z', items: 4 };
+  const { ctx, p, errores } = await abrirApp({ muebles: VIEJOS, aprobacion, editar: false });
+  try {
+    await p.waitForTimeout(1200);
+    assert.equal(await p.locator('[data-hoja="aprobada"]').count(), 1, 'se ve aprobada');
+    assert.equal(await p.locator('[data-al-dia]').count(), 0, 'no se pone al día');
+    assert.equal(await p.locator('[data-campo="precio-1"]').inputValue(), '600', 'el producto sigue a $600');
+    assert.equal(await p.locator('[data-campo="precio-2"]').inputValue(), '230', 'el precio base sigue a $230');
+    assert.equal(await p.locator('[data-sin-cargos="1"]').count(), 1, 'y lo que se aprobó como precio final, así se queda');
+    assert.match(await p.locator('[data-cost101="2"]').innerText(), /congelado/);
+    assert.deepEqual(errores, []);
   } finally { await ctx.close(); }
 });
 
