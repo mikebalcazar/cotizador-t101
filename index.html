@@ -2176,9 +2176,6 @@ const precioManual = m => Number(m.precio !== undefined ? m.precio : m.total) ||
  * renglón (`sinCargos`) y viaja en la versión: una cotización que se abre
  * mañana lo sigue tratando igual aunque el catálogo haya cambiado. */
 const esPrecioFinal = m => esManual(m) && m.sinCargos === true;
-/** Lo que cost101 guarda con IVA (los precios base), dicho sin IVA y al centavo. */
-const IVA_DE_COST101 = 0.16;
-const sinIvaDeCost101 = centavos => Math.round((Number(centavos) || 0) / (1 + IVA_DE_COST101)) / 100;
 /* El precio al cliente se forma por componente (Mike, 23-sep): el precio
  * del mueble —costo × cargos y comisiones, con el flete repartido— se reparte
  * entre sus componentes según lo que cuesta cada uno, y el precio UNITARIO de
@@ -4523,7 +4520,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G108";
+const APP_VERSION = "G109";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -6275,10 +6272,16 @@ function HojaCotizacion({
     setCatalogo(null);
   };
   /* Un precio base es un COSTO —lo que se le paga al proveedor o al
-   * oficial—: entra sin IVA y como base, igual que un renglón escrito a
-   * mano, y la hoja le pone indirectos y comisiones. */
+   * oficial—: entra como base, igual que un renglón escrito a mano, y la
+   * hoja le pone indirectos y comisiones.
+   *
+   * ENTRA CON IVA (Mike, 8-oct-2026, con botones: «Entra $245, con IVA al
+   * pie»): el precio tal como está en cost101, que ya trae IVA, y la hoja le
+   * suma el IVA al pie como a todo. Se le dijo antes de decidir que así el
+   * IVA de ese renglón se cobra dos veces (~16 % más) y lo escogió. Hasta el
+   * 7-oct entraba sin IVA ($245.00 → $211.21). */
   const agregarPrecioBase = c => {
-    const precio = sinIvaDeCost101(c.precio);
+    const precio = (Number(c.precio) || 0) / 100;
     renglonAMano({
       costo_base_id: c.id, codigo: c.clave || "", nombre: c.nombre || "", descripcion: c.unidad ? "Por " + c.unidad : "",
       precio, total: precio, origen_catalogo: "cost101-base", unidad: c.unidad || "", tipo: c.tipo === "mo" ? "servicio" : "otro",
@@ -6564,7 +6567,7 @@ function HojaCotizacion({
         h("button", { className: "btn" + (enBase ? " btn-primary" : ""), "data-catalogo": "base", onClick: () => setCatalogo(c => ({ ...c, pestana: "base" })) }, "Precios base" + (catalogo.cargando ? "" : " · " + (catalogo.base || []).length))),
       h("input", { className: "input", autoFocus: true, placeholder: enBase ? "Buscar por clave, nombre o categoría…" : "Buscar por código, nombre o descripción…", value: busqueda, onChange: e => setBusqueda(e.target.value) }),
       h("div", { className: "h-aviso", "data-catalogo-regla": true, style: { fontSize: 11.5 } },
-        enBase ? "Costos de cost101, sin IVA. Entran como base: la hoja les pone indirectos y comisiones, igual que a lo escrito a mano."
+        enBase ? "Costos de cost101, con IVA, tal como están ahí. Entran como base: la hoja les pone indirectos, comisiones y el IVA al pie, igual que a lo escrito a mano."
           : "Los que dicen cost101 entran con precio final (sin IVA): la hoja sólo les suma el IVA, sin indirectos ni comisiones."),
       h("div", { className: "h-cat" },
         catalogo.cargando ? h("div", { className: "h-vacio" }, "Cargando el catálogo…")
@@ -6577,7 +6580,7 @@ function HojaCotizacion({
               h("span", { style: { minWidth: 0 } },
                 h("span", { style: { display: "block", fontWeight: 500 } }, c.nombre),
                 h("span", { style: { display: "block", fontSize: 11.5, color: "var(--h-muted)" } }, (TIPO_BASE[c.tipo] || c.tipo) + (c.categoria ? " · " + c.categoria : "") + " · por " + c.unidad)),
-              h("span", { className: "num", title: "Sin IVA. En cost101 está con IVA: " + hojaDinero((c.precio || 0) / 100) }, hojaDinero(sinIvaDeCost101(c.precio))),
+              h("span", { className: "num", title: "Con IVA, como está en cost101" }, hojaDinero((c.precio || 0) / 100)),
               h("button", { className: "btn btn-primary", style: { fontSize: 12, padding: "4px 10px" }, onClick: () => agregarPrecioBase(c) }, "Agregar"))))
           : catalogo.filas.length === 0 ? h("div", { className: "h-vacio" }, "El catálogo todavía está vacío. Escribe el renglón a mano, o arma tus productos en cost101.")
           : filasCat.length === 0 ? h("div", { className: "h-vacio" }, "Nada coincide con «" + busqueda + "».")

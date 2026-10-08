@@ -5,6 +5,18 @@ Lo escribe la sesión de Claude Code que trabaja el repo. Lo más nuevo arriba.
 
 ---
 
+# 8-oct-2026 · G109: el precio base entra a la hoja CON IVA
+
+**Medido aquí: pruebas/el-catalogo-de-cost101.spec.mjs, 5 de 5.**
+
+Mike, 8-oct: «los precios base los necesito ya con IVA». Se le preguntó con
+botones y escogió **«Entra $245, con IVA al pie»**: el renglón entra con el
+precio tal como está en cost101 (que ya trae IVA) y la hoja le suma el IVA al
+pie como a todo. Se le dijo ANTES de escoger que así el IVA de ese renglón se
+cobra dos veces (~16 % más). Lo de G108 («entra sin IVA, $245.00 → $211.21»)
+queda sustituido. El catálogo enseña los precios base con IVA. Los productos de
+cost101 no cambian: siguen entrando sin IVA y como precio final.
+
 # 7-oct-2026 · G108: agregar del catálogo — productos y precios base de cost101
 
 **Medido aquí (pruebas/el-catalogo-de-cost101.spec.mjs: 5 de 5; la batería completa: 142, con las 10 de `puerta.spec` pasando sola —en la corrida completa de este contenedor se cayeron por tiempo de arranque de wrangler, con y sin este cambio no difieren—). Lo hizo el chat de cost101, no Jr.**

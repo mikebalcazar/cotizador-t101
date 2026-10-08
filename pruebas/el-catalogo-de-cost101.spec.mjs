@@ -13,7 +13,7 @@
  * Lo que se mide:
  *   · un producto de cost101 entra como PRECIO FINAL: no sube con indirectos,
  *     comisiones ni flete, y el subtotal lo cuenta tal cual;
- *   · un precio base entra SIN IVA y como base: sí lleva los cargos de la
+ *   · un precio base entra CON IVA (Mike, 8-oct) y como base: lleva los cargos de la
  *     hoja, igual que lo escrito a mano;
  *   · un producto de siempre (dash101, sin receta) sigue como hasta hoy;
  *   · los borradores de cost101 no se ofrecen;
@@ -118,8 +118,8 @@ test('el catálogo tiene dos pestañas —productos y precios base— y no ofrec
     assert.equal(await leer(p, '[data-producto="PAR-302"] .num'), 656.57, 'con su precio sin IVA');
     await p.locator('[data-catalogo="base"]').click();
     assert.equal(await p.locator('[data-precio-base]').count(), 2);
-    // $245.00 con IVA en cost101 → $211.21 sin IVA.
-    assert.equal(await leer(p, '[data-precio-base="MAT-001"] .num'), 211.21, 'el precio base se enseña sin IVA');
+    // Mike, 8-oct: los precios base van CON IVA, tal como están en cost101.
+    assert.equal(await leer(p, '[data-precio-base="MAT-001"] .num'), 245, 'el precio base se enseña con IVA, como en cost101');
     assert.match(await p.locator('[data-precio-base="MO-003"]').innerText(), /Mano de obra · Tablaroca · por h/);
     assert.match(await p.locator('[data-catalogo-regla]').innerText(), /Entran como base/);
     // Buscar filtra dentro de la pestaña.
@@ -189,18 +189,23 @@ test('un producto de cost101 entra como precio final: sin indirectos, comisiones
   } finally { await ctx.close(); }
 });
 
-test('un precio base entra sin IVA y como base: la hoja sí le pone sus cargos', async () => {
+/* Mike, 8-oct-2026, con botones: «Entra $245, con IVA al pie». Se le dijo
+ * antes que así ese renglón paga IVA dos veces (~16 % más). */
+test('un precio base entra CON IVA y como base: la hoja le pone sus cargos y el IVA al pie', async () => {
   const { ctx, p, errores, escrituras } = await abrirApp({ muebles: [] });
   try {
     await abrirCatalogo(p);
     await p.locator('[data-catalogo="base"]').click();
     await p.locator('[data-precio-base="MAT-001"]').getByRole('button', { name: 'Agregar' }).click();
     await p.waitForTimeout(250);
-    assert.equal(await p.locator('[data-campo="precio-0"]').inputValue(), '211.21', '$245.00 con IVA es $211.21 sin IVA');
+    assert.equal(await p.locator('[data-campo="precio-0"]').inputValue(), '245', 'entra con $245.00, tal como está en cost101');
     assert.equal(await p.locator('[data-sin-cargos="0"]').count(), 0, 'no es precio final');
-    const [esperado] = preciosEsperados([{ base: 211.21, qty: 1 }]);
+    const [esperado] = preciosEsperados([{ base: 245, qty: 1 }]);
     assert.equal(await leer(p, '[data-precio-cliente="0"]'), esperado, 'al cliente va con indirectos, comisiones y flete, como lo escrito a mano');
-    assert.equal(await leer(p, '[data-cargo="amano"]'), 211.21);
+    assert.equal(await leer(p, '[data-cargo="amano"]'), 245);
+    // Y el IVA al pie se le suma también a ese renglón.
+    const subtotal = await leer(p, '[data-hoja="subtotal"]');
+    assert.ok(Math.abs(await leer(p, '[data-hoja="total"]') - subtotal * 1.16) < 0.011, 'el total es el subtotal más IVA');
     assert.equal(await p.locator('[data-cargo="catalogo"]').count(), 0);
     await p.getByRole('button', { name: /^Guardar/ }).first().click();
     await p.waitForTimeout(800);
