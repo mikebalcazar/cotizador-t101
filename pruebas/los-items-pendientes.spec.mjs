@@ -117,6 +117,7 @@ test('la lista completa, se escogen varios y caen en una cotización nueva con s
     await p.locator('[data-items-pendientes="pr-1"]').click();
     const modal = p.locator('[data-modal="items-pendientes"]');
     await modal.waitFor({ state: 'visible', timeout: 10000 });
+    await modal.locator('[data-pendiente]').nth(2).waitFor({ timeout: 10000 }); // la lista llega después de abrir
     assert.equal(await modal.locator('[data-pendiente]').count(), 3, 'la lista trae los tres fuera del alcance');
     assert.match(await modal.locator('[data-pendiente="it-a"]').innerText(), /Se sacó del alcance · «El cliente la quitó»/, 'dice que lo sacaron, y por qué');
     assert.match(await modal.locator('[data-pendiente="it-c"]').innerText(), /Requerimiento sin aprobar/, 'y qué es un requerimiento sin decidir');
