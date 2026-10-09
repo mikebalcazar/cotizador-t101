@@ -29,6 +29,9 @@ const LISTA = [
   'entrar.js',        // y su código
   'fonts',            // Sansation, Raleway y las cifras en Fira Sans
   'no-publicado.html', // la página del 404 de `claude/*`
+  'favicon.ico',      // el ícono de la pestaña (Mike, 9-oct-2026)
+  'icono.svg',        // el mismo, en vectores
+  'apple-touch-icon.png', // el del celular
 ];
 
 await rm(SALIDA, { recursive: true, force: true });
