@@ -49,7 +49,9 @@ const LLAVE = 'cotizador';
  *
  *  Las fuentes van abiertas porque las pide la propia pantalla de entrada, y
  *  no dicen nada de nadie. `no-publicado.html` es la página del 404. */
-const ABIERTO = new Set(['/entrar.html', '/entrar.js', '/no-publicado.html', '/huella.txt']);
+const ABIERTO = new Set(['/entrar.html', '/entrar.js', '/no-publicado.html', '/huella.txt',
+  // El ícono: lo pide la propia pantalla de entrada, y no dice nada de nadie.
+  '/favicon.ico', '/icono.svg', '/apple-touch-icon.png']);
 const esAbierto = (ruta) => ABIERTO.has(ruta) || ruta.startsWith('/fonts/');
 
 /** La capa de archivos sirve las rutas tal cual (`html_handling = "none"`), así

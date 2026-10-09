@@ -64,7 +64,7 @@ test('una galleta que la suite no reconoce tampoco abre', async () => {
 });
 
 test('la pantalla de entrada y sus piezas SÍ son públicas', async () => {
-  for (const ruta of ['/entrar.html', '/entrar.js', '/fonts/raleway-400.woff2', '/no-publicado.html', '/huella.txt']) {
+  for (const ruta of ['/entrar.html', '/entrar.js', '/fonts/raleway-400.woff2', '/no-publicado.html', '/huella.txt', '/favicon.ico', '/icono.svg', '/apple-touch-icon.png']) {
     const r = await pide(ruta);
     assert.equal(r.status, 200, `${ruta} debería servirse sin sesión`);
   }
