@@ -5,6 +5,9 @@
 # (lo mide `scripts/medir.mjs`, apartado 5).
 #
 # Netlify ya no sirve el cotizador: lo manda a la dirección con puerta.
+# 9-oct-2026: al dominio propio, que es la dirección que mide `scripts/medir.mjs`
+# (antes iba a quote101.mike-929.workers.dev; mientras Netlify estuvo suspendido
+# nadie lo notó, y al volver tumbó la medición de producción).
 #
 # ── 16-sep-2026 ──────────────────────────────────────────────────────────
 # El 16-sep quote101 pasó a pedir sesión de la suite 101, y el candado vive en
@@ -30,7 +33,7 @@
 
 [[redirects]]
   from = "/*"
-  to = "https://quote101.mike-929.workers.dev/:splat"
+  to = "https://quote101.taller101.com/:splat"
   status = 302
   force = true
 
