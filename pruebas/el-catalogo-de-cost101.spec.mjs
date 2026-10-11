@@ -65,6 +65,8 @@ const PRODUCTOS = [
 const COSTOS = [
   { id: 'c-yeso', clave: 'MAT-001', nombre: 'Panel de yeso 1/2"', tipo: 'material', unidad: 'pza', categoria: 'Tableros', precio: 24500 },
   { id: 'c-of', clave: 'MO-003', nombre: 'Oficial tablaroquero', tipo: 'mo', unidad: 'h', categoria: 'Tablaroca', precio: 10500 },
+  // 0.95.0 · lo que se compra ya hecho (Mike, 11-oct).
+  { id: 'c-art', clave: 'ART-001', nombre: 'Cajón prefabricado', tipo: 'comprado', unidad: 'pza', categoria: 'Cocinas', precio: 120000 },
 ];
 const A_MANO = { id: 'm-1', manual: true, codigo: '', nombre: 'Instalación', descripcion: '', qty: 1, precio: 1000, total: 1000, componentes: [], imagenes: [] };
 const CLIENTE = { id: 'cl-1', nombre: 'Sanje', negocio_id: 'n-1' };
@@ -118,14 +120,15 @@ test('el catálogo tiene dos pestañas —productos y precios base— y no ofrec
   try {
     await abrirCatalogo(p);
     assert.match(await p.locator('[data-catalogo="productos"]').innerText(), /Productos · 2/, 'dos productos: el aprobado de cost101 y el de siempre');
-    assert.match(await p.locator('[data-catalogo="base"]').innerText(), /Precios base · 2/);
+    assert.match(await p.locator('[data-catalogo="base"]').innerText(), /Precios base · 3/);
     assert.equal(await p.locator('[data-producto="PAR-302"]').count(), 1, 'el aprobado está');
     assert.equal(await p.locator('[data-producto="PAR-402"]').count(), 0, 'el borrador no se ofrece');
     assert.equal(await p.locator('[data-producto="PTA-A"]').count(), 1, 'el de siempre sigue');
     assert.match(await p.locator('[data-producto="PAR-302"]').innerText(), /cost101 · por m²/, 'el de cost101 se dice, con su unidad');
     assert.equal(await leer(p, '[data-producto="PAR-302"] .num'), 656.57, 'con su precio sin IVA');
     await p.locator('[data-catalogo="base"]').click();
-    assert.equal(await p.locator('[data-precio-base]').count(), 2);
+    assert.equal(await p.locator('[data-precio-base]').count(), 3);
+    assert.match(await p.locator('[data-precio-base="ART-001"]').innerText(), /Artículo comprado · Cocinas · por pza/, 'el artículo comprado se dice como tal');
     // Mike, 8-oct: los precios base van CON IVA, tal como están en cost101.
     assert.equal(await leer(p, '[data-precio-base="MAT-001"] .num'), 245, 'el precio base se enseña con IVA, como en cost101');
     assert.match(await p.locator('[data-precio-base="MO-003"]').innerText(), /Mano de obra · Tablaroca · por h/);
