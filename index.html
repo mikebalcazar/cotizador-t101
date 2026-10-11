@@ -2216,6 +2216,17 @@ const precioManual = m => Number(m.precio !== undefined ? m.precio : m.total) ||
  * `sinCargos` sólo queda en lo que ya se aprobó (eso no se toca); en una
  * cotización abierta se le quita al ponerla al día con cost101. */
 const esPrecioFinal = m => esManual(m) && m.sinCargos === true;
+/* Mike, 11-oct-2026, con botones: un producto de cost101 entra con «$12,743.85,
+ * tal cual» —el precio unitario del catálogo, CON su IVA (`desglose.pu`)—, y
+ * quote le suma encima lo suyo (flete, comisiones, indirectos). «Los
+ * indirectos y utilidades de cost son independientes de los de quote: uno es
+ * el costo de lograr ese concepto y el otro el costo de venderlo.» Se le dijo
+ * antes de decidir que así el IVA de ese renglón se cobra dos veces (el que
+ * trae y el del pie), como en los precios base desde el 8-oct, y lo escogió.
+ * Del 7 al 11-oct entraba sin IVA ($10,986.08). Un producto de siempre (de
+ * dash101, sin receta) y un precio base siguen con su `precio`. */
+const precioDeCatalogo = c => c && c.estado === "aprobado" && c.desglose && Number(c.desglose.pu) > 0
+  ? Number(c.desglose.pu) / 100 : (Number(c && c.precio) || 0) / 100;
 /* El precio al cliente se forma por componente (Mike, 23-sep): el precio
  * del mueble —costo × cargos y comisiones, con el flete repartido— se reparte
  * entre sus componentes según lo que cuesta cada uno, y el precio UNITARIO de
@@ -6234,7 +6245,7 @@ function HojaCotizacion({
         if (!vivo) return;
         const P = new Map(prods.map(c => [c.id, c])), B = new Map(base.map(c => [c.id, c]));
         const fuente = m => !deCost(m) ? null : m.origen_catalogo === "cost101" ? P.get(m.producto_id) : B.get(m.costo_base_id);
-        const nuevo = (f) => (Number(f.precio) || 0) / 100;
+        const nuevo = (f) => precioDeCatalogo(f);
         const ponerAlDia = m => {
           const f = fuente(m);
           if (!f) return m;
@@ -6421,7 +6432,7 @@ function HojaCotizacion({
   }));
   const agregarProducto = c => {
     const deCost101 = c.estado === "aprobado";
-    const precio = (c.precio || 0) / 100;
+    const precio = precioDeCatalogo(c);
     if (catalogo && catalogo.destino !== null && catalogo.destino !== undefined) {
       return aplicarDelCatalogo(catalogo.destino, { nombre: c.nombre, descripcion: c.descripcion || "" },
         { producto_id: c.id, precio, total: precio, ...(deCost101 ? { origen_catalogo: "cost101", unidad: c.unidad || "" } : {}) });
@@ -6781,7 +6792,7 @@ function HojaCotizacion({
       h("input", { className: "input", autoFocus: true, placeholder: enBase ? "Buscar por clave, nombre o categoría…" : "Buscar por código, nombre o descripción…", value: busqueda, onChange: e => setBusqueda(e.target.value) }),
       h("div", { className: "h-aviso", "data-catalogo-regla": true, style: { fontSize: 11.5 } },
         enBase ? "Costos de cost101, con IVA, tal como están ahí. Entran como base: la hoja les pone indirectos, comisiones y el IVA al pie, igual que a lo escrito a mano."
-          : "Los que dicen cost101 entran sin IVA y como base: la hoja les pone indirectos, flete y comisiones, como a todo. Mientras la cotización no se apruebe, su precio sigue al de cost101."),
+          : "Los que dicen cost101 entran con su precio unitario tal cual, con IVA, y como base: la hoja les pone indirectos, flete y comisiones, como a todo. Mientras la cotización no se apruebe, su precio sigue al de cost101."),
       h("div", { className: "h-cat" },
         catalogo.cargando ? h("div", { className: "h-vacio" }, "Cargando el catálogo…")
           : catalogo.error ? h("div", { className: "h-vacio" }, "No se pudo leer el catálogo: " + catalogo.error)
@@ -6803,7 +6814,7 @@ function HojaCotizacion({
               h("span", { style: { display: "block", fontWeight: 500 } }, c.nombre),
               (c.descripcion || c.estado === "aprobado") && h("span", { style: { display: "block", fontSize: 11.5, color: "var(--h-muted)" } },
                 [c.estado === "aprobado" ? "cost101" + (c.unidad ? " · por " + c.unidad : "") + (c.categoria ? " · " + c.categoria : "") : null, c.descripcion].filter(Boolean).join(" · "))),
-            h("span", { className: "num" }, hojaDinero((c.precio || 0) / 100)),
+            h("span", { className: "num", title: c.estado === "aprobado" ? "El precio unitario de cost101, con IVA, tal como está ahí" : undefined }, hojaDinero(precioDeCatalogo(c))),
             h("button", { className: "btn btn-primary", style: { fontSize: 12, padding: "4px 10px" }, onClick: () => agregarProducto(c) }, catalogo.destino !== null && catalogo.destino !== undefined ? "Usar" : "Agregar"))))));
 
   return h("div", { className: "hoja", "data-pantalla": "hoja" },

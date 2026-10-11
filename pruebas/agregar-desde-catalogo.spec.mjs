@@ -146,7 +146,7 @@ test('con nombre y descripción vacíos el campo se va; «escribir nombre» lo r
     assert.equal(await p.locator('[data-campo="descripcion-1"]').count(), 0, 'ni de descripción');
     assert.equal(await p.locator('[data-texto="nombre-1"]').innerText(), 'Muro de tablaroca 2 caras', 'sale el nombre del catálogo');
     assert.equal(await p.locator('[data-elige^="nombre-"][data-elige$="-1"]').count(), 0, 'sin casillas: no hay de dónde escoger');
-    assert.equal(await p.locator('[data-campo="precio-1"]').inputValue(), '656.57');
+    assert.equal(await p.locator('[data-campo="precio-1"]').inputValue(), '761.63');
     assert.match(await p.locator('[data-cost101="1"]').innerText(), /cost101/, 'y sigue a cost101 como lo agregado del catálogo');
 
     await p.locator('[data-escribir="nombre-1"]').click();
