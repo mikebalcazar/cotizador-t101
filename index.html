@@ -6091,6 +6091,10 @@ const HOJA_CSS = `
 .hoja .h-cargo b{font-weight:500;color:var(--h-text);font-size:13.5px}
 .hoja .h-cargo.apagado b{color:var(--h-muted)}
 .hoja .h-aviso{font-size:12px;color:var(--h-muted);margin-top:6.8px}
+/* Mike, 11-oct-2026: «en la parte de hasta abajo de quote, no se lee por el
+   fondo oscuro». Los botones de «Otros documentos» van debajo de la hoja,
+   fuera de su fondo claro: llevan su propio panel, como la barra de arriba. */
+.hoja .h-exportes{display:flex;gap:6.8px;flex-wrap:wrap;align-items:center;justify-content:flex-end;padding:10px 12px;background:var(--h-bg);border:1px solid var(--h-divider);border-top:0}
 .hoja .h-aprobada{font-size:13px;padding:6px 10px;border:1px solid var(--h-accent);color:var(--h-accent-800);background:color-mix(in srgb,var(--h-accent) 10%,transparent)}
 .hoja-velo{position:fixed;inset:0;display:grid;place-items:center;padding:13.6px;background:color-mix(in srgb,#2b2b2d 50%,transparent);z-index:3000}
 .hoja-velo .dialog{position:relative;width:min(760px,100%);max-height:84vh;display:flex;flex-direction:column;gap:10.2px;padding:13.6px;background:#fbfbfc;border:1px solid var(--h-divider);box-shadow:0 12px 32px color-mix(in srgb,#2b2b2d 22%,transparent);left:auto;transform:none}
@@ -6763,8 +6767,8 @@ function HojaCotizacion({
       h("div", { className: "h-gran" }, h("b", null, "GRAN TOTAL"), h("span", { "data-hoja": "total" }, hojaDinero(total))),
       h("div", { className: "num", style: { fontSize: 11, color: "var(--h-muted)" } }, "Cifras en MXN · IVA " + ivaTasa + "%")));
 
-  const exportes = !soloVer || modoVer ? h("div", { className: "no-print", style: { display: "flex", gap: 6.8, flexWrap: "wrap", justifyContent: "flex-end", marginTop: 13.6 } },
-    h("span", { className: "h-aviso", style: { marginRight: "auto" } }, "Otros documentos:"),
+  const exportes = !soloVer || modoVer ? h("div", { className: "h-exportes no-print", "data-hoja": "exportes" },
+    h("span", { className: "h-aviso", style: { marginRight: "auto", marginTop: 0 } }, "Otros documentos:"),
     h("button", { className: "btn", onClick: exportClientePDF, title: "El PDF de siempre, con las condiciones de contratación y la firma" }, "PDF cliente con condiciones"),
     /* Pegada al botón del PDF y no en Configuración: es una decisión por
        cliente y se toma al momento de mandarlo. Marcada, es lo de siempre. */
