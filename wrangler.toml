@@ -21,13 +21,17 @@ compatibility_date = "2026-09-01"
 # 25-sep: «error code: 1042»). Las dos direcciones se quedan.
 workers_dev = true
 routes = [
-  { pattern = "quote101.taller101.com", custom_domain = true }
+  { pattern = "quote101.taller101.com", custom_domain = true },
+  # 11-oct-2026 · suite101.app es la marca (Mike: «taller101 será una marca de
+  # FORESPOT»). Ésta es la buena; la de arriba manda aquí.
+  { pattern = "quote.suite101.app", custom_domain = true }
 ]
 
 # La dirección de workers.dev manda al dominio (Mike, 25-sep: «redirigir, no
 # apagar»). Sólo producción: `vars` no se hereda y staging no lleva esto.
 [vars]
-DOMINIO_PROPIO = "quote101.taller101.com"
+DOMINIO_PROPIO = "quote.suite101.app"
+DOMINIO_ANTERIOR = "quote101.taller101.com"
 
 # Lo que se publica lo arma `scripts/armar.mjs` con una lista explícita:
 # `index.html`, `fonts/` y la página del 404. **No es la raíz del

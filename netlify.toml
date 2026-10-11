@@ -33,7 +33,7 @@
 
 [[redirects]]
   from = "/*"
-  to = "https://quote101.taller101.com/:splat"
+  to = "https://quote.suite101.app/:splat"
   status = 302
   force = true
 
