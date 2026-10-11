@@ -6095,7 +6095,15 @@ const HOJA_CSS = `
   .hoja .h-cols{grid-template-columns:1fr 1fr}
   .hoja .h-cols > :nth-child(2){grid-column:1/-1;order:-1}
 }
+.hoja .h-solo-print{display:none}
+.hoja .h-elegir .h-opcion{display:flex;align-items:flex-start;gap:8px;padding:5px 6px;border:1px solid color-mix(in srgb,var(--h-text) 14%,transparent);border-radius:6px;margin-top:4px;cursor:pointer}
+.hoja .h-elegir .h-opcion input{margin-top:3px;flex:none}
+.hoja .h-elegir .h-opcion span{flex:1;min-width:0}
+.hoja .h-elegir .h-opcion small{flex:none;font-size:11px;color:var(--h-muted)}
+.hoja .h-elegir .h-opcion-si{border-color:#0080C1;background:color-mix(in srgb,#0080C1 7%,transparent)}
+.hoja .h-liga{background:none;border:0;padding:0;color:#0080C1;text-decoration:underline;cursor:pointer;font-size:12px}
 @media print{
+  .hoja .h-solo-print{display:block!important}
   .no-print{display:none!important}
   .hoja{left:0;transform:none;width:auto}
   .hoja .sheet{border:0;padding:0;background:#fff}
@@ -6142,6 +6150,7 @@ function imprimirHoja(nodo, titulo) {
   if (!nodo) return;
   const copia = nodo.cloneNode(true);
   copia.querySelectorAll(".no-print").forEach(e => e.remove());
+  copia.querySelectorAll(".h-solo-print").forEach(e => e.classList.remove("h-solo-print"));
   copia.querySelectorAll("input,textarea,select").forEach(e => {
     const vivo = nodo.querySelector('[data-campo="' + e.getAttribute("data-campo") + '"]');
     const v = vivo ? vivo.value : e.value;
@@ -6331,18 +6340,22 @@ function HojaCotizacion({
     if (!window.confirm("¿Quitar «" + (m.nombre || "este renglón") + "» de la cotización?")) return;
     setMuebles(p => p.filter((_, j) => j !== i));
   };
-  const abrirCatalogo = async () => {
+  /* `destino`: el renglón al que se le aplica lo del catálogo («agregar desde
+   * catálogo» en el renglón, Mike 11-oct). Sin él —el botón de la barra, que
+   * manda el evento— se agrega un renglón nuevo, como siempre. */
+  const abrirCatalogo = async (destino) => {
+    const d = Number.isInteger(destino) ? destino : null;
     setBusqueda("");
-    setCatalogo({ cargando: true, filas: [], base: [], pestana: "productos" });
+    setCatalogo({ cargando: true, filas: [], base: [], pestana: "productos", destino: d });
     try {
       const db = window.suiteDB || {};
       /* Los dos catálogos de una vez (Mike, 7-oct: «agregar del catálogo, ya
        * sea de productos o de precios base»). Un borrador de cost101 no se
        * ofrece: todavía no lo aprueba quien dirige. */
       const [filas, base] = await Promise.all([db.productos ? db.productos() : [], db.costosBase ? db.costosBase() : []]);
-      setCatalogo({ cargando: false, filas: filas.filter(c => c.estado !== "borrador"), base, pestana: "productos" });
+      setCatalogo({ cargando: false, filas: filas.filter(c => c.estado !== "borrador"), base, pestana: "productos", destino: d });
     } catch (e) {
-      setCatalogo({ cargando: false, filas: [], base: [], pestana: "productos", error: String(e && e.message || e) });
+      setCatalogo({ cargando: false, filas: [], base: [], pestana: "productos", destino: d, error: String(e && e.message || e) });
     }
   };
   /* Del catálogo a la hoja. Un producto armado en cost101 (trae `estado`)
@@ -6351,9 +6364,68 @@ function HojaCotizacion({
    * (Mike, 8-oct). Un producto de siempre (el modelo con precio
    * escrito en dash101) entra como hasta hoy: es la base, y la hoja le pone
    * sus cargos. */
+  /* Mike, 11-oct-2026: «agregar desde catálogo (…) se agrega la info al
+   * concepto, pero no se sobreescribe el nombre ni la descripción, aparecen
+   * los 2 y un checkbox para seleccionar cuál se dejará. Y si el nombre y/o
+   * descripción están vacíos, en automático se desaparece el campo (…) al
+   * menos que le pongas en "escribir nombre" y "escribir descripción"».
+   * El renglón toma el precio y la liga al catálogo; su código y su tipo se
+   * quedan (el del requerimiento de la obra). Lo suyo se guarda en
+   * `del_catalogo`, con lo del catálogo, para escoger y para deshacer. */
+  const aplicarDelCatalogo = (i, cat, liga) => {
+    setMuebles(p => p.map((m, j) => {
+      if (j !== i) return m;
+      const ya = m.del_catalogo;
+      const propio = ya
+        ? { nombre: ya.nombre_propio || "", descripcion: ya.descripcion_propia || "", precio: ya.precio_propio, liga: ya.liga_propia }
+        : { nombre: m.nombre || "", descripcion: m.descripcion || "", precio: m.precio === undefined ? m.total || 0 : m.precio,
+            liga: { producto_id: m.producto_id, costo_base_id: m.costo_base_id, origen_catalogo: m.origen_catalogo, unidad: m.unidad } };
+      const dc = {
+        nombre: cat.nombre || "", descripcion: cat.descripcion || "",
+        nombre_propio: propio.nombre, descripcion_propia: propio.descripcion, precio_propio: propio.precio, liga_propia: propio.liga,
+        nombre_de: propio.nombre.trim() ? "propio" : "catalogo", descripcion_de: propio.descripcion.trim() ? "propio" : "catalogo",
+        escribir_nombre: false, escribir_descripcion: false,
+      };
+      const { producto_id, costo_base_id, origen_catalogo, unidad, ...resto } = m;
+      return { ...resto, ...liga,
+        nombre: dc.nombre_de === "propio" ? propio.nombre : dc.nombre,
+        descripcion: dc.descripcion_de === "propio" ? propio.descripcion : dc.descripcion,
+        del_catalogo: dc };
+    }));
+    setCatalogo(null);
+  };
+  /** Escoger cuál nombre (o descripción) se queda: el del renglón o el del catálogo. */
+  const elegirTexto = (i, cual, de) => setMuebles(p => p.map((m, j) => {
+    if (j !== i || !m.del_catalogo) return m;
+    const dc = m.del_catalogo, esN = cual === "nombre";
+    const texto = de === "propio" ? (esN ? dc.nombre_propio : dc.descripcion_propia) : (esN ? dc.nombre : dc.descripcion);
+    return { ...m, [cual]: texto || "", del_catalogo: { ...dc, [esN ? "nombre_de" : "descripcion_de"]: de, [esN ? "escribir_nombre" : "escribir_descripcion"]: false } };
+  }));
+  /** «escribir nombre»: aparece el campo, con lo que haya. Al volver a
+   *  escoger, lo escrito queda como lo propio del renglón. */
+  const escribirTexto = (i, cual, si) => setMuebles(p => p.map((m, j) => {
+    if (j !== i || !m.del_catalogo) return m;
+    const dc = m.del_catalogo, esN = cual === "nombre";
+    const k = esN ? "escribir_nombre" : "escribir_descripcion";
+    if (si) return { ...m, del_catalogo: { ...dc, [k]: true } };
+    const escrito = m[cual] || "";
+    return { ...m, del_catalogo: { ...dc, [k]: false, [esN ? "nombre_propio" : "descripcion_propia"]: escrito, [esN ? "nombre_de" : "descripcion_de"]: "propio" } };
+  }));
+  /** Deshacer: el renglón vuelve a como estaba antes del catálogo. */
+  const quitarDelCatalogo = i => setMuebles(p => p.map((m, j) => {
+    if (j !== i || !m.del_catalogo) return m;
+    const dc = m.del_catalogo;
+    const { del_catalogo, producto_id, costo_base_id, origen_catalogo, unidad, ...resto } = m;
+    const liga = Object.fromEntries(Object.entries(dc.liga_propia || {}).filter(([, v]) => v !== undefined && v !== null && v !== ""));
+    return { ...resto, ...liga, nombre: dc.nombre_propio || "", descripcion: dc.descripcion_propia || "", precio: dc.precio_propio || 0, total: dc.precio_propio || 0 };
+  }));
   const agregarProducto = c => {
     const deCost101 = c.estado === "aprobado";
     const precio = (c.precio || 0) / 100;
+    if (catalogo && catalogo.destino !== null && catalogo.destino !== undefined) {
+      return aplicarDelCatalogo(catalogo.destino, { nombre: c.nombre, descripcion: c.descripcion || "" },
+        { producto_id: c.id, precio, total: precio, ...(deCost101 ? { origen_catalogo: "cost101", unidad: c.unidad || "" } : {}) });
+    }
     renglonAMano({
       producto_id: c.id, codigo: c.codigo || "", nombre: c.nombre || "",
       descripcion: c.descripcion || (deCost101 && c.unidad ? "Precio por " + c.unidad : ""),
@@ -6373,6 +6445,10 @@ function HojaCotizacion({
    * 7-oct entraba sin IVA ($245.00 → $211.21). */
   const agregarPrecioBase = c => {
     const precio = (Number(c.precio) || 0) / 100;
+    if (catalogo && catalogo.destino !== null && catalogo.destino !== undefined) {
+      return aplicarDelCatalogo(catalogo.destino, { nombre: c.nombre, descripcion: "" },
+        { costo_base_id: c.id, precio, total: precio, origen_catalogo: "cost101-base", unidad: c.unidad || "" });
+    }
     renglonAMano({
       costo_base_id: c.id, codigo: c.clave || "", nombre: c.nombre || "", descripcion: c.unidad ? "Por " + c.unidad : "",
       precio, total: precio, origen_catalogo: "cost101-base", unidad: c.unidad || "", tipo: c.tipo === "mo" ? "servicio" : "otro",
@@ -6467,6 +6543,37 @@ function HojaCotizacion({
       h("div", { className: "input", "data-hoja": "responsable", title: "Quien hizo la cotización", style: { marginTop: 6.8, fontSize: 12, background: "transparent", borderColor: "transparent", paddingLeft: 0 } },
         "Responsable: " + (hoja.responsable || emp.usuario || "—"))));
 
+  /* El nombre o la descripción de un renglón al que se le aplicó el
+   * catálogo (Mike, 11-oct): los dos, con su casilla; o, si el del renglón
+   * estaba vacío, el del catálogo sin campo, con «escribir nombre». Al
+   * imprimir sólo sale el que quedó. */
+  const campoTexto = (i, m, cual, campo) => {
+    const dc = m.del_catalogo;
+    if (!dc || soloVer) return campo;
+    const esN = cual === "nombre";
+    const etq = esN ? "nombre" : "descripción";
+    const escribir = esN ? dc.escribir_nombre : dc.escribir_descripcion;
+    const liga = (texto, attr, fn) => h("button", { type: "button", className: "h-liga", [attr]: cual + "-" + i, onClick: fn }, texto);
+    if (escribir) return h("div", { style: esN ? null : { marginTop: 6.8 } }, campo,
+      h("div", { className: "no-print h-mini", style: { marginTop: 3.4 } }, liga("volver a escoger", "data-volver-escoger", () => escribirTexto(i, cual, false))));
+    const propio = String((esN ? dc.nombre_propio : dc.descripcion_propia) || ""), delCat = String((esN ? dc.nombre : dc.descripcion) || "");
+    const de = esN ? dc.nombre_de : dc.descripcion_de;
+    const actual = String(m[cual] || "");
+    const imprime = actual.trim() && h("div", { className: "h-solo-print valor", style: esN ? { fontWeight: 500 } : { marginTop: 6.8, fontSize: 12.5, whiteSpace: "pre-wrap" } }, actual);
+    const dos = propio.trim() && delCat.trim() && propio.trim() !== delCat.trim();
+    return h("div", { className: "h-elegir", "data-elegir": cual + "-" + i, style: esN ? null : { marginTop: 6.8 } },
+      imprime,
+      h("div", { className: "no-print" },
+        dos
+          ? [["propio", propio, itemsDelRenglon(m).length ? "de la obra" : "del renglón"], ["catalogo", delCat, "del catálogo"]].map(([k, texto, origen]) =>
+              h("label", { key: k, className: "h-opcion" + (de === k ? " h-opcion-si" : "") },
+                h("input", { type: "checkbox", checked: de === k, "data-elige": cual + "-" + k + "-" + i, onChange: () => elegirTexto(i, cual, k) }),
+                h("span", { style: esN ? { fontWeight: 500 } : { fontSize: 12.5, whiteSpace: "pre-wrap" } }, texto),
+                h("small", null, origen)))
+          : actual.trim() && h("div", { "data-texto": cual + "-" + i, style: esN ? { fontWeight: 500, padding: "4px 0" } : { fontSize: 12.5, whiteSpace: "pre-wrap", padding: "2px 0" } }, actual),
+        h("div", { className: "h-mini", style: { marginTop: 3.4 } }, liga("escribir " + etq, "data-escribir", () => escribirTexto(i, cual, true)))));
+  };
+
   const renglones = h("div", { style: { paddingTop: 20.4 } },
     h("div", { className: "h-cols h-cab h-mini" },
       h("div", null, "Código"),
@@ -6501,8 +6608,10 @@ function HojaCotizacion({
           (manual || ids.length > 0) && h("select", { className: "input", "data-campo": "tipo-" + i, value: TIPOS_DE_ITEM[m.tipo] ? m.tipo : "mueble", disabled: soloVer, title: "Qué tipo de ítem es: decide el prefijo de su código en la obra", style: { marginTop: 6.8, fontSize: 12 }, onChange: e => ponRenglon(i, { tipo: e.target.value }) },
             Object.keys(TIPOS_DE_ITEM).map(t => h("option", { key: t, value: t }, TIPOS_DE_ITEM[t])))),
         h("div", null,
-          h("input", { className: "input", "data-campo": "nombre-" + i, placeholder: "Nombre del producto o servicio", value: m.nombre || "", readOnly: soloVer, style: { fontWeight: 500 }, onChange: e => ponRenglon(i, { nombre: e.target.value }) }),
-          h("textarea", { className: "input", "data-campo": "descripcion-" + i, rows: 2, placeholder: "Descripción, acabado, medidas, marca…", value: m.descripcion || "", readOnly: soloVer, style: { marginTop: 6.8, fontSize: 12.5, color: "color-mix(in srgb,var(--h-text) 75%,transparent)" }, onChange: e => ponRenglon(i, { descripcion: e.target.value }) }),
+          campoTexto(i, m, "nombre",
+            h("input", { className: "input", "data-campo": "nombre-" + i, placeholder: "Nombre del producto o servicio", value: m.nombre || "", readOnly: soloVer, style: { fontWeight: 500 }, onChange: e => ponRenglon(i, { nombre: e.target.value }) })),
+          campoTexto(i, m, "descripcion",
+            h("textarea", { className: "input", "data-campo": "descripcion-" + i, rows: 2, placeholder: "Descripción, acabado, medidas, marca…", value: m.descripcion || "", readOnly: soloVer, style: { marginTop: 6.8, fontSize: 12.5, color: "color-mix(in srgb,var(--h-text) 75%,transparent)" }, onChange: e => ponRenglon(i, { descripcion: e.target.value }) })),
           /* Notas internas (Mike, 7-oct: «notas locales (no se presentan al
              cliente) que aparezcan cuando revisamos las cotizaciones o cuando
              exportamos el PDF para interno»). `no-print`: la hoja impresa
@@ -6546,7 +6655,14 @@ function HojaCotizacion({
                  generarlo con el cotizador por componentes». Abre ESTE
                  renglón en el armador; ya armado, el enlace de abajo («abrir
                  el armador») lo vuelve a abrir. */
-              manual && !soloVer && h(React.Fragment, null, " · ", h("button", { type: "button", "data-armar-requerimiento": i, title: "Sacar su costo por componentes, como un mueble del armador", onClick: () => editarMueble(i) }, "armar por componentes")))),
+              manual && !soloVer && h(React.Fragment, null, " · ", h("button", { type: "button", "data-armar-requerimiento": i, title: "Sacar su costo por componentes, como un mueble del armador", onClick: () => editarMueble(i) }, "armar por componentes")),
+              manual && !soloVer && h(React.Fragment, null, " · ", h("button", { type: "button", "data-desde-catalogo": i, title: "Tomar el precio de un producto del catálogo de la empresa (cost101), sin perder el nombre ni la descripción de aquí", onClick: () => abrirCatalogo(i) }, "agregar desde catálogo")),
+              manual && !soloVer && m.del_catalogo && h(React.Fragment, null, " · ", h("button", { type: "button", "data-quitar-catalogo": i, title: "Dejar el renglón como estaba antes del catálogo", onClick: () => quitarDelCatalogo(i) }, "quitar lo del catálogo")))),
+          /* Un renglón a mano que no viene de la obra también puede tomar su
+             precio del catálogo (Mike, 11-oct). */
+          manual && !soloVer && ids.length === 0 && h("div", { className: "h-arm no-print" },
+            h("button", { type: "button", "data-desde-catalogo": i, title: "Tomar el precio de un producto del catálogo de la empresa (cost101), sin perder el nombre ni la descripción de aquí", onClick: () => abrirCatalogo(i) }, "agregar desde catálogo"),
+            m.del_catalogo && h(React.Fragment, null, " · ", h("button", { type: "button", "data-quitar-catalogo": i, onClick: () => quitarDelCatalogo(i) }, "quitar lo del catálogo"))),
           /* Varios ítems de la obra en un solo concepto (Mike, 2-oct): se
              dice cuántos, y que al aprobar cada pieza sigue siendo la suya. */
           ids.length > 1 && h("div", { className: "h-arm", "data-requerimiento": ids.join(" ") },
@@ -6652,7 +6768,10 @@ function HojaCotizacion({
     h("div", { className: "dialog hoja", style: { left: "auto", transform: "none" }, onClick: e => e.stopPropagation() },
       esquinas(),
       h("div", { style: { display: "flex", alignItems: "center", gap: 10.2 } },
-        h("div", { style: { fontWeight: 500, fontSize: 20, marginRight: "auto" } }, "Catálogo"),
+        h("div", { style: { fontWeight: 500, fontSize: 20, marginRight: "auto" }, "data-catalogo-destino": catalogo.destino ?? "" },
+          catalogo.destino !== null && catalogo.destino !== undefined && muebles[catalogo.destino]
+            ? "Agregar desde catálogo a «" + (muebles[catalogo.destino].nombre || muebles[catalogo.destino].codigo || "este renglón") + "»"
+            : "Catálogo"),
         h("button", { className: "btn", onClick: () => setCatalogo(null) }, "Cerrar")),
       /* Dos catálogos (Mike, 7-oct): los productos —lo que se vende, con su
          precio— y los precios base de cost101 —lo que cuesta—. */
@@ -6675,7 +6794,7 @@ function HojaCotizacion({
                 h("span", { style: { display: "block", fontWeight: 500 } }, c.nombre),
                 h("span", { style: { display: "block", fontSize: 11.5, color: "var(--h-muted)" } }, (TIPO_BASE[c.tipo] || c.tipo) + (c.categoria ? " · " + c.categoria : "") + " · por " + c.unidad)),
               h("span", { className: "num", title: "Con IVA, como está en cost101" }, hojaDinero((c.precio || 0) / 100)),
-              h("button", { className: "btn btn-primary", style: { fontSize: 12, padding: "4px 10px" }, onClick: () => agregarPrecioBase(c) }, "Agregar"))))
+              h("button", { className: "btn btn-primary", style: { fontSize: 12, padding: "4px 10px" }, onClick: () => agregarPrecioBase(c) }, catalogo.destino !== null && catalogo.destino !== undefined ? "Usar" : "Agregar"))))
           : catalogo.filas.length === 0 ? h("div", { className: "h-vacio" }, "El catálogo todavía está vacío. Escribe el renglón a mano, o arma tus productos en cost101.")
           : filasCat.length === 0 ? h("div", { className: "h-vacio" }, "Nada coincide con «" + busqueda + "».")
           : filasCat.map(c => h("div", { key: c.id, "data-producto": c.codigo || c.id },
@@ -6685,7 +6804,7 @@ function HojaCotizacion({
               (c.descripcion || c.estado === "aprobado") && h("span", { style: { display: "block", fontSize: 11.5, color: "var(--h-muted)" } },
                 [c.estado === "aprobado" ? "cost101" + (c.unidad ? " · por " + c.unidad : "") + (c.categoria ? " · " + c.categoria : "") : null, c.descripcion].filter(Boolean).join(" · "))),
             h("span", { className: "num" }, hojaDinero((c.precio || 0) / 100)),
-            h("button", { className: "btn btn-primary", style: { fontSize: 12, padding: "4px 10px" }, onClick: () => agregarProducto(c) }, "Agregar"))))));
+            h("button", { className: "btn btn-primary", style: { fontSize: 12, padding: "4px 10px" }, onClick: () => agregarProducto(c) }, catalogo.destino !== null && catalogo.destino !== undefined ? "Usar" : "Agregar"))))));
 
   return h("div", { className: "hoja", "data-pantalla": "hoja" },
     h("style", null, HOJA_CSS),
