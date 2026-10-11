@@ -6466,7 +6466,7 @@ function HojaCotizacion({
   const filasCat = catalogo ? catalogo.filas.filter(c => !q || ((c.codigo || "") + " " + (c.nombre || "") + " " + (c.descripcion || "") + " " + (c.categoria || "")).toLowerCase().includes(q)) : [];
   const filasBase = catalogo ? (catalogo.base || []).filter(c => !q || ((c.clave || "") + " " + (c.nombre || "") + " " + (c.categoria || "")).toLowerCase().includes(q)) : [];
   const enBase = !!catalogo && catalogo.pestana === "base";
-  const TIPO_BASE = { material: "Material", mo: "Mano de obra", equipo: "Equipo" };
+  const TIPO_BASE = { material: "Material", mo: "Mano de obra", equipo: "Equipo", comprado: "Artículo comprado" }; // comprado: API 0.95.0 (Mike, 11-oct)
   const esquinas = () => ["tl", "tr", "bl", "br"].map(k => h("i", { key: k, className: "corner " + k }));
   const hayArmados = muebles.some(m => !esManual(m));
 
