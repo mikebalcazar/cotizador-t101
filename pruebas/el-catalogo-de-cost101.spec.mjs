@@ -16,7 +16,8 @@
  * se deben actualizar en quote, pero sólo en costos no autorizados aún».
  *
  * Lo que se mide:
- *   · un producto de cost101 entra sin IVA y como BASE: lleva indirectos,
+ *   · un producto de cost101 entra con su precio unitario CON IVA, tal cual
+ *     (Mike, 11-oct; del 7 al 11-oct entraba sin IVA), y como BASE: lleva indirectos,
  *     comisiones y flete, igual que lo escrito a mano;
  *   · al abrir para editar una cotización no aprobada, lo de cost101 toma el
  *     precio de hoy y lo que había entrado como precio final pasa a llevar
@@ -125,7 +126,7 @@ test('el catálogo tiene dos pestañas —productos y precios base— y no ofrec
     assert.equal(await p.locator('[data-producto="PAR-402"]').count(), 0, 'el borrador no se ofrece');
     assert.equal(await p.locator('[data-producto="PTA-A"]').count(), 1, 'el de siempre sigue');
     assert.match(await p.locator('[data-producto="PAR-302"]').innerText(), /cost101 · por m²/, 'el de cost101 se dice, con su unidad');
-    assert.equal(await leer(p, '[data-producto="PAR-302"] .num'), 656.57, 'con su precio sin IVA');
+    assert.equal(await leer(p, '[data-producto="PAR-302"] .num'), 761.63, 'con su precio unitario de cost101, IVA incluido (Mike, 11-oct)');
     await p.locator('[data-catalogo="base"]').click();
     assert.equal(await p.locator('[data-precio-base]').count(), 3);
     assert.match(await p.locator('[data-precio-base="ART-001"]').innerText(), /Artículo comprado · Cocinas · por pza/, 'el artículo comprado se dice como tal');
@@ -140,25 +141,25 @@ test('el catálogo tiene dos pestañas —productos y precios base— y no ofrec
   } finally { await ctx.close(); }
 });
 
-test('un producto de cost101 entra sin IVA y como base: lleva indirectos, comisiones y flete (Mike, 8-oct)', async () => {
+test('un producto de cost101 entra con su precio de cost tal cual (con IVA) y como base: lleva indirectos, comisiones y flete (Mike, 8-oct)', async () => {
   const { ctx, p, errores, escrituras } = await abrirApp();
   try {
     await abrirCatalogo(p);
     assert.match(await p.locator('[data-catalogo-regla]').innerText(), /como base: la hoja les pone indirectos, flete y comisiones/);
     await p.locator('[data-producto="PAR-302"]').getByRole('button', { name: 'Agregar' }).click();
     await p.waitForTimeout(250);
-    assert.equal(await p.locator('[data-campo="precio-1"]').inputValue(), '656.57', 'entra con el precio de cost101 sin IVA');
+    assert.equal(await p.locator('[data-campo="precio-1"]').inputValue(), '761.63', 'entra con el precio unitario de cost101 tal cual, con IVA (Mike, 11-oct)');
     assert.equal(await p.locator('[data-sin-cargos="1"]').count(), 0, 'ya no es precio final');
     assert.match(await p.locator('[data-cost101="1"]').innerText(), /cost101 · al día/, 'y dice que sigue a cost101');
 
     await p.locator('[data-campo="cantidad-1"]').fill('10');
     await p.waitForTimeout(200);
-    const [aMano, catalogo] = preciosEsperados([{ base: 1000, qty: 1 }, { base: 656.57, qty: 10 }]);
+    const [aMano, catalogo] = preciosEsperados([{ base: 1000, qty: 1 }, { base: 761.63, qty: 10 }]);
     assert.equal(await leer(p, '[data-precio-cliente="1"]'), catalogo, 'al cliente con indirectos, comisiones y su parte del flete');
     assert.equal(await leer(p, '[data-precio-cliente="0"]'), aMano, 'el flete se reparte entre los dos');
     assert.equal(await p.locator('[data-cargo="catalogo"]').count(), 0, 'no hay renglón «sin cargos» en la caja');
-    assert.equal(await leer(p, '[data-cargo="amano"]'), 1000 + 6565.7, 'los dos son base');
-    assert.equal(await leer(p, '[data-cargo="indirectos"]'), Math.round((1000 + 6565.7) * IND * 100) / 100, 'los indirectos van sobre los dos');
+    assert.equal(await leer(p, '[data-cargo="amano"]'), 1000 + 7616.3, 'los dos son base');
+    assert.equal(await leer(p, '[data-cargo="indirectos"]'), Math.round((1000 + 7616.3) * IND * 100) / 100, 'los indirectos van sobre los dos');
     const suma = await p.locator('[data-cargos-suma]').innerText();
     assert.ok(suma.includes((await p.locator('[data-hoja="subtotal"]').innerText()).trim()), 'y la caja cierra en el mismo subtotal: ' + suma);
 
@@ -183,7 +184,7 @@ test('un producto de cost101 entra sin IVA y como base: lleva indirectos, comisi
 });
 
 /* Una cotización de antes del 8-oct, todavía sin aprobar: un producto que
- * entró como precio final a $600 (hoy vale $656.57 en cost101) y un precio
+ * entró como precio final a $600 (hoy vale $761.63 en cost101, con IVA) y un precio
  * base que entró a $230 (hoy $245). */
 const VIEJOS = [
   A_MANO,
@@ -196,16 +197,16 @@ test('una cotización sin aprobar se pone al día con cost101 al editarla, y lo 
   try {
     await p.locator('[data-al-dia]').waitFor({ timeout: 5000 });
     assert.match(await p.locator('[data-al-dia]').innerText(), /Se pusieron al día 2 precios de cost101, y 1 renglón del catálogo ahora lleva indirectos, flete y comisiones/);
-    assert.equal(await p.locator('[data-campo="precio-1"]').inputValue(), '656.57', 'el producto toma el precio de hoy');
+    assert.equal(await p.locator('[data-campo="precio-1"]').inputValue(), '761.63', 'el producto toma el precio de hoy');
     assert.equal(await p.locator('[data-campo="precio-2"]').inputValue(), '245', 'y el precio base también');
     assert.equal(await p.locator('[data-sin-cargos="1"]').count(), 0, 'ya no es precio final');
-    const esperados = preciosEsperados([{ base: 1000, qty: 1 }, { base: 656.57, qty: 2 }, { base: 245, qty: 1 }]);
+    const esperados = preciosEsperados([{ base: 1000, qty: 1 }, { base: 761.63, qty: 2 }, { base: 245, qty: 1 }]);
     assert.equal(await leer(p, '[data-precio-cliente="1"]'), esperados[1], 'con sus cargos');
     assert.equal(await leer(p, '[data-precio-cliente="0"]'), esperados[0], 'el escrito a mano no cambia de precio, sólo comparte el flete');
     await p.getByRole('button', { name: /^Guardar/ }).first().click();
     await p.waitForTimeout(800);
     const v = ultimaVersion(escrituras);
-    assert.equal(v?.muebles[1].precio, 656.57);
+    assert.equal(v?.muebles[1].precio, 761.63);
     assert.equal(v?.muebles[1].sinCargos, undefined);
     assert.equal(v?.muebles[2].precio, 245);
     assert.deepEqual(errores, []);
