@@ -119,8 +119,13 @@ jobs:
         id: medir_prod
         continue-on-error: true   # para que el comentario del commit se escriba igual
         # Producción se mide en su dominio: workers.dev manda para allá desde el
-        # 25-sep (DOMINIO_PROPIO en wrangler.toml).
-        run: node scripts/medir.mjs https://quote101.taller101.com produccion 2>&1 | tee -a /tmp/salida.txt
+        # 25-sep (DOMINIO_PROPIO en wrangler.toml), y quote101.taller101.com
+        # desde el 11-oct. Un custom domain recién puesto tarda en tener
+        # certificado: se espera a que conteste (hasta 2 min) antes de medir.
+        run: |
+          url=https://quote.suite101.app/entrar.html
+          for i in $(seq 1 24); do curl -sf -o /dev/null "$url" && break; sleep 5; done
+          node scripts/medir.mjs https://quote.suite101.app produccion 2>&1 | tee -a /tmp/salida.txt
 
       # El canal de vuelta (OPERAR §6): el chat no alcanza el log de Actions,
       # pero sí api.github.com.
