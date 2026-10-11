@@ -168,6 +168,32 @@ test('una cotización se abre en la hoja, y el mueble vale lo mismo que en el PD
   } finally { await ctx.close(); }
 });
 
+/* Mike, 11-oct-2026: «en la parte de hasta abajo de quote, no se lee por el
+ * fondo oscuro». «Otros documentos» va debajo de la hoja, fuera de su fondo
+ * claro: lleva su propio panel claro, y las letras oscuras se leen sobre él. */
+test('«Otros documentos» se lee: panel claro debajo de la hoja, letras oscuras', async () => {
+  const { ctx, p, errores } = await abrirApp();
+  try {
+    await abrirCotizacion(p);
+    const barra = p.locator('[data-hoja="exportes"]');
+    assert.equal(await barra.count(), 1, 'la barra de otros documentos está');
+    const medido = await barra.evaluate((el) => {
+      const rgb = (c) => (c.match(/[\d.]+/g) || []).map(Number);
+      const luz = ([r, g, b]) => [r, g, b].map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }).reduce((a, v, i) => a + v * [0.2126, 0.7152, 0.0722][i], 0);
+      const fondo = rgb(getComputedStyle(el).backgroundColor);
+      const boton = el.querySelector('button');
+      const letra = rgb(getComputedStyle(boton).color);
+      const aviso = rgb(getComputedStyle(el.querySelector('.h-aviso')).color);
+      const contraste = (a, b) => { const [x, y] = [luz(a), luz(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); };
+      return { opaco: fondo.length === 3 || fondo[3] === 1, fondo, contraste: contraste(fondo, letra), botonFondo: getComputedStyle(boton).backgroundColor, avisoOpaco: aviso.length === 3 || aviso[3] > 0.5 };
+    });
+    assert.ok(medido.opaco && medido.fondo.slice(0, 3).every((v) => v > 200), `fondo claro y opaco (${medido.fondo})`);
+    assert.ok(medido.contraste >= 7, `las letras se leen (contraste ${medido.contraste.toFixed(1)})`);
+    assert.match(await barra.innerText(), /Otros documentos:[\s\S]*PDF cliente con condiciones[\s\S]*Desglosar componentes[\s\S]*PDF interno[\s\S]*Presupuesto[\s\S]*Excel arq/);
+    assert.deepEqual(errores, [], 'sin errores de JavaScript');
+  } finally { await ctx.close(); }
+});
+
 /* Mike, 3-oct-2026: lo escrito a mano es la BASE; encima van los indirectos
  * siempre, las comisiones prendidas (las dos vienen prendidas) y el flete
  * repartido entre todos los renglones, al peso (ver pruebas/cargos.mjs).
