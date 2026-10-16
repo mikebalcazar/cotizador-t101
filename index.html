@@ -2078,6 +2078,9 @@ function getPO(fo, f, a, c) {
   if (a === "traceless") return (((_PPO$chapa2 = PPO.chapa) === null || _PPO$chapa2 === void 0 || (_PPO$chapa2 = _PPO$chapa2.premium) === null || _PPO$chapa2 === void 0 || (_PPO$chapa2 = _PPO$chapa2[fo]) === null || _PPO$chapa2 === void 0 ? void 0 : _PPO$chapa2[f]) || 0) * 0.95;
   return ((_PPO$a = PPO[a]) === null || _PPO$a === void 0 || (_PPO$a = _PPO$a[fo]) === null || _PPO$a === void 0 ? void 0 : _PPO$a[f]) || 0;
 }
+/* Lo que dice la etiqueta de un cajon: la caja y el frente, que desde el
+ * 15-oct-2026 pueden ser de materiales distintos. */
+const TAG_CAJON = (pi, pf) => "Caja " + (NOM_ACABADO[pi.acabado] || "") + (pi.chapa ? " " + NOM_CHAPA[pi.chapa] : "") + " · Frente " + (NOM_ACABADO[pf.acabado] || "") + (pf.chapa ? " " + NOM_CHAPA[pf.chapa] : "");
 function getPC(a, c) {
   var _PC$chapa;
   if (a === "chapa") return ((_PC$chapa = PC.chapa) === null || _PC$chapa === void 0 ? void 0 : _PC$chapa[c]) || 0;
@@ -7360,7 +7363,12 @@ function armarComponentes(tipo, data, pi, pf) {
     };
   } else if (tipo === "cajones") {
     const n = data.num || 1;
-    const cuerpo = getPC(pf.acabado, pf.chapa);
+    /* La CAJA del cajon sigue a INTERIORES; el FRENTE, a frentes (Mike,
+     * 15-oct-2026). Antes la caja se cotizaba con el acabado del FRENTE:
+     * el campo "Interiores" del cajon no movia nada, y con Traceless o
+     * Laca 2K -- que no estan en PC, porque una caja no se hace de eso --
+     * getPC devolvia 0 en silencio y la caja se cobraba GRATIS. */
+    const cuerpo = getPC(pi.acabado, pi.chapa);
     const frente = getPFAcabado("frenteCajon", pf.acabado, pf.chapa);
     const pu = cuerpo + frente;
     const jP = (JALADERAS[data.jaladera] || 0) * n;
@@ -7370,7 +7378,7 @@ function armarComponentes(tipo, data, pi, pf) {
       ...c,
       modulo: "Cajones",
       desc: "Cajón",
-      tags: [NOM_ACABADO[pf.acabado] + (pf.chapa ? " · " + NOM_CHAPA[pf.chapa] : "")],
+      tags: [TAG_CAJON(pi, pf)],
       extras: ex,
       unitario: pu + (JALADERAS[data.jaladera] || 0),
       qty: n,
@@ -8330,12 +8338,12 @@ function Cotizador({
               newTags = [tagFull, tagFre];
             } else if (c.modulo === "Cajones") {
               var _c$extras3;
-              const cuerpo = getPC(pf.acabado, pf.chapa);
+              const cuerpo = getPC(pi.acabado, pi.chapa);
               const frente = getPFAcabado("frenteCajon", pf.acabado, pf.chapa);
               const ext = ((_c$extras3 = c.extras) === null || _c$extras3 === void 0 ? void 0 : _c$extras3.join("")) || "";
               const jal = ext.includes("Uñero") ? JALADERAS.unero : ext.includes("Push") ? JALADERAS.push : ext.includes("Jaladera") ? JALADERAS.normal : 0;
               nu = cuerpo + frente + jal;
-              newTags = [tag];
+              newTags = [TAG_CAJON(pi, pf)];
             } else if (c.modulo === "Entrepaño") {
               var _c$desc$match2;
               const fondo = ((_c$desc$match2 = c.desc.match(/Fondo (\S+)/)) === null || _c$desc$match2 === void 0 ? void 0 : _c$desc$match2[1]) || "50-60cm";
