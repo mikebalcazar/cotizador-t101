@@ -84,6 +84,48 @@ async function laSuiteDiceQuien(req, env) {
   return cuerpo?.data || null;
 }
 
+/* ─────────── la sesión que ya pasó, recordada (16-oct-2026) ───────────
+ * Cada archivo de la app (la página, cada .js, cada .css) le preguntaba a la
+ * suite «¿quién es?» (/yo, ~0.7 s medido en staging): nueve veces por cada
+ * carga. Ahora, cuando la suite dice que sí, se recuerda 5 min por sesión en
+ * la memoria de este Worker. Sólo se recuerda el sí: quien no pasó vuelve a
+ * preguntar, así entra en cuanto tenga sesión. No abre ningún dato: la API
+ * sigue revisando sesión, empresa y permiso en CADA pedido por `/s101`. Si la
+ * API contesta 401 a esa sesión, o sale por `/auth/salir`, se olvida.
+ * La llave es un SHA-256 de la galleta `s101`: aquí no se guarda ninguna. */
+const PASARON = new Map();
+const VIVE_MS = 5 * 60 * 1000;
+const CUANTAS = 2000;
+async function llaveDeSesion(req) {
+  const galleta = req.headers.get('cookie') || '';
+  const s101 = galleta.split(';').map((x) => x.trim()).find((x) => x.startsWith('s101='));
+  if (!s101) return null;
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s101));
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+function recuerda(llave) {
+  if (PASARON.size >= CUANTAS) PASARON.delete(PASARON.keys().next().value);
+  PASARON.set(llave, Date.now() + VIVE_MS);
+}
+function yaPaso(llave) {
+  const vence = PASARON.get(llave);
+  if (!vence) return false;
+  if (vence < Date.now()) { PASARON.delete(llave); return false; }
+  return true;
+}
+/** Para las pruebas: empezar sin nada recordado. */
+export const olvidaSesiones = () => PASARON.clear();
+
+/** ¿Se le entrega la app? Pregunta a la suite sólo si no la recuerda. */
+async function pasaLaPuerta(req, env) {
+  const llave = await llaveDeSesion(req);
+  if (!llave) return false;
+  if (yaPaso(llave)) return true;
+  const abre = laSuiteLeAbre(await laSuiteDiceQuien(req, env));
+  if (abre) recuerda(llave);
+  return abre;
+}
+
 /** ¿La suite le abre quote101? El dueño de la suite entra a todo; a los demás
  *  se lo dice la lista de apps que les puso quien administra su empresa en
  *  workshop101. Vacía quiere decir todas. */
@@ -135,14 +177,19 @@ export default {
       u.pathname = u.pathname.slice(PREFIJO.length) || '/';
       const r = new Request(u, req);
       r.headers.set('X-App', APP);
-      return env.API.fetch(r);
+      const resp = await env.API.fetch(r);
+      // La suite ya no reconoce esta sesión, o se fue: que la puerta lo sepa.
+      if (resp.status === 401 || u.pathname === '/auth/salir') {
+        const llave = await llaveDeSesion(req);
+        if (llave) PASARON.delete(llave);
+      }
+      return resp;
     }
 
     if (esAbierto(archivo(u))) return pedirArchivo(req, u, env);
 
     // Todo lo demás —empezando por la app— pide sesión.
-    const yo = await laSuiteDiceQuien(req, env);
-    if (!laSuiteLeAbre(yo)) {
+    if (!(await pasaLaPuerta(req, env))) {
       return Response.redirect(new URL('/entrar.html', u.origin).toString(), 302);
     }
 
