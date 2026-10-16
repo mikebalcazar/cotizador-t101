@@ -5,6 +5,32 @@ Lo escribe la sesión de Claude Code que trabaja el repo. Lo más nuevo arriba.
 
 ---
 
+# 16-oct-2026 · G112: el catálogo DENTRO del armador de componentes
+
+Mike, 15-oct: «necesito en quote poder agregar desde el catálogo de precios / de
+catálogo dentro del armador de componentes». Recado del muro de suite101-api
+`2026-10-15-2055-quote101-catalogo-dentro-del-armador.md`, con las dos
+decisiones ya tomadas por botones.
+
+- Módulo nuevo **«Del catálogo»** al final de los del armador (`ModCatalogo`,
+  `[data-armador="catalogo"]`): pestañas Productos y Precios base
+  (`[data-catalogo-pestanas]` adentro), buscador, y al escoger una fila la
+  cantidad **a mano en la unidad del catálogo** (pza, m², h; acepta decimales).
+- El componente nace con `armarComponentes("catalogo", …)`: módulo «Catálogo» o
+  «Precio base», `unitario` = el mismo precio que en el renglón
+  (`precioDeCatalogo` para productos; precio con IVA para precios base), y guarda
+  `producto_id` / `costo_base_id`, `origen_catalogo` y `unidad`. **Sin
+  `sinCargos`**: lleva los cargos de la hoja como cualquier componente.
+- La puesta al día con cost101 (G110) **baja a los componentes**: unitario,
+  subtotal, `receta.data.precio` y el total del mueble; el aviso cuenta esos
+  precios también. En una aprobada nada se toca (`soloVer`).
+- Sin cost101 (403 en precios base): la pestaña sale vacía y los productos
+  siguen. «Reemplazar por otro…» reconoce los dos módulos nuevos.
+- Prueba nueva `pruebas/el-catalogo-en-el-armador.spec.mjs` (3).
+  **Medido aquí:** las 3 nuevas y cada archivo por separado en verde; la batería
+  completa en esta máquina tropieza por carga (la puerta levanta wrangler) y se
+  midió también con `--test-concurrency=2`.
+
 # 8-oct-2026 · G111: el look de cost101 (Mike: «el look and feel de cost101 en toda la suite»)
 
 **Medido aquí: pruebas/*.spec.mjs, 144 de 144. Capturas a 1440×900 y 390×844

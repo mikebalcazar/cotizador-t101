@@ -5666,6 +5666,111 @@ function ModEspecial({
     onClick: () => onAgregar("especial", s)
   }, "+ Agregar concepto"));
 }
+/* ─────────────── el catálogo DENTRO del armador (Mike, 15-oct-2026) ───────────────
+ *
+ * «necesito en quote poder agregar desde el catálogo de precios / de catálogo
+ * dentro del armador de componentes». Las mismas dos pestañas que en el
+ * renglón —Productos y Precios base— y dos reglas que Mike escogió con
+ * botones:
+ *
+ *   · La cantidad se escribe a mano, en la unidad de cada cosa: «cuando es
+ *     precio base, es cuántas piezas son; cuando es producto de catálogo, es
+ *     cuántas unidades del precio de producto del catálogo son». El armador
+ *     no la deduce de las medidas del mueble.
+ *   · El componente lleva los cargos de la hoja como cualquier otro (no
+ *     lleva `sinCargos`), aunque un producto de cost101 ya traiga sus
+ *     indirectos y su utilidad: se le dijo antes de escoger.
+ *
+ * El precio entra IGUAL que en el renglón (precioDeCatalogo para un
+ * producto, el precio con IVA para un precio base), para que el mismo
+ * material no dé dos números según dónde se jale. El componente guarda su
+ * origen (`producto_id` o `costo_base_id`, `origen_catalogo`, `unidad`)
+ * para que la puesta al día con cost101 lo alcance. Una empresa sin cost101
+ * (403 en precios base) ve la pestaña vacía, sin romper nada. */
+const TIPO_BASE_ARM = { material: "Material", mo: "Mano de obra", equipo: "Equipo", comprado: "Artículo comprado" };
+const dineroArm = n => "$" + (Number(n) || 0).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function ModCatalogo({
+  onAgregar
+}) {
+  const h = React.createElement;
+  const [cat, setCat] = useState({ cargando: true, productos: [], base: [], error: "" });
+  const [pestana, setPestana] = useState("productos");
+  const [busca, setBusca] = useState("");
+  const [elegido, setElegido] = useState(null);
+  const [qty, setQty] = useState(1);
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      try {
+        const db = window.suiteDB || {};
+        const [productos, base] = await Promise.all([db.productos ? db.productos() : [], db.costosBase ? db.costosBase() : []]);
+        if (vivo) setCat({ cargando: false, productos: productos.filter(c => c.estado !== "borrador"), base, error: "" });
+      } catch (e) {
+        if (vivo) setCat({ cargando: false, productos: [], base: [], error: String(e && e.message || e) });
+      }
+    })();
+    return () => { vivo = false; };
+  }, []);
+  const enBase = pestana === "base";
+  const q = busca.trim().toLowerCase();
+  const filas = enBase
+    ? cat.base.filter(c => !q || ((c.clave || "") + " " + (c.nombre || "") + " " + (c.categoria || "")).toLowerCase().includes(q))
+    : cat.productos.filter(c => !q || ((c.codigo || "") + " " + (c.nombre || "") + " " + (c.descripcion || "") + " " + (c.categoria || "")).toLowerCase().includes(q));
+  /* Lo que se lleva el componente de una fila del catálogo. */
+  const deFila = c => enBase
+    ? { costo_base_id: c.id, origen_catalogo: "cost101-base", codigo: c.clave || "", nombre: c.nombre || "", unidad: c.unidad || "", precio: (Number(c.precio) || 0) / 100 }
+    : { producto_id: c.id, ...(c.estado === "aprobado" ? { origen_catalogo: "cost101" } : {}), codigo: c.codigo || "", nombre: c.nombre || "", unidad: c.unidad || "", precio: precioDeCatalogo(c) };
+  const escoger = c => { setElegido(deFila(c)); setQty(1); };
+  const pestanaBtn = (id, texto, n) => h("button", {
+    type: "button", "data-catalogo": id,
+    onClick: () => { setPestana(id); setElegido(null); },
+    style: { ...st.btn, padding: "5px 10px", fontSize: 11, fontWeight: 700, color: pestana === id ? "#fff" : "#555", background: pestana === id ? "#0080C1" : "#fff", borderColor: pestana === id ? "#0080C1" : "#D8D4CD" }
+  }, texto + (cat.cargando ? "" : " · " + n));
+  const fila = c => {
+    const clave = enBase ? (c.clave || c.id) : (c.codigo || c.id);
+    const precio = enBase ? (Number(c.precio) || 0) / 100 : precioDeCatalogo(c);
+    const sub = enBase
+      ? (TIPO_BASE_ARM[c.tipo] || c.tipo || "") + (c.categoria ? " · " + c.categoria : "") + (c.unidad ? " · por " + c.unidad : "")
+      : [c.estado === "aprobado" ? "cost101" + (c.unidad ? " · por " + c.unidad : "") + (c.categoria ? " · " + c.categoria : "") : null, c.descripcion].filter(Boolean).join(" · ");
+    const activa = elegido && (enBase ? elegido.costo_base_id === c.id : elegido.producto_id === c.id);
+    return h("button", {
+      key: c.id, type: "button", [enBase ? "data-precio-base" : "data-producto"]: clave, onClick: () => escoger(c),
+      style: { display: "grid", gridTemplateColumns: "84px 1fr auto", gap: 10, alignItems: "center", width: "100%", textAlign: "left", font: "inherit", fontSize: 12.5, padding: "7px 8px", border: "1px solid " + (activa ? "#0080C1" : "#E4E0D8"), background: activa ? "#E8F2FA" : "#fff", borderRadius: 3, cursor: "pointer" }
+    },
+      h("span", { style: { fontFamily: "ui-monospace,monospace", fontSize: 11.5, color: "#555" } }, clave || "—"),
+      h("span", { style: { minWidth: 0 } },
+        h("span", { style: { display: "block", fontWeight: 600 } }, c.nombre),
+        sub && h("span", { style: { display: "block", fontSize: 11, color: "#888" } }, sub)),
+      h("span", { className: "num", style: { fontWeight: 600 } }, dineroArm(precio)));
+  };
+  return h("div", { "data-armador": "catalogo" },
+    h("div", { "data-catalogo-pestanas": true, style: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 } },
+      pestanaBtn("productos", "Productos", cat.productos.length),
+      pestanaBtn("base", "Precios base", cat.base.length)),
+    h("input", { "data-armador": "buscar-catalogo", style: { ...st.inp, marginBottom: 6 }, value: busca, onChange: e => setBusca(e.target.value),
+      placeholder: enBase ? "Buscar por clave, nombre o categoría…" : "Buscar por código, nombre o descripción…" }),
+    h("div", { "data-catalogo-regla": true, style: { fontSize: 11, color: "#888", marginBottom: 8 } },
+      enBase ? "Precios base de cost101, con IVA, tal como están ahí. La cantidad es cuántas piezas (o la unidad que diga) lleva este mueble."
+        : "Productos del catálogo; los de cost101 entran con su precio unitario, con IVA. La cantidad es cuántas unidades del producto lleva este mueble."),
+    h("div", { style: { display: "grid", gap: 4, maxHeight: 260, overflowY: "auto", marginBottom: 10 } },
+      cat.cargando ? h("div", { style: { fontSize: 12.5, color: "#888" } }, "Cargando el catálogo…")
+        : cat.error ? h("div", { style: { fontSize: 12.5, color: "#c0392b" } }, "No se pudo leer el catálogo: " + cat.error)
+        : (enBase ? cat.base : cat.productos).length === 0
+          ? h("div", { "data-catalogo-vacio": pestana, style: { fontSize: 12.5, color: "#888" } }, enBase ? "No hay precios base. Se capturan en cost101." : "El catálogo todavía está vacío. Se arma en cost101.")
+          : filas.length === 0 ? h("div", { style: { fontSize: 12.5, color: "#888" } }, "Nada coincide con «" + busca + "».")
+          : filas.map(fila)),
+    elegido && h("div", { "data-armador": "catalogo-elegido", style: { display: "grid", gridTemplateColumns: "1fr 140px", gap: 12, alignItems: "end", marginBottom: 10 } },
+      h("div", null,
+        h(Lbl, null, "Componente"),
+        h("div", { style: { fontWeight: 700, fontSize: 13 } }, elegido.nombre),
+        h("div", { style: { fontSize: 12, color: "#666" } }, dineroArm(elegido.precio) + (elegido.unidad ? " por " + elegido.unidad : " cada uno") + " · " + dineroArm(elegido.precio * qty) + " en este mueble")),
+      h("div", null,
+        h(Lbl, null, "Cantidad" + (elegido.unidad ? " (" + elegido.unidad + ")" : "")),
+        h(NumInput, { value: qty, onChange: setQty, min: 0.01, step: 0.5, style: { width: "100%" } }))),
+    h("button", { type: "button", className: "q-btn q-btn-1", "data-armador": "agregar-del-catalogo", disabled: !elegido,
+      style: { ...st.btn, ...st.bta, width: "100%", opacity: elegido ? 1 : 0.5, cursor: elegido ? "pointer" : "not-allowed" },
+      onClick: () => elegido && onAgregar("catalogo", { ...elegido, qty }) }, elegido ? "+ Agregar al mueble" : "Escoge algo del catálogo"));
+}
 function ModPuertaGabinete({
   onAgregar
 }) {
@@ -5771,6 +5876,10 @@ const MODS = [{
   id: "especial",
   l: "Especial",
   C: ModEspecial
+}, {
+  id: "catalogo",
+  l: "Del catálogo",
+  C: ModCatalogo
 }];
 
 // ── COTIZADOR ──────────────────────────────────────────────────────────────
@@ -6235,12 +6344,17 @@ function HojaCotizacion({
    * actualizan los precios». Al abrir para editar una cotización que NO está
    * aprobada, cada renglón de cost101 toma el precio de hoy de su producto o
    * de su precio base, y lo que entró como precio final pasa a llevar los
-   * cargos de la hoja. Una aprobada es `soloVer`: no se toca nunca. */
+   * cargos de la hoja. Una aprobada es `soloVer`: no se toca nunca.
+   * 15-oct · Lo mismo baja a los COMPONENTES que se jalaron del catálogo
+   * dentro del armador: si no, un mueble armado se quedaría con precios
+   * viejos sin avisar. */
   const [alDia, setAlDia] = useState(null);
   useEffect(() => {
     if (soloVer) return;
-    const deCost = m => esManual(m) && ((m.origen_catalogo === "cost101" && m.producto_id) || (m.origen_catalogo === "cost101-base" && m.costo_base_id));
-    if (!muebles.some(deCost)) return;
+    const ligado = x => (x.origen_catalogo === "cost101" && x.producto_id) || (x.origen_catalogo === "cost101-base" && x.costo_base_id);
+    const deCost = m => esManual(m) && ligado(m);
+    const compsDeCost = m => !esManual(m) && (m.componentes || []).some(ligado);
+    if (!muebles.some(m => deCost(m) || compsDeCost(m))) return;
     let vivo = true;
     (async () => {
       try {
@@ -6260,10 +6374,29 @@ function HojaCotizacion({
           if (cambiaPrecio) { r.precio = nuevo(f); r.total = nuevo(f); }
           return r;
         };
-        const precios = muebles.filter(m => { const f = fuente(m); return f && Math.abs(precioManual(m) - nuevo(f)) >= 0.005; }).length;
+        /* Un componente del catálogo: su precio unitario de hoy, su subtotal y
+         * la receta (para que rearmarlo no le devuelva el precio viejo); el
+         * mueble vuelve a valer la suma de sus componentes. */
+        const fuenteComp = c => !ligado(c) ? null : c.origen_catalogo === "cost101" ? P.get(c.producto_id) : B.get(c.costo_base_id);
+        const nuevoComp = c => { const f = fuenteComp(c); return !f ? null : c.origen_catalogo === "cost101-base" ? (Number(f.precio) || 0) / 100 : precioDeCatalogo(f); };
+        const compCambia = c => { const n = nuevoComp(c); return n !== null && Math.abs((Number(c.unitario) || 0) - n) >= 0.005; };
+        const compAlDia = c => {
+          if (!compCambia(c)) return c;
+          const n = nuevoComp(c);
+          const r = { ...conCantidad({ ...c, unitario: n }, c.qty || 0) };
+          if (r.receta && r.receta.data) r.receta = { ...r.receta, data: { ...r.receta.data, precio: n } };
+          return r;
+        };
+        const muebleAlDia = m => {
+          if (esManual(m) || !(m.componentes || []).some(compCambia)) return ponerAlDia(m);
+          const componentes = m.componentes.map(compAlDia);
+          return { ...m, componentes, total: componentes.reduce((s, c) => s + (c.subtotal || 0), 0) };
+        };
+        const precios = muebles.filter(m => { const f = fuente(m); return f && Math.abs(precioManual(m) - nuevo(f)) >= 0.005; }).length
+          + muebles.reduce((s, m) => s + (esManual(m) ? 0 : (m.componentes || []).filter(compCambia).length), 0);
         const conCargos = muebles.filter(m => fuente(m) && m.sinCargos).length;
         if (!precios && !conCargos) return;
-        setMuebles(lista => lista.map(ponerAlDia));
+        setMuebles(lista => lista.map(muebleAlDia));
         setAlDia({ precios, conCargos });
       } catch (_) { /* sin la suite no hay con qué comparar: se queda como estaba */ }
     })();
@@ -7119,7 +7252,7 @@ function BotonPlano({ etiqueta, onPlano, estilo, titulo }) {
  * vez con el menú y el nuevo toma el lugar del viejo en la lista, en el plano
  * y con su número. Los componentes no guardan con qué se configuraron, por
  * eso no se puede abrir el menú ya lleno. */
-const MOD_DE_MODULO = { "Gabinete": "gabinete", "Cajones": "cajones", "Entrepaño": "entrepano", "Puerta gabinete": "puerta_gab", "Puerta closet": "puerta", "Poste": "poste", "Cubierta": "cubierta", "Lambrín": "lambrin", "Puerta comunicación": "puerta_com", "Especial": "especial" };
+const MOD_DE_MODULO = { "Gabinete": "gabinete", "Cajones": "cajones", "Entrepaño": "entrepano", "Puerta gabinete": "puerta_gab", "Puerta closet": "puerta", "Poste": "poste", "Cubierta": "cubierta", "Lambrín": "lambrin", "Puerta comunicación": "puerta_com", "Especial": "especial", "Catálogo": "catalogo", "Precio base": "catalogo" };
 const tieneLed = c => (c.ledUnitario || 0) > 0 || (c.extras || []).some(x => /LED/.test(x));
 // El LED se cobra por metro lineal: sólo entrepaños y postes lo llevan.
 const aceptaLed = c => c.modulo === "Entrepaño" || c.modulo === "Poste" || tieneLed(c);
@@ -7356,6 +7489,24 @@ function armarComponentes(tipo, data, pi, pf) {
       unitario: tot,
       qty: data.qty || 1,
       subtotal: tot * (data.qty || 1)
+    };
+  } else if (tipo === "catalogo") {
+    /* El componente del catálogo (15-oct): su precio y su origen, y la
+     * cantidad que se escribió. Ver ModCatalogo. */
+    const precio = Number(data.precio) || 0, qty = Number(data.qty) || 1;
+    c = {
+      ...c,
+      modulo: data.origen_catalogo === "cost101-base" ? "Precio base" : "Catálogo",
+      desc: data.nombre || "Del catálogo",
+      tags: [[data.codigo, data.unidad ? "por " + data.unidad : null].filter(Boolean).join(" · ")].filter(Boolean),
+      extras: [],
+      unitario: precio,
+      qty,
+      subtotal: precio * qty,
+      ...(data.producto_id ? { producto_id: data.producto_id } : {}),
+      ...(data.costo_base_id ? { costo_base_id: data.costo_base_id } : {}),
+      ...(data.origen_catalogo ? { origen_catalogo: data.origen_catalogo } : {}),
+      unidad: data.unidad || ""
     };
   } else if (tipo === "especial") {
     c = {
