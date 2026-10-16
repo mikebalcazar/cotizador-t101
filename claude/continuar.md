@@ -5,6 +5,73 @@ Lo escribe la sesión de Claude Code que trabaja el repo. Lo más nuevo arriba.
 
 ---
 
+# 15-oct-2026 · G113: la caja del cajón sigue a Interiores (y con Traceless ya no es gratis)
+
+**Medido aquí: `pruebas/el-cajon-y-sus-materiales.spec.mjs`, 4 de 4, y las 24
+de `el-plano` + el cajón juntas. Batería completa 159, pasan 149: las 10 de
+`puerta.spec` se caen en la corrida junta por el arranque de wrangler en este
+contenedor y pasan 10 de 10 solas, igual que en G108. Publicado y medido por el
+corredor: todo verde.**
+
+Mike, 15-oct, con captura de «EXPO BAÑO A»: «Están mal los costos del traceless
+y la laca. Al menos cuando los cambio aquí no funcionan».
+
+## Lo que pasaba, que no era de precios
+
+La caja del cajón se cotizaba con el acabado del **FRENTE**
+(`getPC(pf.acabado, …)`). La tabla de cajas, `PC`, sólo tiene prelaminado,
+formaica y las tres chapas —una caja no se hace de Traceless ni de Laca 2K—, así
+que al poner uno de esos dos **la caja valía CERO, sin ningún aviso**: `getPC`
+devuelve `0` cuando no encuentra el material. El cajón de la captura, dos piezas
+con uñero, salía en **$1,900** cuando con la caja cobrada son **$7,300**.
+
+Y de paso: el campo «Interiores» del cajón no movía ningún precio, porque no se
+usaba.
+
+## Lo que quedó
+
+La **caja sigue a Interiores** y el **frente a Frentes**, en los dos caminos:
+`armarComponentes` (el de hoy, que es también el que usa `conMateriales` al
+recalcular cuando se cambian los materiales de arriba) y el de la pantalla de
+componentes para los muebles viejos sin receta. La etiqueta del cajón dice ahora
+las dos cosas: «Caja Formaica · Frente Traceless», porque ahora son dos.
+
+Como Interiores nunca es Traceless ni Laca, `PC` no necesita esos dos renglones
+y no se inventó ningún precio.
+
+**Lo que se mueve:** en cajones de materiales mezclados el total cambia. Con
+interiores de formaica y frente de chapa premium, la caja pasa de $4,100 a
+$3,000: $1,100 menos por cajón. Se le dijo a Mike antes de que decidiera.
+
+## Los precios NO se tocaron, y es decisión de Mike
+
+Se le enseñó, medido, lo que hay hoy sobre formaica: frente de cajón traceless
+**+75%** y laca **+125%**; frente de puerta **+50%** y **+90%**; puerta de
+gabinete traceless **+29%** y sin laca; lambrín **+67%** y **+81%**. Pidió
+primero +15/+20 sólo en frentes, luego +30/+40, y al ver que los cuatro bajaban
+cerró con: **«deja estos precios, sólo arregla que sí funcione al cambiar el
+material»**. Así quedó.
+
+También quedó dicho, por si alguien lo retoma: en puertas de closet, entrepaños
+y ópticos Traceless no tiene precio propio —se calcula como chapa premium menos
+5%, otra regla distinta— y Laca 2K ni aparece.
+
+## Una advertencia para quien toque precios aquí
+
+`getPC`, `getPFAcabado`, `getE`, `getP`, `getPO` y `getPPG` **devuelven 0
+cuando no encuentran el material**, en silencio. Un acabado nuevo en un
+selector, sin su renglón en la tabla, no truena: cotiza gratis. Eso fue este
+error y puede repetirse en otra tabla.
+
+## El semáforo, que no se pudo poner
+
+`OPERAR` §2 pide empujar `claude/EN-CURSO.md` a `main` antes de trabajar. En
+esta sesión el push directo a `main` contesta **403**; sólo entra por PR y
+merge de API. Se trabajó sin semáforo, en una sola pasada, y queda dicho aquí
+para que el siguiente no lo intente a ciegas.
+
+---
+
 # 16-oct-2026 · G112: el catálogo DENTRO del armador de componentes
 
 Mike, 15-oct: «necesito en quote poder agregar desde el catálogo de precios / de
