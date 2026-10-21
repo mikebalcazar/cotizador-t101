@@ -1631,13 +1631,16 @@ let PF = {
     laca2k: 900
   }
 };
-// Cuántos frentes (puertas) tiene cada tipo de gabinete
+// Cuántos frentes (puertas) tiene cada tipo de gabinete.
+// 21-oct-2026 · El overhead cobra su puerta (Mike, con botones: «Sumar su
+// puerta»). Estaba en 0: su precio salía sólo del interior y cambiar el
+// frente de un overhead no movía nada, aunque lleve una o dos puertas.
 const FRENTES_POR_TIPO = {
   "1puerta": 1,
   "2puertas": 2,
   "nicho": 0,
-  "oh1": 0,
-  "oh2": 0
+  "oh1": 1,
+  "oh2": 2
 };
 let PC = {
   laminado: 2600,
