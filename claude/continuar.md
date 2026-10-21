@@ -5,6 +5,35 @@ Lo escribe la sesión de Claude Code que trabaja el repo. Lo más nuevo arriba.
 
 ---
 
+# 21-oct-2026 · G114: el overhead cobra su puerta, y su frente mueve el precio
+
+**Medido aquí: `pruebas/el-overhead-cobra-su-puerta.spec.mjs`, 5 de 5; sobre el
+código de antes fallan 4. `el-cajon-y-sus-materiales` y `el-catalogo-de-cost101`
+siguen 11 de 11.**
+
+Mike, 21-oct, con captura de una cocina: «cuando cambio el frente (material) de
+esos componentes, no me cambia el precio». Eran tres «Overhead 1 puerta» con
+SUS materiales, los tres en $3,420.
+
+## Lo que pasaba
+`FRENTES_POR_TIPO` decía **0 frentes** para `oh1` y `oh2`. `calcPG` cobra el
+interior de la tabla PG más un frente de PF por cada puerta, así que el overhead
+salía sólo con su interior ($3,420 en laminado) y la puerta no se cobraba nunca:
+cambiar el frente, de la pieza o del mueble, no movía nada. El Gabinete 1
+puerta sí la suma ($3,600 + $1,000 en formaica = $4,600).
+
+## Lo que decidió Mike (con botones)
+«Sumar su puerta»: `oh1` lleva 1 frente y `oh2` 2, igual que los gabinetes. En
+formaica el overhead de una puerta pasa de $3,420 a $4,420. Las tablas no se
+tocaron. Las cotizaciones guardadas no cambian solas: un renglón se recalcula
+cuando se le tocan los materiales o se arma de nuevo.
+
+Los dos caminos de precio (armarComponentes, que usa también conMateriales, y
+la pantalla de componentes para muebles viejos) pasan por `calcPG`: basta la
+tabla.
+
+---
+
 # 15-oct-2026 · G113: la caja del cajón sigue a Interiores (y con Traceless ya no es gratis)
 
 **Medido aquí: `pruebas/el-cajon-y-sus-materiales.spec.mjs`, 4 de 4, y las 24
