@@ -5,6 +5,16 @@ Lo escribe la sesión de Claude Code que trabaja el repo. Lo más nuevo arriba.
 
 ---
 
+# 18-nov-2026 · Netlify, fuera: `cotizador-t101.netlify.app` ya no existe
+
+Mike decidió desocupar Netlify y el chat borró los seis sitios de la suite con
+la API de Netlify (204 en cada uno). Medido: `cotizador-t101.netlify.app` y
+`cotizador-t101-old.netlify.app` contestan 404. Se quita `netlify.toml` y
+`scripts/medir.mjs` deja de avisar «PENDIENTE»: en producción ahora **falla**
+si una dirección vieja contesta otra cosa que 404, 410 o nombre que no
+resuelve (alguien habría vuelto a crear el sitio, y sin `netlify.toml`
+serviría la raíz del repositorio).
+
 # 18-nov-2026 · G115: los renglones van a la suite con su precio
 
 **Medido aquí: `pruebas/los-renglones-van-a-la-suite.spec.mjs`, 4 de 4. Batería

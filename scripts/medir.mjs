@@ -48,16 +48,6 @@ const ok = (t) => console.log(`  ok    ${t}`);
 const mal = (t) => { console.log(`  FALLA ${t}`); fallas += 1; };
 const rev = (cond, t) => (cond ? ok(t) : mal(t));
 
-/** Un estado que NO tumba el despliegue, porque no lo puede arreglar este
- *  repositorio.
- *
- *  Se usa para `cotizador-t101-old`: es un sitio de Netlify que Mike va a
- *  borrar a mano. Contarlo como falla dejaría el despliegue en rojo por algo
- *  que ningún commit puede cerrar. Se reporta en cada medición, con la palabra
- *  PENDIENTE, hasta que esté cerrado; entonces se convierte en un `rev` de
- *  verdad. */
-const aviso = (cond, t) => console.log(`  ${cond ? 'ok   ' : 'PENDIENTE'} ${t}`);
-
 /** Trae una ruta, reintentando hasta que conteste lo que se espera.
  *
  *  **Se reintenta también el 404**, no sólo el 500. Un Worker recién
@@ -209,22 +199,12 @@ for (const nombre of ['claude', 'OPERAR.md', 'README.md']) {
 
 /* 5 · las direcciones viejas de Netlify, sólo al medir producción
  *
- * Netlify se retiró de la suite el 24-sep (lo decidió Mike, con la cuenta
- * suspendida por uso). Lo que importa medir sigue siendo lo mismo: que
- * `cotizador-t101.netlify.app` —y `cotizador-t101-old`— NO sirvan el
- * cotizador. Cada respuesta dice algo distinto:
- *
- *   · 404, 410 o que el nombre no resuelva: el sitio ya no existe. Cerrado.
- *   · 302 a quote101: el sitio existe y sólo redirige. Inofensivo, pero falta
- *     borrarlo: se avisa.
- *   · 5xx: Netlify suspendido o caído. El sitio EXISTE y vuelve cuando vuelva
- *     la cuota («un sitio caído no es un sitio cerrado»): se avisa que falta
- *     borrarlo. No tumba la publicación: no es algo que arregle un commit.
- *   · 200 o cualquier otra cosa: algo se está sirviendo ahí. Falla.
- *
- * El borrado lo hace Mike en netlify.com: el conector del chat no borra.
- * Hasta entonces `netlify.toml` se queda: sin él, un sitio que volviera
- * serviría la raíz del repositorio, sin puerta.
+ * El 18-nov-2026 se borraron los sitios en Netlify (lo decidió Mike;
+ * `cotizador-t101-old` ya no existía) y `netlify.toml` se fue con ellos. Lo
+ * que se mide es que las direcciones viejas NO contesten nada: 404, 410 o que
+ * el nombre no resuelva. Cualquier otra respuesta es que alguien volvió a
+ * crear el sitio, y sin `netlify.toml` serviría la raíz del repositorio sin
+ * puerta: falla.
  */
 async function comoContesta(url) {
   try {
@@ -238,17 +218,8 @@ if (ENTORNO === 'produccion') {
   for (const vieja of ['https://cotizador-t101.netlify.app', 'https://cotizador-t101-old.netlify.app']) {
     const nombre = vieja.replace('https://', '');
     const r = await comoContesta(vieja);
-    if (r.codigo === 0 || r.codigo === 404 || r.codigo === 410) {
-      rev(true, `${nombre} ya no existe (${r.texto})`);
-    } else if (r.codigo === 302 || r.codigo === 301) {
-      rev(r.destino.startsWith(BASE), `${nombre} sólo redirige a la dirección con puerta (${r.destino || 'sin location'})`);
-      aviso(false, `${nombre} todavía existe en Netlify: falta borrarlo (Mike, netlify.com)`);
-    } else if (r.codigo >= 500) {
-      aviso(false, `${nombre} contestó ${r.texto}: Netlify suspendido o caído. El sitio sigue existiendo ` +
-        'y vuelve cuando vuelva la cuota; falta borrarlo (Mike, netlify.com)');
-    } else {
-      rev(false, `${nombre} está sirviendo algo (${r.texto}): no debería contestar nada`);
-    }
+    rev(r.codigo === 0 || r.codigo === 404 || r.codigo === 410,
+      `${nombre} ya no existe (${r.texto})`);
   }
 }
 
