@@ -1092,7 +1092,7 @@ window.suiteDB = {
                 method: 'POST',
                 cuerpo: {
                   cliente_id: c.id, total: totalDe(q), moneda: 'MXN',
-                  datos: { nombre: q.nombre || null, proyecto_id: p.id, versiones: q.versiones || [] },
+                  datos: { nombre: q.nombre || null, proyecto_id: p.id, versiones: q.versiones || [], renglones: typeof renglonesParaLaSuite === "function" ? renglonesParaLaSuite(q) : undefined },
                 },
               });
               if (r.estado !== 201) throw new Error('cotización: ' + (r.error || r.estado));
@@ -1105,7 +1105,11 @@ window.suiteDB = {
                 method: 'PATCH',
                 cuerpo: {
                   cliente_id: c.id, total: totalDe(q),
-                  datos: { nombre: q.nombre || null, proyecto_id: p.id, versiones: q.versiones || [] },
+                  /* `renglones` (0.105.0): el precio de cada renglón, para
+                   * que dash101 lo importe como concepto de cobro. No entra
+                   * en la huella: se recalcula cada vez que la cotización se
+                   * guarda, no hace que se guarde. */
+                  datos: { nombre: q.nombre || null, proyecto_id: p.id, versiones: q.versiones || [], renglones: typeof renglonesParaLaSuite === "function" ? renglonesParaLaSuite(q) : undefined },
                 },
               });
               if (r.estado !== 200) throw new Error('cotización: ' + (r.error || r.estado));
@@ -2299,6 +2303,34 @@ function preciosHoja(muebles, { usaF, usaA, usaT, cargosAMano = true }) {
   const redondeo = subtotal - (conCargos + arq + tdc + fleteNeto + (cargosAMano ? 0 : aMano) + catalogo);
   const desglose = { costo, aMano, catalogo, ind, ing, emb, arq, tdc, flete: fleteNeto, armados, manuales, redondeo, cargosAMano };
   return { unitarios, subtotal, componentes, desglose };
+}
+/* Los renglones con su precio al cliente, para la suite (Mike, 18-nov-2026:
+ * «Vamos a separar la contabilidad. Ya no va a ir ligada a los ítems», con
+ * botones: «Conceptos de cobro con opción a importar de las cotizaciones del
+ * proyecto de quote»). dash101 importa un concepto por renglón con ESTE
+ * precio: el de la hoja, por pieza, en centavos, SIN IVA y con el descuento
+ * repartido —el mismo con el que se aprueba—. Se calcula aquí y se guarda en
+ * la cotización porque sólo aquí se sabe: depende de ⚙ (indirectos,
+ * comisiones, flete). Si algo falla no se manda nada: guardar no se detiene
+ * por esto. */
+function renglonesParaLaSuite(q) {
+  try {
+    const v = (q && q.versiones || [])[0];
+    if (!v || !Array.isArray(v.muebles) || !v.muebles.length) return [];
+    const muebles = v.muebles;
+    const bandera = (x) => x !== undefined ? !!x : true;
+    const precios = preciosHoja(muebles, { usaF: bandera(v.usaFlete), usaA: bandera(v.usaArq), usaT: bandera(v.usaTDC), cargosAMano: v.cargosAMano !== undefined ? !!v.cargosAMano : false });
+    const desc = parseFloat(String(v.descuento || 0).replace(/[^0-9.\-]/g, "")) || 0;
+    return muebles.map((m, i) => ({
+      linea: i + 1,
+      nombre: String(m.nombre || "").trim() || String(m.descripcion || "").trim() || "Renglón " + (i + 1),
+      cantidad: Number(m.qty) > 0 ? Number(m.qty) : 1,
+      precio_unitario: Math.round((precios.unitarios[i] || 0) * (1 - desc / 100) * 100),
+    }));
+  } catch (e) {
+    console.error("renglonesParaLaSuite:", e);
+    return undefined;
+  }
 }
 
 // ─── HELPERS RECIBOS ──────────────────────────────────────────

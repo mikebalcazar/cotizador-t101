@@ -5,6 +5,31 @@ Lo escribe la sesión de Claude Code que trabaja el repo. Lo más nuevo arriba.
 
 ---
 
+# 18-nov-2026 · G115: los renglones van a la suite con su precio
+
+**Medido aquí: `pruebas/los-renglones-van-a-la-suite.spec.mjs`, 4 de 4. Batería
+completa 169 de 169.**
+
+Mike, 18-nov: «Vamos a separar la contabilidad. Ya no va a ir ligada a los
+ítems. Los precios de los proyectos se harán por aparte.» Con botones:
+«Conceptos de cobro con opción a importar de las cotizaciones del proyecto de
+quote» y «Un concepto por renglón». La suite (contrato 0.105.0) importa en
+dash101 un concepto por renglón con el precio que quote deja escrito.
+
+## Lo que hace
+`renglonesParaLaSuite(q)` (junto a `preciosHoja`) calcula, de la versión
+vigente, `[{linea, nombre, cantidad, precio_unitario}]`: el precio de la hoja
+por pieza, en centavos, sin IVA y con el descuento repartido, **el mismo con el
+que se aprueba** (`lineasParaAprobar`). `suiteDB.guardar` lo manda en
+`datos.renglones` en cada POST/PATCH de la cotización.
+
+## Lo que hay que saber
+- No entra en la huella del espejo: se recalcula cuando la cotización se
+  guarda, no hace que se guarde. Una cotización que no se ha tocado desde el
+  18-nov no trae renglones; dash101 dice «ábrela en quote y haz cualquier
+  cambio». Las aprobadas antes se importan del precio de sus piezas (API).
+- Si el cálculo truena, manda `undefined` y el guardado sigue.
+
 # 21-oct-2026 · G114: el overhead cobra su puerta, y su frente mueve el precio
 
 **Medido aquí: `pruebas/el-overhead-cobra-su-puerta.spec.mjs`, 5 de 5; sobre el
