@@ -5,6 +5,32 @@ Lo escribe la sesión de Claude Code que trabaja el repo. Lo más nuevo arriba.
 
 ---
 
+# 25-nov-2026 · La laca 2K cobra en puertas de closet, puertas de gabinete, entrepaños y postes (G112)
+
+Mike, con captura de un mueble con dos «Puerta abatible» en laca a $150: «estoy
+colocando puertas de closet con laca 2k y salen solo $150. Revisa que lleve los
+mismos escalones de lo demás. Y revisa todos los acabados con laca 2k». Las
+tablas PP (puertas de closet), PPG (puertas de gabinete), PE (entrepaños) y PPO
+(postes) no tenían renglón de laca: `getP` devolvía 0 (los $150 eran la
+jaladera), `getPPG` caía al prelaminado ($775) y `getE`/`getPO` daban 0. PF
+(frentes de gabinete y de cajón) y PL (lambrín) sí la traían y están bien.
+
+Mike, con botones: «Como frentes de gabinete». `lacaDesdePremium()`: laca =
+chapa premium de esa tabla × (PF «1puerta» laca ÷ premium), hoy 1900/1800 =
+1.0556, a decenas. Si se cambia la tabla de frentes, se mueve con ella; si una
+tabla trae su propia `laca2k`, manda. Hoy: abatible 18 mm $4,750, corrediza
+$6,600, plegable $6,860, puerta de gabinete $2,270, entrepaño 50-60 18 mm
+$1,430, poste 50-60 18 mm $1,770. Ojo: en PF el frente de CAJÓN en laca ($900)
+está abajo de premium ($1,200) y en PL la laca ($3,800) abajo de premium
+($4,100); son valores de tabla que Mike edita y no se tocaron.
+
+Los componentes que ya estaban en una cotización guardan su precio: se
+recalculan al cambiar el frente del mueble o al volver a agregarlos.
+
+Medido: `pruebas/la-laca-cobra-en-todo.spec.mjs` (6) y la suite entera 175/175.
+
+---
+
 # 18-nov-2026 · Netlify, fuera: `cotizador-t101.netlify.app` ya no existe
 
 Mike decidió desocupar Netlify y el chat borró los seis sitios de la suite con
