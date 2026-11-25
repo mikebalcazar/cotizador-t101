@@ -2061,6 +2061,22 @@ function getPFAcabado(tipoFrente, a, c) {
   if (a === "chapa") return ((_PF$tipoFrente = PF[tipoFrente]) === null || _PF$tipoFrente === void 0 || (_PF$tipoFrente = _PF$tipoFrente.chapa) === null || _PF$tipoFrente === void 0 ? void 0 : _PF$tipoFrente[c]) || 0;
   return ((_PF$tipoFrente2 = PF[tipoFrente]) === null || _PF$tipoFrente2 === void 0 ? void 0 : _PF$tipoFrente2[a]) || 0;
 }
+/* Laca 2K donde la tabla no la trae (Mike, 25-nov-2026: «estoy colocando
+ * puertas de closet con laca 2k y salen solo $150. Revisa que lleve los
+ * mismos escalones de lo demás»; con botones: «Como frentes de gabinete»).
+ * PP, PPG, PE y PPO no tenían renglón de laca: la puerta de closet salía en
+ * $0 (los $150 eran la jaladera), la puerta de gabinete al precio de
+ * prelaminado, y entrepaños y postes en $0. Ahora la laca es la chapa
+ * premium de esa misma tabla por la proporción laca/premium de los frentes
+ * de gabinete (PF «1puerta»), redondeada a decenas. Si se cambia la tabla de
+ * frentes, esto se mueve con ella; si una tabla trae su propia laca, manda. */
+const FACTOR_LACA_DEFAULT = 1900 / 1800;
+function factorLaca() {
+  const f = PF && PF["1puerta"];
+  const laca = f && Number(f.laca2k), premium = f && f.chapa && Number(f.chapa.premium);
+  return laca > 0 && premium > 0 ? laca / premium : FACTOR_LACA_DEFAULT;
+}
+const lacaDesdePremium = premium => premium > 0 ? Math.round(premium * factorLaca() / 10) * 10 : 0;
 function calcPG(t, pi, pf) {
   const interior = getPGAcabado(t, pi.formato, pi.acabado, pi.chapa);
   const nFr = FRENTES_POR_TIPO[t] || 0;
@@ -2071,18 +2087,21 @@ function getE(fo, f, a, c) {
   var _PE$chapa, _PE$chapa2, _PE$a;
   if (a === "chapa") return ((_PE$chapa = PE.chapa) === null || _PE$chapa === void 0 || (_PE$chapa = _PE$chapa[c]) === null || _PE$chapa === void 0 || (_PE$chapa = _PE$chapa[fo]) === null || _PE$chapa === void 0 ? void 0 : _PE$chapa[f]) || 0;
   if (a === "traceless") return (((_PE$chapa2 = PE.chapa) === null || _PE$chapa2 === void 0 || (_PE$chapa2 = _PE$chapa2.premium) === null || _PE$chapa2 === void 0 || (_PE$chapa2 = _PE$chapa2[fo]) === null || _PE$chapa2 === void 0 ? void 0 : _PE$chapa2[f]) || 0) * 0.95;
+  if (a === "laca2k") { const pr = PE.laca2k && PE.laca2k[fo] && PE.laca2k[fo][f]; return pr || lacaDesdePremium(PE.chapa && PE.chapa.premium && PE.chapa.premium[fo] && PE.chapa.premium[fo][f] || 0); }
   return ((_PE$a = PE[a]) === null || _PE$a === void 0 || (_PE$a = _PE$a[fo]) === null || _PE$a === void 0 ? void 0 : _PE$a[f]) || 0;
 }
 function getP(t, f, a, c) {
   var _PP$t, _PP$t2, _PP$t3;
   if (a === "chapa") return ((_PP$t = PP[t]) === null || _PP$t === void 0 || (_PP$t = _PP$t[f]) === null || _PP$t === void 0 || (_PP$t = _PP$t.chapa) === null || _PP$t === void 0 ? void 0 : _PP$t[c]) || 0;
   if (a === "traceless") return (((_PP$t2 = PP[t]) === null || _PP$t2 === void 0 || (_PP$t2 = _PP$t2[f]) === null || _PP$t2 === void 0 || (_PP$t2 = _PP$t2.chapa) === null || _PP$t2 === void 0 ? void 0 : _PP$t2.premium) || 0) * 0.95;
+  if (a === "laca2k") { const r = PP[t] && PP[t][f]; return (r && r.laca2k) || lacaDesdePremium(r && r.chapa && r.chapa.premium || 0); }
   return ((_PP$t3 = PP[t]) === null || _PP$t3 === void 0 || (_PP$t3 = _PP$t3[f]) === null || _PP$t3 === void 0 ? void 0 : _PP$t3[a]) || 0;
 }
 function getPO(fo, f, a, c) {
   var _PPO$chapa, _PPO$chapa2, _PPO$a;
   if (a === "chapa") return ((_PPO$chapa = PPO.chapa) === null || _PPO$chapa === void 0 || (_PPO$chapa = _PPO$chapa[c]) === null || _PPO$chapa === void 0 || (_PPO$chapa = _PPO$chapa[fo]) === null || _PPO$chapa === void 0 ? void 0 : _PPO$chapa[f]) || 0;
   if (a === "traceless") return (((_PPO$chapa2 = PPO.chapa) === null || _PPO$chapa2 === void 0 || (_PPO$chapa2 = _PPO$chapa2.premium) === null || _PPO$chapa2 === void 0 || (_PPO$chapa2 = _PPO$chapa2[fo]) === null || _PPO$chapa2 === void 0 ? void 0 : _PPO$chapa2[f]) || 0) * 0.95;
+  if (a === "laca2k") { const pr = PPO.laca2k && PPO.laca2k[fo] && PPO.laca2k[fo][f]; return pr || lacaDesdePremium(PPO.chapa && PPO.chapa.premium && PPO.chapa.premium[fo] && PPO.chapa.premium[fo][f] || 0); }
   return ((_PPO$a = PPO[a]) === null || _PPO$a === void 0 || (_PPO$a = _PPO$a[fo]) === null || _PPO$a === void 0 ? void 0 : _PPO$a[f]) || 0;
 }
 /* Lo que dice la etiqueta de un cajon: la caja y el frente, que desde el
@@ -4619,7 +4638,7 @@ let PL = {
   traceless: 3500,
   laca2k: 3800
 };
-const APP_VERSION = "G111";
+const APP_VERSION = "G112";
 // Puertas gabinete = material + $500 MO
 let PPG = {
   laminado: 775,
@@ -4631,7 +4650,7 @@ let PPG = {
   },
   traceless: 1500
 };
-const getPPG = (acabado, chapa) => acabado === "chapa" ? PPG.chapa[chapa] || PPG.chapa.pino : PPG[acabado] || 775;
+const getPPG = (acabado, chapa) => acabado === "chapa" ? PPG.chapa[chapa] || PPG.chapa.pino : acabado === "laca2k" ? PPG.laca2k || lacaDesdePremium(PPG.chapa.premium) : PPG[acabado] || 775;
 
 // Snapshot inicial de TODAS las tablas para "Restaurar defaults" e hidratar al cargar
 const PRICES_DEFAULT = JSON.parse(JSON.stringify({
