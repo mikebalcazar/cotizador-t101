@@ -120,14 +120,26 @@ describe('los tres caminos son uno solo', () => {
   });
 
   test('sólo `fotoAMiniatura` encoge: nadie más toca un canvas', () => {
-    /* La única excepción, con nombre: `leerPlano`, el plano del armador
-     * (23-sep). Un plano NO es una foto de muestra: a 300 px no se leen sus
-     * cotas, así que va a otra resolución y también lee PDF. Fuera de esas
-     * dos, nadie crea un canvas. */
+    /* Las excepciones van con nombre, nunca subiéndole el número a este
+     * guardián, que existe para que nadie vuelva a escribir el encogido de
+     * fotos en un segundo lugar:
+     *
+     *  · `leerPlano` (23-sep): el plano del armador. Un plano NO es una foto
+     *    de muestra — a 300 px no se leen sus cotas—, así que va a otra
+     *    resolución y además lee PDF.
+     *  · `planoConCirculos` (27-nov): para el Excel del cliente. Quema los
+     *    círculos numerados ENCIMA del plano, porque una hoja de cálculo no
+     *    sabe poner una etiqueta flotante sobre una imagen. No encoge nada:
+     *    compone.
+     *
+     * Fuera de esas dos, un solo lienzo: el de `fotoAMiniatura`. */
     const plano = app.slice(app.indexOf('async function leerPlano('), app.indexOf('const PLANO_CSS'));
     assert.ok(plano.length > 0, 'leerPlano existe');
     assert.equal((plano.match(/createElement\("canvas"\)/g) || []).length, 1, 'el plano tiene su propio y único lienzo');
-    const veces = (app.replace(plano, '').match(/createElement\("canvas"\)/g) || []).length;
+    const circulos = app.slice(app.indexOf('const planoConCirculos = async m =>'), app.indexOf('const esManual ='));
+    assert.ok(circulos.length > 0, 'planoConCirculos existe');
+    assert.equal((circulos.match(/createElement\("canvas"\)/g) || []).length, 1, 'el plano del Excel tiene su propio y único lienzo');
+    const veces = (app.replace(plano, '').replace(circulos, '').match(/createElement\("canvas"\)/g) || []).length;
     assert.equal(veces, 1, 'hay más de un lugar que crea un canvas para fotos');
   });
 
