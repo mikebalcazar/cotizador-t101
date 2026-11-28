@@ -1440,6 +1440,40 @@ const FIRMA_SRC = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAUDBA
  * presupuesto, el Excel y el recibo. Antes cada una traía «Taller 101», su
  * correo y su teléfono escritos a mano, y el logotipo de la app. Lo escribe
  * el director en workshop101 › Empresa; aquí ya no se edita. */
+/* Las condiciones de contratación, en UN solo lugar. Las usan el PDF del
+ * cliente y el Excel del cliente; separadas, se habrían ido secando una
+ * por su lado. El cuerpo lleva HTML (listas, negritas): el PDF lo pinta y
+ * el Excel lo pasa a texto plano con `textoLlano`. */
+const CONDICIONES_INTRO = "Las presentes condiciones regulan de forma integral el proceso de dise\u00f1o, fabricaci\u00f3n, venta, entrega e instalaci\u00f3n del mobiliario objeto de la cotizaci\u00f3n adjunta. Al firmar la cotizaci\u00f3n o emitir la orden de compra correspondiente, el Cliente acepta de conformidad los t\u00e9rminos que se detallan a continuaci\u00f3n.";
+const CONDICIONES_101 = [
+  ["1. Condiciones del Presupuesto y Precios",
+   "Los precios y descuentos otorgados en esta propuesta econ\u00f3mica se calculan de manera integral. Por lo tanto, tienen validez \u00fanicamente si el Cliente adquiere la totalidad del proyecto propuesto. En caso de modificaciones, eliminaciones de partidas o compras parciales, el Vendedor se reserva el derecho de recalcular y ajustar los precios unitarios correspondientes."],
+  ["2. Esquema de Pagos y Proceso de Entrega e Instalaci\u00f3n",
+   "El proyecto se ejecuta conforme al siguiente esquema de pagos y etapas de proceso:<ul style=\"margin:8px 0 0 18px;padding:0\"><li style=\"margin-bottom:6px\"><strong>I. 60\u0025 \u2014 Anticipo para inicio de fabricaci\u00f3n.</strong> El pago del sesenta por ciento (60%) del valor total del proyecto es requisito indispensable para el inicio formal de la fabricaci\u00f3n de piezas. La fecha de ingreso a producci\u00f3n comenzar\u00e1 a computarse a partir de la confirmaci\u00f3n del pago de este anticipo.</li><li style=\"margin-bottom:6px\"><strong>II. Entrega de piezas fabricadas en sitio.</strong> Concluida la fabricaci\u00f3n, las piezas ser\u00e1n entregadas en el domicilio designado por el Cliente. Se requiere la presencia y firma de conformidad del residente o encargado designado en el momento de la recepci\u00f3n. La ausencia de este representante podr\u00e1 generar costos adicionales por visita.</li><li style=\"margin-bottom:6px\"><strong>III. 20\u0025 \u2014 Pago para inicio de instalaci\u00f3n.</strong> La instalaci\u00f3n de las piezas en sitio iniciar\u00e1 \u00fanicamente previa recepci\u00f3n del veinte por ciento (20%) adicional del valor del proyecto. Este pago deber\u00e1 efectuarse previo al inicio de los trabajos de instalaci\u00f3n.</li><li style=\"margin-bottom:6px\"><strong>IV. Instalaci\u00f3n en sitio y levantamiento de detalles.</strong> Concluida la instalaci\u00f3n, se realizar\u00e1 un levantamiento formal de detalles en conjunto con el residente o encargado designado por el Cliente, mismo que quedar\u00e1 documentado por escrito y firmado por ambas partes.</li><li style=\"margin-bottom:6px\"><strong>V. 10\u0025 \u2014 Pago para servicio de atenci\u00f3n a detalles.</strong> La atenci\u00f3n y reparaci\u00f3n de los detalles detectados durante el levantamiento proceder\u00e1 \u00fanicamente previa recepci\u00f3n del diez por ciento (10%) adicional. Este pago cubre el costo del servicio de correcci\u00f3n de la lista de detalles levantados y aprobados formalmente.</li><li style=\"margin-bottom:6px\"><strong>VI. Entrega final del mobiliario.</strong> Concluida la atenci\u00f3n de detalles, se realizar\u00e1 la entrega formal del mobiliario al residente o encargado, firmando la constancia de recepci\u00f3n y conformidad total del proyecto.</li><li><strong>VII. 10\u0025 \u2014 Pago de finiquito y activaci\u00f3n de garant\u00eda.</strong> El diez por ciento (10%) restante constituye el finiquito del proyecto. Su pago activa formalmente la garant\u00eda de manufactura y calidad, as\u00ed como el servicio postventa descrito en la secci\u00f3n correspondiente.</li></ul>"],
+  ["3. Condiciones de Pago e Intereses Moratorios",
+   "El Cliente se obliga a liquidar los saldos conforme al esquema de pagos acordado. En caso de retraso o falta de pago puntual de cualquier cantidad devengada, el Comprador pagar\u00e1 al Vendedor intereses moratorios sobre los saldos vencidos calculados mensualmente a raz\u00f3n de: tasa TIIE + 3 puntos (Tasa de Inter\u00e9s Interbancaria de Equilibrio) si la operaci\u00f3n fue pactada en Moneda Nacional (MXN); o bien, tasa SOFR a seis meses + 3 puntos (Secured Overnight Financing Rate, en sustituci\u00f3n de la tasa LIBOR) si la operaci\u00f3n se fij\u00f3 en D\u00f3lares Americanos (USD)."],
+  ["4. Requisitos para Ingreso a Producci\u00f3n y Tiempos de Entrega",
+   "Para el ingreso formal del pedido a la l\u00ednea de dise\u00f1o y fabricaci\u00f3n, es indispensable que el Cliente proporcione la siguiente documentaci\u00f3n completa: Cotizaci\u00f3n firmada en se\u00f1al de aceptaci\u00f3n, Orden de Compra y/o Contrato debidamente formalizado, comprobante del pago de anticipo estipulado, Formato de Facturaci\u00f3n debidamente requisitado y la Constancia de Situaci\u00f3n Fiscal actualizada (no mayor a 30 d\u00edas). Los tiempos de entrega e instalaci\u00f3n comprometidos comenzar\u00e1n a computarse formalmente a partir del d\u00eda h\u00e1bil siguiente a la recepci\u00f3n y validaci\u00f3n de la totalidad de estos requisitos."],
+  ["5. Reserva de Dominio (Transferencia de la Propiedad)",
+   "Para todos los efectos legales a los que haya lugar, el Vendedor se reserva la propiedad de los bienes objeto de esta cotizaci\u00f3n. La transferencia de la propiedad en favor del Cliente ocurrir\u00e1 de pleno derecho \u00fanicamente cuando se cumplan de forma acumulativa dos supuestos: la conclusi\u00f3n de la instalaci\u00f3n en el domicilio designado y el pago total e irreversible del precio de compraventa; prevaleciendo la fecha de lo que ocurra de forma posterior."],
+  ["6. Transferencia del Riesgo",
+   "El riesgo de p\u00e9rdida, da\u00f1o, menoscabo o destrucci\u00f3n de los bienes pasar\u00e1 formalmente al Cliente en la fecha en que se realice la entrega f\u00edsica o conclusi\u00f3n de la instalaci\u00f3n de los mismos en el domicilio designado por el Cliente. En caso de retrasos en la entrega imputables exclusivamente al Cliente, el riesgo se transferir\u00e1 a partir de la fecha en que el Vendedor notifique que el producto se encuentra listo para su despacho."],
+  ["7. Pol\u00edtica de Cancelaci\u00f3n, Cambios y Modificaciones de Proyecto",
+   "Derivado de que los productos se programan y configuran bajo especificaciones particulares, se aplicar\u00e1 el siguiente r\u00e9gimen de cargos en caso de cancelaci\u00f3n total o parcial:<ul style=\"margin:6px 0 6px 18px;padding:0\"><li style=\"margin-bottom:3px\"><strong>Dentro de los primeros 3 d\u00edas naturales</strong> posteriores a la firma o pago de anticipo: Sin cargo alguno.</li><li style=\"margin-bottom:3px\"><strong>Del 4\u00b0 al 15\u00b0 d\u00eda natural:</strong> Cargo por penalizaci\u00f3n del 50% sobre el valor de las partidas canceladas.</li><li><strong>A partir del 16\u00b0 d\u00eda natural en adelante:</strong> Cargo por penalizaci\u00f3n del 100% sobre las partidas correspondientes, debido al avance en la habilitaci\u00f3n de materias primas y manufactura.</li></ul><em>Nota sobre cambios:</em> Cualquier modificaci\u00f3n estructural, de materiales o acabados solicitada con posterioridad al ingreso del pedido se tipificar\u00e1 como cancelaci\u00f3n de la partida original y requerir\u00e1 un proceso de reingreso, afectando el precio y reiniciando los tiempos de entrega."],
+  ["8. Cambios y Devoluciones de Producto Entregado",
+   "Una vez entregados y firmados de conformidad los bienes en el sitio de destino, no se aceptar\u00e1n cambios ni devoluciones de producto bajo ninguna circunstancia. Lo anterior obedece a que el mobiliario es fabricado estrictamente bajo pedido, sobre dise\u00f1o y con las especificaciones y dimensiones t\u00e9cnicas validadas de forma expresa por el Cliente."],
+  ["9. Garant\u00edas de Manufactura y Calidad",
+   "El Taller extiende una garant\u00eda formal por escrito contra cualquier defecto de manufactura, vicios ocultos y materiales. El periodo de vigencia y los t\u00e9rminos espec\u00edficos de cobertura se aplicar\u00e1n estrictamente de conformidad con la p\u00f3liza particular, el vocabulario t\u00e9cnico del material y la l\u00ednea de producto adquirido (gama residencial, comercial o corporativa). La garant\u00eda no cubre da\u00f1os por uso negligente, modificaciones de terceros o condiciones ambientales extremas en sitio."],
+  ["10. Servicios de Log\u00edstica, Flete, Maniobras e Instalaci\u00f3n",
+   "El porcentaje asignado a servicios en el resumen econ\u00f3mico contempla exclusivamente: maniobras ordinarias de entrega, instalaci\u00f3n t\u00e9cnica especializada y el retiro del empaque primario del producto en sitio.<ul style=\"margin:6px 0 0 18px;padding:0\"><li style=\"margin-bottom:3px\"><strong>Programaci\u00f3n:</strong> Se coordinar\u00e1 con un m\u00ednimo de 3 d\u00edas h\u00e1biles de anticipaci\u00f3n y se ejecutar\u00e1 estrictamente en d\u00edas y horarios h\u00e1biles laborales.</li><li style=\"margin-bottom:3px\"><strong>Accesos y Maniobras:</strong> El flete cotizado contempla la entrega a nivel de piso o mediante elevador de carga. Se incluye el acarreo por escaleras hasta un m\u00e1ximo de 3 pisos; cualquier piso adicional generar\u00e1 un cargo extra por pieza. No se incluyen maniobras de volado de muebles; en caso de requerirse, deber\u00e1n contratarse de manera independiente por el Cliente.</li><li><strong>Cobertura Geogr\u00e1fica:</strong> Las entregas fuera de la Ciudad de M\u00e9xico (CDMX) y su Zona Metropolitana incurrir\u00e1n en costos adicionales por concepto de vi\u00e1ticos del personal t\u00e9cnico, fletes consolidados o mensajer\u00eda, los cuales se desglosar\u00e1n de forma independiente.</li></ul>"],
+];
+/* HTML → texto, para el Excel: <li> a viñeta, <br> y </p> a renglón. */
+const textoLlano = html => String(html)
+  .replace(/<li[^>]*>/gi, "\n  \u2022 ").replace(/<\/li>/gi, "")
+  .replace(/<br\s*\/?>/gi, "\n").replace(/<\/(p|div|ul|ol)>/gi, "\n")
+  .replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&")
+  .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"')
+  .replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
 const EMPRESA_DOC = { lista: false, nombre: "", datos: "", logo: "", correo: "", telefono: "", sitio: "", usuario: "" };
 const oyentesEmpresa = new Set();
 let empresaPromesa = null;
@@ -2130,6 +2164,43 @@ const flete = t => Math.max(cfg("fleteMin"), Math.floor(t / cfg("fleteEscalon"))
  *     `total` guarda lo mismo para que lo de antes (la suma de la suite, el
  *     PDF interno) no vea un renglón en cero. */
 const MOSTRAR_HISTORIAL = false;
+/* El plano de un mueble con sus círculos numerados quemados encima, para el
+ * Excel del cliente. En el PDF los círculos son etiquetas HTML colocadas en
+ * porcentajes sobre la imagen; una hoja de cálculo no sabe hacer eso, así que
+ * se dibujan en un canvas y se incrusta el resultado como una sola imagen.
+ * Mismo color y mismo número que en el PDF, para que el cliente relacione lo
+ * que se le cobra con su lugar en el plano. */
+const planoConCirculos = async m => {
+  const src = m && m.plano && m.plano.src;
+  if (!src) return null;
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  await new Promise((ok, no) => { img.onload = ok; img.onerror = () => no(new Error("no cargó el plano")); img.src = src; });
+  const anchoNat = img.naturalWidth || img.width || 1200;
+  const altoNat = img.naturalHeight || img.height || 800;
+  const W = Math.min(anchoNat, 1600);
+  const cv = document.createElement("canvas");
+  cv.width = W;
+  cv.height = Math.max(1, Math.round(altoNat * (W / anchoNat)));
+  const g = cv.getContext("2d");
+  g.fillStyle = "#ffffff";
+  g.fillRect(0, 0, cv.width, cv.height);
+  g.drawImage(img, 0, 0, cv.width, cv.height);
+  const r = Math.max(13, Math.round(cv.width * 0.016));
+  (m.componentes || []).forEach((c, k) => {
+    if (!c.pos) return;
+    const x = c.pos.x * cv.width, y = c.pos.y * cv.height;
+    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2);
+    g.fillStyle = "#0080C1"; g.fill();
+    g.lineWidth = Math.max(2, r * 0.2); g.strokeStyle = "#ffffff"; g.stroke();
+    g.fillStyle = "#ffffff";
+    g.font = "700 " + Math.round(r * 1.1) + "px Arial, sans-serif";
+    g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(String(c.marca || k + 1), x, y);
+  });
+  /* 620 px de ancho en la hoja; el alto se escala para no deformarlo. */
+  return { png: cv.toDataURL("image/png"), alto: Math.round(620 * (cv.height / cv.width)) };
+};
 const esManual = m => !!(m && m.manual);
 /* Las ligas de las notas internas (Mike, 7-oct: «cuando agrego un link lo
  * detecte como para poder darle click, ya sea durante edición o sobre el PDF
@@ -6379,7 +6450,8 @@ function HojaCotizacion({
   exportPDF,
   exportClientePDF,
   exportPresupuestoPDF,
-  exportClienteExcel
+  exportClienteExcel,
+  exportClientePropuestaExcel
 }) {
   const h = React.createElement;
   const hojaRef = useRef(null);
@@ -6967,7 +7039,8 @@ function HojaCotizacion({
       " Desglosar componentes"),
     h("button", { className: "btn", onClick: exportPDF }, "PDF interno"),
     h("button", { className: "btn", onClick: exportPresupuestoPDF }, "Presupuesto"),
-    h("button", { className: "btn", onClick: exportClienteExcel }, "Excel arq")) : null;
+    h("button", { className: "btn", onClick: exportClienteExcel }, "Excel arq"),
+    h("button", { className: "btn", onClick: exportClientePropuestaExcel, title: "El mismo documento que el PDF del cliente, en Excel: desglose, planos y condiciones" }, "Excel cliente")) : null;
 
   const velo = catalogo && h("div", { className: "hoja-velo no-print", onClick: () => setCatalogo(null) },
     h("div", { className: "dialog hoja", style: { left: "auto", transform: "none" }, onClick: e => e.stopPropagation() },
@@ -8995,6 +9068,331 @@ function Cotizador({
       alert("Error al generar Excel: " + (err.message || err));
     }
   };
+  /* El Excel del cliente: la MISMA propuesta que el «PDF cliente con
+   * condiciones», en hoja de cálculo (Mike, 27-nov-2026).
+   *
+   * No es el «Excel arq», que sigue existiendo y es otra cosa: aquél aplana
+   * cada mueble en un renglón y amontona sus componentes en una celda. Éste
+   * es el PDF del cliente: los materiales, el desglose numerado con el precio
+   * de cada componente, los planos con sus círculos y las condiciones de
+   * contratación.
+   *
+   * Los precios salen de `preciosHoja`, la misma función que pinta la hoja y
+   * el PDF, y se redondean igual que allá (`$()` redondea al peso): el Excel
+   * enseña peso por peso lo mismo que el papel que firma el cliente. Por eso
+   * van valores y no fórmulas — una fórmula recalcularía con los decimales
+   * que el PDF no enseña y los dos documentos dirían números distintos.
+   *
+   * Las condiciones no se escriben aquí: salen de CONDICIONES_101, que es de
+   * donde las toma también el PDF. */
+  const exportClientePropuestaExcel = async () => {
+    if (!window.ExcelJS) {
+      alert("La librería de Excel aún está cargando. Espera unos segundos e intenta de nuevo.");
+      return;
+    }
+    try {
+      const AZ = "FF0080C1", AZC = "FFE6F4FB", GRIS = "FFEAE7E1", TINTA = "FF2C2C2C",
+            BLA = "FFFFFFFF", SUAVE = "FF666666", ROJO = "FFC0392B", LIMA = "FFC6FF3D";
+      const TXT = "Arial";
+      const linea = { style: "thin", color: { argb: "FFD8D4CD" } };
+      const hoy = new Date();
+      const fd = hoy.toLocaleDateString("es-MX", { year: "numeric", month: "long", day: "numeric" });
+      const fVig = new Date(); fVig.setDate(fVig.getDate() + 30);
+      const fechaVigencia = fVig.toLocaleDateString("es-MX", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+      const serie = String(Math.abs(Math.round(tF) * hoy.getDate() + (hoy.getMonth() + 1) * hoy.getFullYear()) % 999999).padStart(6, "0");
+      const cliente = (cotIni && cotIni.clienteNombre) || "";
+      const proyecto = (cotIni && cotIni.proyectoNombre) || "";
+      const PH = preciosHoja(muebles, { usaF, usaA, usaT, cargosAMano });
+      const stripCosto = s => String(s).replace(/\s*\$\s*[\d,]+(?:\.\d+)?\s*(?:\/ml|\/m|\/u|\/pza)?/g, "").trim();
+      const numComp = (c, k) => c.marca || k + 1;
+      const peso = n => Math.round(n);
+      /* El negativo del descuento va «-$5,682» y no «$-5,682», que es lo que
+       * hace Excel por omisión. */
+      const FMT = '"$"#,##0;-"$"#,##0';
+
+      const wb = new ExcelJS.Workbook();
+      wb.creator = EMPRESA_DOC.nombre || "taller101";
+      wb.created = hoy;
+
+      /* ── helpers de celda ─────────────────────────────────────────── */
+      const pon = (ws, r, c, v, o) => {
+        o = o || {};
+        const x = ws.getCell(r, c);
+        if (v !== undefined && v !== null) x.value = v;
+        x.font = Object.assign({ name: TXT, size: 10, color: { argb: o.tinta || TINTA } },
+          { bold: !!o.bold, italic: !!o.italic, size: o.size || 10 });
+        x.alignment = Object.assign({ vertical: "middle", wrapText: !!o.wrap }, o.align || {});
+        if (o.fmt) x.numFmt = o.fmt;
+        if (o.fondo) x.fill = { type: "pattern", pattern: "solid", fgColor: { argb: o.fondo } };
+        if (o.borde) x.border = { top: linea, left: linea, bottom: linea, right: linea };
+        return x;
+      };
+      const pinta = (ws, r, c1, c2, argb) => {
+        for (let c = c1; c <= c2; c++) ws.getCell(r, c).fill = { type: "pattern", pattern: "solid", fgColor: { argb } };
+      };
+      const banda = (ws, r, c1, c2, borde, argb) => {
+        for (let c = c1; c <= c2; c++) {
+          const b = ws.getCell(r, c).border || {};
+          b[borde] = { style: "medium", color: { argb } };
+          ws.getCell(r, c).border = b;
+        }
+      };
+
+      /* ═══ HOJA 1 · LA PROPUESTA ═══════════════════════════════════ */
+      const ws = wb.addWorksheet("Propuesta", {
+        views: [{ showGridLines: false, state: "frozen", ySplit: 0 }],
+        pageSetup: { paperSize: 9, orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0,
+          margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } }
+      });
+      ws.columns = [{ width: 5 }, { width: 28 }, { width: 40 }, { width: 15 }, { width: 8 }, { width: 17 }];
+
+      let row = 1;
+      /* Cabecera azul: el logo a la izquierda, el folio y la fecha a la
+         derecha. Cuatro renglones, como en el PDF. */
+      for (let r = 1; r <= 4; r++) { pinta(ws, r, 1, 6, AZ); ws.getRow(r).height = 20; }
+      if (EMPRESA_DOC.logo) {
+        try {
+          const ext = /^data:image\/png/.test(EMPRESA_DOC.logo) ? "png" : "jpeg";
+          const id = wb.addImage({ base64: EMPRESA_DOC.logo.split(",")[1], extension: ext });
+          ws.addImage(id, { tl: { col: 0.25, row: 0.35 }, ext: { width: 168, height: 56 } });
+        } catch (e) { /* sin logo, la cabecera sigue siendo la de la casa */ }
+      }
+      ws.mergeCells("E1:F1"); pon(ws, 1, 5, "Folio " + serie, { bold: true, size: 13, tinta: BLA, align: { horizontal: "right" } });
+      ws.mergeCells("E2:F2"); pon(ws, 2, 5, fd, { size: 10, tinta: BLA, align: { horizontal: "right" } });
+      ws.mergeCells("E3:F3"); pon(ws, 3, 5, EMPRESA_DOC.correo || "", { size: 9, tinta: BLA, align: { horizontal: "right" } });
+      ws.mergeCells("E4:F4"); pon(ws, 4, 5, [EMPRESA_DOC.telefono, EMPRESA_DOC.sitio].filter(Boolean).join("  ·  "), { size: 9, tinta: BLA, align: { horizontal: "right" } });
+      banda(ws, 4, 1, 6, "bottom", LIMA);
+      row = 6;
+
+      ws.mergeCells(row, 1, row, 6);
+      pon(ws, row, 1, (cliente ? "Estimado/a " + cliente + "," : "Estimado/a cliente,"), { bold: true, size: 12 });
+      row += 2;
+      ws.mergeCells(row, 1, row + 1, 6);
+      pon(ws, row, 1, "Debajo encontrará la propuesta del proyecto que se pidió cotizar, según las especificaciones requeridas. Los productos incluyen fabricación, entrega (en CDMX) e instalación.",
+        { size: 10, wrap: true, align: { vertical: "top" } });
+      ws.getRow(row).height = 15; ws.getRow(row + 1).height = 15;
+      row += 3;
+
+      if (proyecto) {
+        ws.mergeCells(row, 1, row, 6);
+        pon(ws, row, 1, proyecto, { bold: true, size: 14, tinta: AZ });
+        banda(ws, row, 1, 6, "bottom", AZ);
+        ws.getRow(row).height = 22;
+        row += 2;
+      }
+
+      /* Materiales y acabados, los mismos que el PDF enseña arriba. */
+      const mLbl = { formaica: "Formaica", supSolida: "Superficie sólida", chapaPino: "Chapa pino",
+        chapaEncino: "Chapa encino", chapaPremium: "Chapa premium", laca: "Laca / acabado", traceless: "Traceless" };
+      const matUsados = Object.keys(mLbl).filter(k => ((materiales || {})[k] || "").trim());
+      if (matUsados.length) {
+        ws.mergeCells(row, 1, row, 6);
+        pon(ws, row, 1, "MATERIALES Y ACABADOS", { bold: true, size: 9, tinta: AZ, fondo: AZC });
+        pinta(ws, row, 1, 6, AZC);
+        banda(ws, row, 1, 6, "left", LIMA);
+        row++;
+        matUsados.forEach(k => {
+          ws.mergeCells(row, 1, row, 2); pon(ws, row, 1, mLbl[k], { bold: true, size: 10, borde: true });
+          pon(ws, row, 2, undefined, { borde: true });
+          ws.mergeCells(row, 3, row, 6); pon(ws, row, 3, materiales[k].trim(), { size: 10, tinta: SUAVE, wrap: true, borde: true });
+          for (let c = 3; c <= 6; c++) ws.getCell(row, c).border = { top: linea, left: linea, bottom: linea, right: linea };
+          row++;
+        });
+        row++;
+      }
+
+      /* Cada mueble: su encabezado y, si la cotización va desglosada, la
+         tabla de componentes con el número que lleva en el plano. */
+      muebles.forEach((m, i) => {
+        const q = m.qty || 1;
+        const unit = PH.unitarios[i];
+        const precios = PH.componentes[i];
+
+        ws.mergeCells(row, 1, row, 3);
+        pon(ws, row, 1, (q > 1 ? q + " × " : "") + (m.nombre || "Sin nombre"), { bold: true, size: 12, tinta: BLA });
+        pon(ws, row, 4, "", {});
+        pon(ws, row, 5, q, { bold: true, size: 10, tinta: BLA, align: { horizontal: "center" } });
+        pon(ws, row, 6, peso(unit * q), { bold: true, size: 12, tinta: BLA, fmt: FMT, align: { horizontal: "right" } });
+        pinta(ws, row, 1, 6, AZ);
+        ws.getRow(row).height = 22;
+        row++;
+
+        const comps = m.componentes || [];
+        if (desglosar && comps.length) {
+          const enc = ["#", "Componente", "Descripción", "P. unitario", "Cant.", "Subtotal"];
+          enc.forEach((t, c) => pon(ws, row, c + 1, t, { bold: true, size: 9, tinta: AZ, fondo: AZC, borde: true,
+            align: { horizontal: c === 0 || c === 4 ? "center" : c >= 3 ? "right" : "left" } }));
+          row++;
+          comps.forEach((c, k) => {
+            const extras = (c.extras || []).map(stripCosto).filter(Boolean);
+            const spec = [...(c.tags || []), ...extras].join(" · ");
+            const p = precios && precios[k];
+            pon(ws, row, 1, numComp(c, k), { bold: true, size: 10, tinta: AZ, borde: true, align: { horizontal: "center" } });
+            pon(ws, row, 2, (c.modulo ? c.modulo + "\n" : "") + (c.desc || ""), { size: 10, wrap: true, borde: true, align: { vertical: "top" } });
+            pon(ws, row, 3, spec, { size: 9, tinta: SUAVE, wrap: true, borde: true, align: { vertical: "top" } });
+            pon(ws, row, 4, p ? peso(p.unit) : "", { size: 10, fmt: FMT, borde: true, align: { horizontal: "right" } });
+            pon(ws, row, 5, p ? p.cant : "", { size: 10, borde: true, align: { horizontal: "center" } });
+            pon(ws, row, 6, p ? peso(p.subtotal) : "", { bold: true, size: 10, fmt: FMT, borde: true, align: { horizontal: "right" } });
+            row++;
+          });
+        } else if (m.descripcion) {
+          ws.mergeCells(row, 1, row, 6);
+          pon(ws, row, 1, m.descripcion, { size: 10, tinta: SUAVE, wrap: true, borde: true, align: { vertical: "top" } });
+          row++;
+        }
+        row++;
+      });
+
+      /* Resumen: los mismos números del PDF, con el mismo redondeo. */
+      const baseConFlete = PH.subtotal;
+      const descMonto = descuento > 0 ? baseConFlete * (descuento / 100) : 0;
+      const subtotalConDesc = baseConFlete - descMonto;
+      const iva = subtotalConDesc * cfg("iva");
+      const total = subtotalConDesc + iva;
+
+      ws.mergeCells(row, 1, row, 6);
+      pon(ws, row, 1, "RESUMEN", { bold: true, size: 9, tinta: AZ });
+      pinta(ws, row, 1, 6, AZC);
+      banda(ws, row, 1, 6, "left", LIMA);
+      row++;
+      const resumen = (etq, monto, o) => {
+        o = o || {};
+        ws.mergeCells(row, 1, row, 5);
+        pon(ws, row, 1, etq, { bold: !!o.fuerte, size: o.fuerte ? 12 : 10, tinta: o.tinta || TINTA, align: { horizontal: "right" } });
+        pon(ws, row, 6, peso(monto), { bold: true, size: o.fuerte ? 13 : 10, tinta: o.tinta || TINTA, fmt: FMT, align: { horizontal: "right" } });
+        if (o.fondo) pinta(ws, row, 1, 6, o.fondo);
+        ws.getRow(row).height = o.fuerte ? 24 : 17;
+        row++;
+      };
+      resumen("Subtotal", baseConFlete);
+      if (descuento > 0) resumen("Descuento (" + descuento + "%)", -descMonto, { tinta: ROJO });
+      resumen("IVA (" + (cfg("iva") * 100).toLocaleString("es-MX", { maximumFractionDigits: 2 }) + "%)", iva);
+      banda(ws, row, 1, 6, "top", AZ);
+      resumen("TOTAL", total, { fuerte: true, fondo: AZC });
+      row++;
+
+      ws.mergeCells(row, 1, row, 6);
+      pon(ws, row, 1, "Vigencia de esta propuesta: " + fechaVigencia + ". Tiempo de entrega estimado al momento de generar el presupuesto; se confirma al pago del anticipo.",
+        { size: 9, italic: true, tinta: SUAVE, wrap: true });
+      ws.getRow(row).height = 26;
+      row += 2;
+      ws.mergeCells(row, 1, row, 6);
+      pon(ws, row, 1, "Cotización autorizada por\nMiguel Ángel Balcázar · " + (EMPRESA_DOC.nombre || ""),
+        { size: 9, wrap: true, align: { horizontal: "center", vertical: "top" } });
+      ws.getRow(row).height = 30;
+
+      /* ═══ HOJA 2 · LOS PLANOS ═════════════════════════════════════
+         El PDF lleva el plano de cada mueble con un círculo numerado sobre
+         cada componente. Aquí los círculos se dibujan ENCIMA de la imagen en
+         un canvas y se incrusta el resultado: Excel no sabe poner una
+         etiqueta flotante sobre una foto. */
+      const conPlano = desglosar ? muebles.map((m, i) => ({ m, i })).filter(({ m }) => !esManual(m) && m.plano && m.plano.src) : [];
+      if (conPlano.length) {
+        const wp = wb.addWorksheet("Planos", { views: [{ showGridLines: false }] });
+        wp.columns = [{ width: 5 }, { width: 28 }, { width: 46 }, { width: 14 }, { width: 14 }, { width: 14 }];
+        let rp = 1;
+        for (const { m, i } of conPlano) {
+          wp.mergeCells(rp, 1, rp, 6);
+          pon(wp, rp, 1, "UBICACIÓN DE COMPONENTES · " + (m.nombre || ""), { bold: true, size: 10, tinta: BLA });
+          pinta(wp, rp, 1, 6, AZ);
+          wp.getRow(rp).height = 20;
+          rp += 2;
+          let png = null, alto = 300;
+          try {
+            const r = await planoConCirculos(m);
+            if (r) { png = r.png; alto = r.alto; }
+          } catch (e) { /* si el plano no carga, va la lista sola */ }
+          if (png) {
+            const id = wb.addImage({ base64: png.split(",")[1], extension: "png" });
+            wp.addImage(id, { tl: { col: 0.2, row: rp - 1 + 0.2 }, ext: { width: 620, height: alto } });
+            const filas = Math.ceil((alto + 14) / 18);
+            for (let k = 0; k < filas; k++) wp.getRow(rp + k).height = 18;
+            rp += filas + 1;
+          }
+          (m.componentes || []).forEach((c, k) => {
+            pon(wp, rp, 1, numComp(c, k), { bold: true, size: 10, tinta: AZ, align: { horizontal: "center" } });
+            pon(wp, rp, 2, c.modulo || "", { bold: true, size: 9, tinta: AZ });
+            wp.mergeCells(rp, 3, rp, 6);
+            pon(wp, rp, 3, c.desc || "", { size: 10, wrap: true });
+            rp++;
+          });
+          rp += 2;
+        }
+      }
+
+      /* ═══ HOJA 3 · LAS CONDICIONES ════════════════════════════════
+         El mismo texto que el PDF, desde CONDICIONES_101. */
+      const wc = wb.addWorksheet("Condiciones", {
+        views: [{ showGridLines: false }],
+        pageSetup: { paperSize: 9, orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0 }
+      });
+      wc.columns = [{ width: 4 }, { width: 104 }, { width: 4 }];
+      let rc = 1;
+      pinta(wc, rc, 1, 3, AZ); wc.getRow(rc).height = 26;
+      wc.mergeCells(rc, 1, rc, 3);
+      pon(wc, rc, 1, "CONDICIONES DE CONTRATACIÓN, FABRICACIÓN, ENTREGA Y GARANTÍA",
+        { bold: true, size: 11, tinta: BLA, align: { horizontal: "center" } });
+      banda(wc, rc, 1, 3, "bottom", LIMA);
+      rc += 2;
+      pon(wc, rc, 2, textoLlano(CONDICIONES_INTRO), { size: 10, wrap: true, align: { vertical: "top" } });
+      wc.getRow(rc).height = 46;
+      rc += 2;
+      CONDICIONES_101.forEach(([titulo, cuerpo]) => {
+        pon(wc, rc, 2, titulo, { bold: true, size: 10.5, tinta: AZ });
+        wc.getRow(rc).height = 18;
+        rc++;
+        const txt = textoLlano(cuerpo);
+        pon(wc, rc, 2, txt, { size: 10, wrap: true, align: { vertical: "top" } });
+        /* El alto a mano: Excel no mide el texto envuelto al escribirlo y, sin
+           esto, el párrafo sale cortado en una sola línea. ~95 caracteres por
+           renglón en esta columna, más uno por cada salto propio. */
+        const renglones = txt.split("\n").reduce((a, l) => a + Math.max(1, Math.ceil(l.length / 95)), 0);
+        wc.getRow(rc).height = Math.min(409, renglones * 13 + 6);
+        rc += 2;
+      });
+      rc++;
+      wc.mergeCells(rc, 1, rc, 3);
+      pon(wc, rc, 1, "ACEPTACIÓN DE PRESUPUESTO Y CONDICIONES COMERCIALES",
+        { bold: true, size: 11, tinta: AZ, align: { horizontal: "center" } });
+      banda(wc, rc, 1, 3, "top", AZ);
+      wc.getRow(rc).height = 26;
+      rc += 2;
+      pon(wc, rc, 2, "Por el Cliente — Nombre, Firma y Fecha de Aceptación", { size: 10, tinta: SUAVE });
+      wc.getRow(rc).height = 60;
+      wc.getCell(rc, 2).border = { bottom: { style: "thin", color: { argb: TINTA } } };
+      rc += 2;
+      pon(wc, rc, 2, "Miguel Ángel Balcázar — " + (EMPRESA_DOC.nombre || "") + " · Firma Autorizada", { size: 10, tinta: SUAVE });
+      wc.getRow(rc).height = 60;
+      wc.getCell(rc, 2).border = { bottom: { style: "thin", color: { argb: TINTA } } };
+
+      /* ── Cifras en Fira Sans, norma de la suite ──────────────────
+         Se mira el VALOR, no el formato: una celda de texto con formato "@"
+         también trae numFmt. */
+      [ws, wb.getWorksheet("Planos"), wc].filter(Boolean).forEach(hoja => {
+        hoja.eachRow(fila => fila.eachCell(celda => {
+          const v = celda.value;
+          const esCifra = typeof v === "number" || v instanceof Date ||
+            (v && typeof v === "object" && (v.formula !== undefined || v.result !== undefined));
+          if (esCifra) celda.font = Object.assign({}, celda.font, { name: "Fira Sans" });
+        }));
+      });
+
+      /* ── Descarga ────────────────────────────────────────────────── */
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = ((proyecto || cliente || "Cotizacion") + "_CLIENTE.xlsx").replace(/[^a-zA-Z0-9_\-\.]/g, "_");
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      console.error("Error EXCEL CLIENTE:", err);
+      alert("Error al generar el Excel del cliente: " + (err.message || err));
+    }
+  };
   const exportClientePDF = () => {
     const fd = new Date().toLocaleDateString("es-MX", {
       year: "numeric",
@@ -9063,18 +9461,9 @@ function Cotizador({
       return '<div style="border:1px solid #D8D4CD;border-left:3px solid #C6FF3D;border-radius:4px;padding:14px;margin-bottom:16px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:#0080C1;margin-bottom:8px">Especificación de materiales</div>' + entries + '</div>';
     })() + rows + '<div class="res"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#0080C1;margin-bottom:10px">Resumen</div>' + fleteRow + '<div class="rr"><span>Subtotal</span><span class="num">' + $(baseConFlete) + '</span></div>' + descRow + '<div class="rr"><span>IVA (' + (cfg("iva") * 100).toFixed(0) + '%)</span><span class="num">' + $(iva) + '</span></div>' + '<div class="rt"><span>Total</span><span class="num">' + $(totalConIva) + '</span></div></div>' + planos + '<div style="page-break-before:always;padding-top:8px"><div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.14em;color:#0080C1;margin-bottom:4px">Anexo de T\u00e9rminos y Condiciones Comerciales</div>'
       + '<div style="font-size:10px;font-weight:600;color:#666;margin-bottom:12px;padding-bottom:10px;border-bottom:2px solid #0080C1">Condiciones de Contrataci\u00f3n, Fabricaci\u00f3n, Entrega y Garant\u00eda de Mobiliario</div>'
-      + '<div style="font-size:10px;line-height:1.55;color:#2C2C2C;font-family:Cifras,Raleway,sans-serif;margin-bottom:14px;text-align:justify">Las presentes condiciones regulan de forma integral el proceso de dise\u00f1o, fabricaci\u00f3n, venta, entrega e instalaci\u00f3n del mobiliario objeto de la cotizaci\u00f3n adjunta. Al firmar la cotizaci\u00f3n o emitir la orden de compra correspondiente, el Cliente acepta de conformidad los t\u00e9rminos que se detallan a continuaci\u00f3n.</div>'
+      + '<div style="font-size:10px;line-height:1.55;color:#2C2C2C;font-family:Cifras,Raleway,sans-serif;margin-bottom:14px;text-align:justify">' + CONDICIONES_INTRO + '</div>'
       + '<div style="font-size:10.5px;line-height:1.55;color:#2C2C2C;font-family:Cifras,Raleway,sans-serif">'
-      + termsBlock("1. Condiciones del Presupuesto y Precios", "Los precios y descuentos otorgados en esta propuesta econ\u00f3mica se calculan de manera integral. Por lo tanto, tienen validez \u00fanicamente si el Cliente adquiere la totalidad del proyecto propuesto. En caso de modificaciones, eliminaciones de partidas o compras parciales, el Vendedor se reserva el derecho de recalcular y ajustar los precios unitarios correspondientes.")
-      + termsBlock("2. Esquema de Pagos y Proceso de Entrega e Instalaci\u00f3n", "El proyecto se ejecuta conforme al siguiente esquema de pagos y etapas de proceso:<ul style=\"margin:8px 0 0 18px;padding:0\"><li style=\"margin-bottom:6px\"><strong>I. 60\u0025 \u2014 Anticipo para inicio de fabricaci\u00f3n.</strong> El pago del sesenta por ciento (60%) del valor total del proyecto es requisito indispensable para el inicio formal de la fabricaci\u00f3n de piezas. La fecha de ingreso a producci\u00f3n comenzar\u00e1 a computarse a partir de la confirmaci\u00f3n del pago de este anticipo.</li><li style=\"margin-bottom:6px\"><strong>II. Entrega de piezas fabricadas en sitio.</strong> Concluida la fabricaci\u00f3n, las piezas ser\u00e1n entregadas en el domicilio designado por el Cliente. Se requiere la presencia y firma de conformidad del residente o encargado designado en el momento de la recepci\u00f3n. La ausencia de este representante podr\u00e1 generar costos adicionales por visita.</li><li style=\"margin-bottom:6px\"><strong>III. 20\u0025 \u2014 Pago para inicio de instalaci\u00f3n.</strong> La instalaci\u00f3n de las piezas en sitio iniciar\u00e1 \u00fanicamente previa recepci\u00f3n del veinte por ciento (20%) adicional del valor del proyecto. Este pago deber\u00e1 efectuarse previo al inicio de los trabajos de instalaci\u00f3n.</li><li style=\"margin-bottom:6px\"><strong>IV. Instalaci\u00f3n en sitio y levantamiento de detalles.</strong> Concluida la instalaci\u00f3n, se realizar\u00e1 un levantamiento formal de detalles en conjunto con el residente o encargado designado por el Cliente, mismo que quedar\u00e1 documentado por escrito y firmado por ambas partes.</li><li style=\"margin-bottom:6px\"><strong>V. 10\u0025 \u2014 Pago para servicio de atenci\u00f3n a detalles.</strong> La atenci\u00f3n y reparaci\u00f3n de los detalles detectados durante el levantamiento proceder\u00e1 \u00fanicamente previa recepci\u00f3n del diez por ciento (10%) adicional. Este pago cubre el costo del servicio de correcci\u00f3n de la lista de detalles levantados y aprobados formalmente.</li><li style=\"margin-bottom:6px\"><strong>VI. Entrega final del mobiliario.</strong> Concluida la atenci\u00f3n de detalles, se realizar\u00e1 la entrega formal del mobiliario al residente o encargado, firmando la constancia de recepci\u00f3n y conformidad total del proyecto.</li><li><strong>VII. 10\u0025 \u2014 Pago de finiquito y activaci\u00f3n de garant\u00eda.</strong> El diez por ciento (10%) restante constituye el finiquito del proyecto. Su pago activa formalmente la garant\u00eda de manufactura y calidad, as\u00ed como el servicio postventa descrito en la secci\u00f3n correspondiente.</li></ul>")
-      + termsBlock("3. Condiciones de Pago e Intereses Moratorios", "El Cliente se obliga a liquidar los saldos conforme al esquema de pagos acordado. En caso de retraso o falta de pago puntual de cualquier cantidad devengada, el Comprador pagar\u00e1 al Vendedor intereses moratorios sobre los saldos vencidos calculados mensualmente a raz\u00f3n de: tasa TIIE + 3 puntos (Tasa de Inter\u00e9s Interbancaria de Equilibrio) si la operaci\u00f3n fue pactada en Moneda Nacional (MXN); o bien, tasa SOFR a seis meses + 3 puntos (Secured Overnight Financing Rate, en sustituci\u00f3n de la tasa LIBOR) si la operaci\u00f3n se fij\u00f3 en D\u00f3lares Americanos (USD).")
-      + termsBlock("4. Requisitos para Ingreso a Producci\u00f3n y Tiempos de Entrega", "Para el ingreso formal del pedido a la l\u00ednea de dise\u00f1o y fabricaci\u00f3n, es indispensable que el Cliente proporcione la siguiente documentaci\u00f3n completa: Cotizaci\u00f3n firmada en se\u00f1al de aceptaci\u00f3n, Orden de Compra y/o Contrato debidamente formalizado, comprobante del pago de anticipo estipulado, Formato de Facturaci\u00f3n debidamente requisitado y la Constancia de Situaci\u00f3n Fiscal actualizada (no mayor a 30 d\u00edas). Los tiempos de entrega e instalaci\u00f3n comprometidos comenzar\u00e1n a computarse formalmente a partir del d\u00eda h\u00e1bil siguiente a la recepci\u00f3n y validaci\u00f3n de la totalidad de estos requisitos.")
-      + termsBlock("5. Reserva de Dominio (Transferencia de la Propiedad)", "Para todos los efectos legales a los que haya lugar, el Vendedor se reserva la propiedad de los bienes objeto de esta cotizaci\u00f3n. La transferencia de la propiedad en favor del Cliente ocurrir\u00e1 de pleno derecho \u00fanicamente cuando se cumplan de forma acumulativa dos supuestos: la conclusi\u00f3n de la instalaci\u00f3n en el domicilio designado y el pago total e irreversible del precio de compraventa; prevaleciendo la fecha de lo que ocurra de forma posterior.")
-      + termsBlock("6. Transferencia del Riesgo", "El riesgo de p\u00e9rdida, da\u00f1o, menoscabo o destrucci\u00f3n de los bienes pasar\u00e1 formalmente al Cliente en la fecha en que se realice la entrega f\u00edsica o conclusi\u00f3n de la instalaci\u00f3n de los mismos en el domicilio designado por el Cliente. En caso de retrasos en la entrega imputables exclusivamente al Cliente, el riesgo se transferir\u00e1 a partir de la fecha en que el Vendedor notifique que el producto se encuentra listo para su despacho.")
-      + termsBlock("7. Pol\u00edtica de Cancelaci\u00f3n, Cambios y Modificaciones de Proyecto", "Derivado de que los productos se programan y configuran bajo especificaciones particulares, se aplicar\u00e1 el siguiente r\u00e9gimen de cargos en caso de cancelaci\u00f3n total o parcial:<ul style=\"margin:6px 0 6px 18px;padding:0\"><li style=\"margin-bottom:3px\"><strong>Dentro de los primeros 3 d\u00edas naturales</strong> posteriores a la firma o pago de anticipo: Sin cargo alguno.</li><li style=\"margin-bottom:3px\"><strong>Del 4\u00b0 al 15\u00b0 d\u00eda natural:</strong> Cargo por penalizaci\u00f3n del 50% sobre el valor de las partidas canceladas.</li><li><strong>A partir del 16\u00b0 d\u00eda natural en adelante:</strong> Cargo por penalizaci\u00f3n del 100% sobre las partidas correspondientes, debido al avance en la habilitaci\u00f3n de materias primas y manufactura.</li></ul><em>Nota sobre cambios:</em> Cualquier modificaci\u00f3n estructural, de materiales o acabados solicitada con posterioridad al ingreso del pedido se tipificar\u00e1 como cancelaci\u00f3n de la partida original y requerir\u00e1 un proceso de reingreso, afectando el precio y reiniciando los tiempos de entrega.")
-      + termsBlock("8. Cambios y Devoluciones de Producto Entregado", "Una vez entregados y firmados de conformidad los bienes en el sitio de destino, no se aceptar\u00e1n cambios ni devoluciones de producto bajo ninguna circunstancia. Lo anterior obedece a que el mobiliario es fabricado estrictamente bajo pedido, sobre dise\u00f1o y con las especificaciones y dimensiones t\u00e9cnicas validadas de forma expresa por el Cliente.")
-      + termsBlock("9. Garant\u00edas de Manufactura y Calidad", "El Taller extiende una garant\u00eda formal por escrito contra cualquier defecto de manufactura, vicios ocultos y materiales. El periodo de vigencia y los t\u00e9rminos espec\u00edficos de cobertura se aplicar\u00e1n estrictamente de conformidad con la p\u00f3liza particular, el vocabulario t\u00e9cnico del material y la l\u00ednea de producto adquirido (gama residencial, comercial o corporativa). La garant\u00eda no cubre da\u00f1os por uso negligente, modificaciones de terceros o condiciones ambientales extremas en sitio.")
-      + termsBlock("10. Servicios de Log\u00edstica, Flete, Maniobras e Instalaci\u00f3n", "El porcentaje asignado a servicios en el resumen econ\u00f3mico contempla exclusivamente: maniobras ordinarias de entrega, instalaci\u00f3n t\u00e9cnica especializada y el retiro del empaque primario del producto en sitio.<ul style=\"margin:6px 0 0 18px;padding:0\"><li style=\"margin-bottom:3px\"><strong>Programaci\u00f3n:</strong> Se coordinar\u00e1 con un m\u00ednimo de 3 d\u00edas h\u00e1biles de anticipaci\u00f3n y se ejecutar\u00e1 estrictamente en d\u00edas y horarios h\u00e1biles laborales.</li><li style=\"margin-bottom:3px\"><strong>Accesos y Maniobras:</strong> El flete cotizado contempla la entrega a nivel de piso o mediante elevador de carga. Se incluye el acarreo por escaleras hasta un m\u00e1ximo de 3 pisos; cualquier piso adicional generar\u00e1 un cargo extra por pieza. No se incluyen maniobras de volado de muebles; en caso de requerirse, deber\u00e1n contratarse de manera independiente por el Cliente.</li><li><strong>Cobertura Geogr\u00e1fica:</strong> Las entregas fuera de la Ciudad de M\u00e9xico (CDMX) y su Zona Metropolitana incurrir\u00e1n en costos adicionales por concepto de vi\u00e1ticos del personal t\u00e9cnico, fletes consolidados o mensajer\u00eda, los cuales se desglosar\u00e1n de forma independiente.</li></ul>")
+      + CONDICIONES_101.map(c => termsBlock(c[0], c[1])).join("")
       + '<div style="margin-top:14px;padding:12px 14px;background:#F4F6F8;border-left:3px solid #C6FF3D;border-radius:4px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#0080C1;margin-bottom:4px">Vigencia de la Propuesta Econ\u00f3mica</div><div>Esta cotizaci\u00f3n y sus condiciones comerciales asociadas tienen una vigencia estricta de <strong>30 d\u00edas naturales</strong> a partir de su fecha de emisi\u00f3n. Transcurrido este plazo, los precios de los materiales, componentes e insumos de fabricaci\u00f3n estar\u00e1n sujetos a cambios sin previo aviso. <strong>V\u00e1lida hasta: ' + fechaVigencia + '</strong>.</div></div>'
       + '<div style="margin-top:22px;padding-top:14px;border-top:2px solid #0080C1"><div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#0080C1;margin-bottom:14px;text-align:center">Aceptaci\u00f3n de Presupuesto y Condiciones Comerciales</div><div style="display:flex;gap:30px;align-items:flex-end"><div style="flex:1;text-align:center"><div style="min-height:70px;border-bottom:1px solid #2C2C2C;margin-bottom:6px"></div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#2C2C2C">Por el Cliente</div><div style="font-size:9px;color:#666;margin-top:2px">Nombre, Firma y Fecha de Aceptaci\u00f3n</div></div><div style="flex:1;text-align:center"><img src="' + FIRMA_SRC + '" style="max-height:70px;max-width:160px;margin-bottom:-2px"/><div style="border-bottom:1px solid #2C2C2C;margin-bottom:6px"></div><div style="font-size:11px;font-weight:700;color:#2C2C2C">Miguel \u00c1ngel Balc\u00e1zar</div><div style="font-size:9px;font-weight:600;letter-spacing:0.08em;color:#0080C1;margin-top:2px;text-transform:uppercase">' + empresaHtml() + ' \u00b7 Firma Autorizada</div></div></div></div>'
       + '</div></div>'
@@ -9934,7 +10323,8 @@ ${rowHTML}
     exportPDF,
     exportClientePDF,
     exportPresupuestoPDF,
-    exportClienteExcel
+    exportClienteExcel,
+    exportClientePropuestaExcel
   });
 }
 
