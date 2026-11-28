@@ -5,6 +5,86 @@ Lo escribe la sesión de Claude Code que trabaja el repo. Lo más nuevo arriba.
 
 ---
 
+# 27-nov-2026 · El Excel del cliente: la propuesta del PDF, con desglose
+
+**Medido aquí: `pruebas/el-excel-del-cliente.spec.mjs`, 5 de 5. Batería
+completa 180, pasan 180 en el corredor. Publicado y medido allá: todo verde
+(run 46087562696).**
+
+Mike: «necesito poder exportar un excel de la versión del pdf del cliente, con
+formato de imagen corporativa de taller101», y al aclarar: «pero el excel lo
+necesito con el desglose, no solo con el total».
+
+## Qué había y qué faltaba
+
+Ya existía **«Excel arq»**, y de hecho ya traía la imagen corporativa: logo,
+folio, saludo, resumen y firma. Pero es una versión **aplanada** — un renglón
+por mueble, con todos sus componentes amontonados en una celda como texto— y
+le faltaban los materiales, el desglose con precio por componente, los planos
+y las condiciones de contratación.
+
+Mike decidió por botones: **botón nuevo**, dejando el «Excel arq» como estaba,
+porque alguien puede estar mandándolo así.
+
+## Qué quedó: «Excel cliente», tres hojas
+
+- **Propuesta** — cabecera azul con logotipo, folio, fecha y contacto; saludo;
+  materiales y acabados; cada mueble con su cantidad e importe y **debajo el
+  desglose numerado** (el mismo número que lleva en el plano) con módulo,
+  descripción, precio unitario, cantidad y subtotal; resumen con subtotal,
+  descuento, IVA y total; vigencia y firma.
+- **Planos** — el plano de cada mueble con los círculos numerados **quemados
+  encima** y la lista de qué es cada número.
+- **Condiciones** — las diez condiciones en texto limpio y el bloque de
+  aceptación con sus dos firmas.
+
+Sin desglose marcado no va la hoja de planos: sus números remitirían a una
+tabla que no está.
+
+## Dos decisiones de implementación que conviene no deshacer
+
+1. **Valores, no fórmulas.** El dinero sale de `preciosHoja` —la misma función
+   que pinta la hoja y el PDF— y se redondea igual que allá. Una fórmula
+   recalcularía con los decimales que el PDF no enseña y los dos documentos
+   dirían números distintos sobre la misma cotización. Aun así son números de
+   verdad con formato de pesos, sumables en Excel, y en Fira Sans.
+2. **Los círculos van en un canvas.** `planoConCirculos` dibuja el plano y sus
+   marcas en un lienzo y se incrusta el resultado como una sola imagen: una
+   hoja de cálculo no sabe poner una etiqueta flotante sobre una foto.
+
+## Las condiciones salieron del PDF a una constante
+
+`CONDICIONES_101` y `CONDICIONES_INTRO`, arriba junto a `EMPRESA_DOC`. Antes
+vivían escritas dentro de `exportClientePDF`; con dos documentos copiándolas
+se habrían ido secando cada una por su lado. El PDF ya las lee de ahí, y el
+Excel las pasa a texto plano con `textoLlano`.
+
+## La prueba, y una lección que costó una publicación en rojo
+
+La prueba abre el `.xlsx` de verdad y compara **el Excel contra el PDF recién
+impreso de la misma cotización**: cada precio unitario, cada subtotal de
+componente y cada renglón del resumen tienen que coincidir. Dos documentos que
+cuadran distinto es peor que no tener el segundo, porque nadie se entera hasta
+que el cliente compara.
+
+**La lección:** la primera versión leía el archivo con un guion de Python y
+`openpyxl`. Pasaba aquí y se cayó en el corredor (run 46087024054), que no lo
+trae: 4 rojas y no se publicó nada. Se reescribió con la misma `exceljs` que
+la app ya carga, que entró como dependencia de desarrollo para servirle al
+navegador la MISMA versión que baja de cdnjs — una prueba que necesita
+internet no prueba nada el día que la red falle. **Regla: una prueba se
+escribe contra lo que el corredor garantiza, no contra lo que este contenedor
+tenga instalado.**
+
+## El guardián de los lienzos hizo su trabajo
+
+`fotos.spec` prohíbe que aparezca un segundo lugar que cree un canvas, para
+que nadie reescriba el encogido de fotos. Cachó `planoConCirculos`. Se
+registró **con nombre**, como ya estaba `leerPlano`, en vez de subirle el
+número: la prohibición sigue en pie.
+
+---
+
 # 25-nov-2026 · La laca 2K cobra en puertas de closet, puertas de gabinete, entrepaños y postes (G112)
 
 Mike, con captura de un mueble con dos «Puerta abatible» en laca a $150: «estoy
