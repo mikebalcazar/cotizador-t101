@@ -17,11 +17,11 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { readFile, mkdtemp, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import ExcelJS from 'exceljs';
 
 const PUBLICAR = fileURLToPath(new URL('../publicar/', import.meta.url));
 const TIPOS = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.woff2': 'font/woff2', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml' };
@@ -112,38 +112,35 @@ async function abrirApp() {
   return { ctx, p, errores };
 }
 
-/* El .xlsx se abre con openpyxl: el archivo de verdad, no lo que el
- * navegador creía estar escribiendo. */
-function leerLibro(ruta) {
-  const py = `
-import json, sys, openpyxl
-wb = openpyxl.load_workbook(sys.argv[1])
-out = {}
-for ws in wb.worksheets:
-    celdas = []
-    for fila in ws.iter_rows():
-        for c in fila:
-            if c.value not in (None, ""):
-                celdas.append({"ref": c.coordinate, "v": c.value if not hasattr(c.value, "isoformat") else str(c.value),
-                               "fmt": c.number_format,
-                               "relleno": (c.fill.fgColor.rgb if c.fill and c.fill.fgColor and isinstance(c.fill.fgColor.rgb, str) else None),
-                               "fuente": c.font.name, "color": (c.font.color.rgb if c.font.color and isinstance(c.font.color.rgb, str) else None)})
-    out[ws.title] = {"celdas": celdas}
-# openpyxl no expone como imagen lo que ExcelJS escribe, asi que las imagenes
-# se cuentan en el archivo mismo: los medios del libro y el dibujo de cada hoja.
-import zipfile
-z = zipfile.ZipFile(sys.argv[1])
-medios = [n for n in z.namelist() if n.startswith("xl/media/")]
-for i, ws in enumerate(wb.worksheets, start=1):
-    rels = "xl/worksheets/_rels/sheet%d.xml.rels" % i
-    tiene = rels in z.namelist() and b"drawing" in z.read(rels)
-    out[ws.title]["imagenes"] = 1 if tiene else 0
-out["_medios"] = len(medios)
-print(json.dumps(out))
-`;
-  const r = spawnSync('python3', ['-I', '-c', py, ruta], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-  assert.equal(r.status, 0, 'openpyxl abrió el archivo: ' + (r.stderr || '').slice(-600));
-  return JSON.parse(r.stdout);
+/* El .xlsx se abre con la MISMA exceljs que ya usa la app: el archivo de
+ * verdad, no lo que el navegador creía estar escribiendo. Antes esto lo hacía
+ * un guion de Python; se cambió porque esa librería existe en el contenedor
+ * de desarrollo pero NO en el corredor de GitHub, así que la prueba pasaba
+ * aquí y se caía allá. */
+async function leerLibro(ruta) {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.readFile(ruta);
+  const out = {};
+  wb.eachSheet((ws) => {
+    const celdas = [];
+    ws.eachRow({ includeEmpty: false }, (fila) => {
+      fila.eachCell({ includeEmpty: false }, (c) => {
+        let v = c.value;
+        if (v && typeof v === 'object') v = v.richText ? v.richText.map((t) => t.text).join('') : (v.text ?? v.result ?? null);
+        if (v === null || v === undefined || v === '') return;
+        celdas.push({
+          ref: c.address, v, fmt: c.numFmt || '',
+          relleno: (c.fill && c.fill.fgColor && c.fill.fgColor.argb) || null,
+          fuente: (c.font && c.font.name) || null,
+          color: (c.font && c.font.color && c.font.color.argb) || null,
+        });
+      });
+    });
+    /* `getImages` ve lo que ExcelJS escribió; `model.media`, todo el libro. */
+    out[ws.name] = { celdas, imagenes: ws.getImages().length };
+  });
+  out._medios = ((wb.model && wb.model.media) || []).length;
+  return out;
 }
 const textos = (hoja) => hoja.celdas.filter((c) => typeof c.v === 'string').map((c) => c.v);
 const numeros = (hoja) => hoja.celdas.filter((c) => typeof c.v === 'number').map((c) => c.v);
@@ -157,7 +154,7 @@ async function bajarExcel(ctx, p) {
     p.getByRole('button', { name: 'Excel cliente' }).click(),
   ]);
   await dl.saveAs(ruta);
-  return { libro: leerLibro(ruta), nombre: dl.suggestedFilename(), dir };
+  return { libro: await leerLibro(ruta), nombre: dl.suggestedFilename(), dir };
 }
 
 test('hay un botón «Excel cliente» y el «Excel arq» sigue en su lugar', async () => {
